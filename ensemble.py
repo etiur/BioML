@@ -1,15 +1,15 @@
 from xgboost import XGBClassifier
 from sklearn.svm import SVC
-from sklearn.tree import ExtraTreeClassifier
 from sklearn.linear_model import RidgeClassifier, SGDClassifier, PassiveAggressiveClassifier
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
 from lightgbm import LGBMClassifier
 from sklearn.neural_network import MLPClassifier
 from pathlib import Path
 import numpy as np
 import argparse
-
+import pandas as pd
+from collections import defaultdict
 
 def arg_parse():
     parser = argparse.ArgumentParser(description="Detect outliers from the selected features")
@@ -20,43 +20,44 @@ def arg_parse():
     parser.add_argument("-o", "--ensemble_output", required=True,
                         help="The path to the output for the ensemble results",
                         default="ensemble_results")
-    parser.add_argument("-hy", "--hyperparameters", required=True,
-                        help="Path to the hyperparameters file")
+    parser.add_argument("-hp", "--hyperparameter_path", required=True,
+                        help="Path to the hyperparameter file")
     parser.add_argument("-s", "--sheets", required=False,nargs="+",
                         help="Names or index of the selected sheets for both features and hyperparameters")
 
     args = parser.parse_args()
 
-    return [args.excel, args.ensemble_output, args.hyperparameters, args.sheets]
+    return [args.excel, args.ensemble_output, args.hyperparameter_path, args.sheets]
 
 
-def interesting_classifiers(name, **kwargs):
+def interesting_classifiers(name, params):
     """
     All classifiers
     """
     classifiers = {
-        "random_tree": RandomForestClassifier(**kwargs),
-        "extra_tree": ExtraTreeClassifier(**kwargs),
-        "sgd": SGDClassifier(**kwargs),
-        "ridge": RidgeClassifier(**kwargs),
-        "passive": PassiveAggressiveClassifier(**kwargs),
-        "mlp": MLPClassifier(**kwargs),
-        "svc":SVC(**kwargs),
-        "xgboost":XGBClassifier(**kwargs),
-        "light": LGBMClassifier(**kwargs),
-        "knn": KNeighborsClassifier(**kwargs)
+        "RandomForestClassifier": RandomForestClassifier,
+        "ExtraTreesClassifier": ExtraTreesClassifier,
+        "SGDClassifier": SGDClassifier,
+        "RidgeClassifier": RidgeClassifier,
+        "PassiveAggressiveClassifier": PassiveAggressiveClassifier,
+        "MLPClassifier": MLPClassifier,
+        "SVC":SVC,
+        "XGBClassifier":XGBClassifier,
+        "LGBMClassifier": LGBMClassifier,
+        "KNeighborsClassifier": KNeighborsClassifier
     }
 
-    return classifiers[name]
+    return classifiers[name](**params)
 
 
 class Ensemble:
-    def __init__(self, selected_features, ensemble_output, hyperparameters, selected_sheets):
-        self.selected_features = Path(selected_features)
+    def __init__(self, selected_features: str | Path, ensemble_output: str | Path, hyperparameter_path: str | Path,
+                 selected_sheets: list[str | int]):
+        self.features = Path(selected_features)
         self.output_path = Path(ensemble_output)
         self.output_path.mkdir(parents=True, exist_ok=True)
-        self.hyperparameters = Path(hyperparameters)
-        self.selected_models = selected_sheets
+        self.hyperparameter_path = Path(hyperparameter_path)
+        self.selected_sheets = selected_sheets
 
     @staticmethod
     def vote(val=1, *args):
@@ -85,14 +86,34 @@ class Ensemble:
 
     def get_hyperparameter(self):
         """
-        TODO A function that will read the hyperparameters from the selected sheets and return a dictionary with
-        TODO the models
+        A function that will read the hyperparameters and features from the selected sheets and return a dictionary with
+        the models and features
         """
-        pass
+        selected_features = defaultdict(dict)
+        models = defaultdict(dict)
+        hp = pd.read_excel(self.hyperparameter_path, sheet_name=self.selected_sheets, index_col=[0, 1, 2],
+                           engine='openpyxl')
+        hp = {key: value.where(value.notnull(), None) for key, value in hp.items()}
+        for sheet, data in hp.items():
+            for ind in data.index.unique(level=0):
+                name = data.loc[ind].index.unique(level=0)[0]
+                param = data.loc[(ind, name), 0].to_dict()
+                # each sheet should have 5 models representing each split index
+                models[sheet][ind] = interesting_classifiers(name, param)
+
+        features = pd.read_excel(self.features, index_col=0, sheet_name=self.selected_sheets, header=[0, 1],
+                                 engine='openpyxl')
+        for sheet, data in features.items():
+            for ind in data.columns.unique(level=0):
+                feat = data.loc[:, ind]
+                # each sheet should have 5 feature sets representing each split index
+                selected_features[sheet][int(ind.split("_")[1])] = feat
+        return selected_features, models
+
 
     def refit(self):
         """
-        TODO Fit the dictionary of models with its corresponding split index data and return the fitted models
+        TODO Fit the dictionary of models with its corresponding features and split index    and return the fitted models
         """
         pass
 

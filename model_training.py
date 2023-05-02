@@ -36,7 +36,7 @@ def arg_parse():
                         help="A list of outliers if any, the name should be the same as in the excel file with the "
                              "filtered features, you can also specify the path to a file in plain text format, each "
                              "record should be in a new line")
-    parser.add_argument("-hp", "--hyperparameter_tuning", required=False, default="150:30",
+    parser.add_argument("-hp", "--hyperparameter_tuning", required=False, default="200:30",
                         help="The parameters for the hyperparameter tuning in max_evals: trial_time format")
     parser.add_argument("-pw", "--precision_weight", required=False, default=1, type=float,
                         help="Weights to specify how relevant is the precision for the ranking of the different features")
@@ -125,8 +125,8 @@ class Classifier:
         # Model comparison
         cv_score = 1- pred.fitted._best_loss
         model_params = pred.fitted.best_model()["learner"].get_params()
-        model_params = {key: value for key, value in model_params.items() if key not in ["n_jobs", "warm_start",
-                                                                                         "verbose", "oob_score"]}
+        model_params = {key: value for key, value in model_params.items() if key not in ["warm_start", "verbose",
+                                                                                         "oob_score"]}
         model_params = pd.Series(model_params)
         # Training scores
         train_confusion = confusion_matrix(Y_train, pred.pred_train_y)
@@ -192,11 +192,9 @@ class Classifier:
         test_r2 = [x.r2_test for x in metric_scalar]
         train_mathew = [x.train_mat for x in metric_scalar]
         train_r2 = [x.r2_train for x in metric_scalar]
-
         # model parameters
         model_name = [x.model_name for x in parameter_list]
         params = pd.concat({i : pd.concat({x.model_name: x.params}) for i, x in zip(split_index, parameter_list)})
-
         # Taking the confusion matrix
         test_confusion = [matrix(*x.test_confusion.ravel()) for x in parameter_list]
         training_confusion = [matrix(*x.train_confusion.ravel()) for x in parameter_list]
