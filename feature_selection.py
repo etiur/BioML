@@ -4,9 +4,10 @@ from helper import scale, analyse_composition, write_excel
 from pathlib import Path
 from ITMO_FS.filters.univariate import select_k_best, UnivariateFilter, SPEC
 from ITMO_FS.filters.unsupervised import MCFS, TraceRatioLaplacian
-import dill
-dill.settings['recurse'] = True # solves the import problem for multiprocess in Windows (might be different in linux)
-from multiprocess.pool import Pool
+# Multiprocess instead of Multiprocessing solves the pickle problem in Windows (might be different in linux)
+# but it has its own errors. Use multiprocessing.get_context('fork') seems to solve the problem but only available in Unix
+# https://medium.com/devopss-hole/python-multiprocessing-pickle-issue-e2d35ccf96a9
+from multiprocessing import Pool
 from sklearn.ensemble import RandomForestClassifier as rfc
 import xgboost as xgb
 from sklearn.feature_selection import RFE

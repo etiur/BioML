@@ -105,8 +105,8 @@ class Classifier:
 
     def train(self, X_train, Y_train, X_test):
         estimator = HyperoptEstimator(classifier=interesting_classifiers("automl"), preprocessing=[], algo=tpe.suggest,
-                                  max_evals=self.max_evals, trial_timeout=self.trial_time_out, seed=10,
-                                  n_jobs=self.num_threads, verbose=True)
+                                      max_evals=self.max_evals, trial_timeout=self.trial_time_out,
+                                      n_jobs=self.num_threads, verbose=True)
         estimator.fit(X_train, Y_train)
         # Model predictions
         pred_test_y = estimator.predict(X_test)
