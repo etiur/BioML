@@ -13,6 +13,7 @@ from hpsklearn import sgd_classifier, ridge_classifier, passive_aggressive_class
 from hpsklearn import mlp_classifier, k_neighbors_classifier, xgboost_classification, lightgbm_classification
 from hpsklearn import svc
 import argparse
+from multiprocessing import Pool
 
 
 def arg_parse():
@@ -102,7 +103,6 @@ class Classifier:
         self.difference_weight = difference_weight
         self.class0_weight = class0_weight
 
-
     def train(self, X_train, Y_train, X_test):
         estimator = HyperoptEstimator(classifier=interesting_classifiers("automl"), preprocessing=[], algo=tpe.suggest,
                                       max_evals=self.max_evals, trial_timeout=self.trial_time_out,
@@ -147,9 +147,9 @@ class Classifier:
 
     def _scale(self, features, with_split, train_index, test_index, split_index):
         # split and filter
-
         if with_split:
-            feat_subset = features.loc[:, f"split_{split_index}"]
+            feat_subset = features.loc[:, f"split_{split_index}"] # each split different features and different fold of
+            # training and test data
         else:
             feat_subset = features
         X_train = feat_subset.iloc[train_index]
@@ -170,7 +170,7 @@ class Classifier:
         split_index = []
         with_split = True
         features = pd.read_excel(self.features, index_col=0, sheet_name=sheet, header=[0, 1], engine='openpyxl')
-        if not features.columns.get_level_values(0).isin([f"split_{0}"]).any():
+        if not f"split_{0}" in features.columns.unique(level=0):
             with_split = False
             features = pd.read_excel(self.features, index_col=0, sheet_name=sheet, header=0, engine='openpyxl')
         skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=20)
@@ -257,16 +257,19 @@ class Classifier:
 
         return rank
 
+    def _run(self, sheet):
+        # creating list of results
+        metric_scalar, parameter_list, split_index = self.nested_cv(sheet)
+        dataframe, report, params = self.to_dataframe(metric_scalar, parameter_list, split_index)
+        return dataframe, report, params
     def run(self):
         """A function that runs nested_cv several times, as many as the sheets in the Excel"""
         # reading the data
         book = load_workbook(self.features)
         result_list = []
-        for ws in book.sheetnames:
-            # creating list of results
-            metric_scalar, parameter_list, split_index = self.nested_cv(ws)
-            dataframe, report, params = self.to_dataframe(metric_scalar, parameter_list, split_index)
-            result_list.append((ws, dataframe, report, params))
+        with Pool(self.num_threads) as pool:
+            for num, (dataframe, report, params) in enumerate(pool.map(self._run, book.sheetnames)):
+                result_list.append((book.sheetnames[num], dataframe, report, params))
 
         result_list.sort(key=self.rank_results, reverse=True)
         for x in result_list:
