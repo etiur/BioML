@@ -82,7 +82,7 @@ def interesting_classifiers(name, params):
     return classifiers[name](**params)
 
 
-class Ensemble:
+class EnsembleClassification:
     def __init__(self, selected_features: str | Path, label: str | Path,  ensemble_output: str | Path,
                  hyperparameter_path: str | Path, selected_sheets: list[str | int], outliers: list[str] | [str] = (),
                  scaler: str = "robust",  num_splits: int = 5, test_size: float = 0.2,
@@ -94,6 +94,9 @@ class Ensemble:
         self.output_path.mkdir(parents=True, exist_ok=True)
         self.hyperparameter_path = Path(hyperparameter_path)
         self.selected_sheets = selected_sheets
+        self.single_feature = False
+        if len(self.selected_sheets) == 1:
+            self.single_feature = True
         self.outliers = outliers
         self.scaler = scaler
         self.num_splits = num_splits
@@ -253,48 +256,55 @@ class Ensemble:
                 for model_name, pred in pred_dict.items():
                     if model_name.split("_")[-1] == str(kfold):
                         # 5 kfold and num_sheet predictions per kfold
-                        different_sheet_same_index[int(kfold)][f"{sheet}_{model_name}"] = pred
+                        different_sheet_same_index[kfold][f"{sheet}_{model_name}"] = pred
 
         return different_sheet_same_index
 
-    def ensemble_voting(self, predictions, label, name):
+    def analyse_vote(self, predictions, label, name):
         train_pred, train_indices = self.vote(*tuple(x.pred_train_y for x in predictions))
         test_pred, test_indices = self.vote(*tuple(x.pred_test_y for x in predictions))
         scalar_scores, param_scores = self.get_score(train_pred, test_pred, label[0], label[1])
         dataframe, report = self.to_dataframe(scalar_scores, param_scores, name)
         return dataframe, report
 
+    def ensemble_voting(self, results, label_dict):
+        ensemble_results = defaultdict(list)
+        # first I get the results from the ensembling of different sheets
+        different_sheet_same_index = self._transform_results(results)
+        # return the results from the original model to see if they are the same and then ensemble if there are more
+        # than 1 sheet
+        for kfold, pred_dict in different_sheet_same_index.items():
+            label = label_dict[kfold]
+            model_names, predictions = pred_dict.keys(), pred_dict.values()
+            if not self.single_feature:
+                ensemble_results[kfold].append(self.analyse_vote(predictions, label, "_".join(model_names)))
+            for i, (model_name, prediction) in enumerate(zip(model_names, predictions)):
+                ensemble_results[kfold].append(self.analyse_vote((prediction,), label, model_name))
+
+            for sheet, pred_dict in results[kfold].items():
+                model_names = pred_dict.keys()
+                for n in range(2, len(model_names)+1):
+                    for comb in combinations(model_names, n):
+                        sub_pred = [pred_dict[x] for x in comb]
+                        ensemble_results[kfold].append(self.analyse_vote(sub_pred, label, "_".join(comb)))
+
+        # save the dataframe and the reports
+        ensemble_results = {kfold: tuple(zip(*sorted(value, key=self.rank_results, reverse=True)))
+                            for kfold, value in ensemble_results.items()}
+
+        return ensemble_results
+
     def run(self):
         """
-        TODO Each split index will be an excel sheet, I will ensemble the results per sheet
+        Each split index will be an Excel sheet, I will ensemble the results per sheet and save the results
         """
         features, with_split = self._check_features()
         models = self.get_hyperparameter()
         feature_scaled, feature_indices, label_dict = self.get_features(features, with_split)
         results = self.refit(feature_scaled, models, label_dict)
         results = self.predict_all_split_sets(features, with_split, feature_indices, models, results)
-        different_sheet_same_index = self._transform_results(results)
-        ensemble_results = defaultdict(list)
-        # first I get the results from the ensembling of different sheets
-        for kfold, pred_dict in different_sheet_same_index.items():
-            label = label_dict[kfold]
-            model_names, predictions = pred_dict.keys(), pred_dict.values()
-            dataframe, report = self.ensemble_voting(predictions, label, "_".join(model_names))
-            ensemble_results[kfold].append((dataframe, report))
-
-        for kfold, model_dict in results.items():
-            label = label_dict[kfold]
-            for sheet, pred_dict in model_dict.items():
-                model_names = pred_dict.keys()
-                for n in range(2, len(model_names)+1):
-                    for comb in combinations(model_names, n):
-                        sub_pred = [pred_dict[x] for x in comb]
-                        dataframe, report = self.ensemble_voting(sub_pred, label, "_".join(comb))
-                        ensemble_results[kfold].append((dataframe, report))
-        # save the dataframe and the reports
-        ensemble_results = {kfold: tuple(zip(*sorted(value, key=self.rank_results, reverse=True)))
-                            for kfold, value in ensemble_results.items()}
-
+        ensemble_results = self.ensemble_voting(results, label_dict)
+        # save the results
         for kfold, res in ensemble_results.items():
             dataframe = pd.concat(res[0])
             report = pd.concat({x.index.name: x for x  in res[1]})
@@ -396,7 +406,7 @@ def main():
             outliers = tuple(x.strip() for x in out.readlines())
     if sheets[0].isdigit():
         sheets = [int(x) for x in sheets]
-    ensemble = Ensemble(selected_features, label,  ensemble_output, hyperparameter_path, sheets, outliers,
+    ensemble = EnsembleClassification(selected_features, label,  ensemble_output, hyperparameter_path, sheets, outliers,
                  scaler,  num_split, test_size, prediction_threshold, precision_weight, recall_weight, report_weight,
                  difference_weight, class0_weight)
     ensemble.run()
