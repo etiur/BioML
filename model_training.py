@@ -38,7 +38,8 @@ def arg_parse():
                              "filtered features, you can also specify the path to a file in plain text format, each "
                              "record should be in a new line")
     parser.add_argument("-hp", "--hyperparameter_tuning", required=False, default="200:30",
-                        help="The parameters for the hyperparameter tuning in max_evals: trial_time format")
+                        help="The parameters for the class that performs hyerparameter tuning"
+                             " in max_evals: trial_time format")
     parser.add_argument("-pw", "--precision_weight", required=False, default=1, type=float,
                         help="Weights to specify how relevant is the precision for the ranking of the different features")
     parser.add_argument("-rw", "--recall_weight", required=False, default=0.8, type=float,

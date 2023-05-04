@@ -175,21 +175,21 @@ class FeatureSelection:
         results = pd.concat(results)
         return results
 
-    def construct_feature_set(self, num_features_min=20, num_features_max=None, range_step=10, rfe_step=40):
+    def construct_feature_set(self, num_features_min=20, num_features_max=None, step_range=10, rfe_step=40):
         features = self.preprocess()
         skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=20)
         feature_dict = defaultdict(dict)
-        if range_step:
+        if step_range:
             if not num_features_max:
                 num_features_max = int(len(features.index) / 2)
-            num_feature_range = range(num_features_min, num_features_max, range_step)
+            num_feature_range = range(num_features_min, num_features_max, step_range)
         else:
             num_feature_range = [num_features_min]
         for i, (train_index, test_index) in enumerate(skf.split(features, self.label)):
             X_train = features.iloc[train_index]
             Y_train = self.label.iloc[train_index]
             transformed, scaler_dict = scale(self.scaler, X_train)
-            # for each split, I do again feature selection and save all the features selected from different splits
+            # for each split I do again feature selection and save all the features selected from different splits
             # but with the same selector in the same dictionary
             ordered_features = self.parallel_filtering(transformed, Y_train, num_features_max, X_train.columns)
             for num_features in num_feature_range:
