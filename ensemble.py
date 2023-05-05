@@ -23,8 +23,9 @@ def arg_parse():
                         default="training_features/hyperparameters.xlsx")
     parser.add_argument("-s", "--sheets", required=True, nargs="+",
                         help="Names or index of the selected sheets for both features and hyperparameters")
-    parser.add_argument("-va", "--prediction_threshold", required=False, default=0.5, type=float,
-                        help="Between 0.5 and 1")
+    parser.add_argument("-va", "--prediction_threshold", required=False, default=1.0, type=float,
+                        help="Between 0.5 and 1 and determines what considers to be a positive prediction, if 1 only"
+                             "those predictions where all models agrees are considered to be positive")
     parser.add_argument("-n", "--num_thread", required=False, default=10, type=int,
                         help="The number of threads to use for the parallelization of outlier detection")
     parser.add_argument("-pw", "--precision_weight", required=False, default=1, type=float,
@@ -63,7 +64,7 @@ class EnsembleClassification:
     def __init__(self, selected_features: str | Path, label: str | Path,  ensemble_output: str | Path,
                  hyperparameter_path: str | Path, selected_sheets: list[str | int], outliers: list[str] | [str] = (),
                  scaler: str = "robust",  num_splits: int = 5, test_size: float = 0.2,
-                 prediction_threshold: float = 0.2, precision_weight=1, recall_weight=1, report_weight=0.4,
+                 prediction_threshold: float = 1.0, precision_weight=1, recall_weight=1, report_weight=0.4,
                  difference_weight=0.8, class0_weight=0.5, num_threads=10):
 
         self.features = Path(selected_features)
@@ -87,8 +88,8 @@ class EnsembleClassification:
         self.class0_weight = class0_weight
         self.num_threads = num_threads
 
-    @staticmethod
-    def vote(val=0.6, *args):
+
+    def vote(self, *args):
         """
         Hard voting for the ensembles
 
@@ -103,10 +104,10 @@ class EnsembleClassification:
         for s, x in enumerate(mean):
             if x == 1 or x == 0:
                 vote_.append(int(x))
-            elif x >= val:
+            elif x >= self.prediction_threshold:
                 vote_.append(1)
                 index.append(s)
-            elif x < val:
+            elif x < self.prediction_threshold:
                 vote_.append(0)
                 index.append(s)
 
