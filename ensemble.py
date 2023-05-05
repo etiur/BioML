@@ -289,7 +289,7 @@ class EnsembleClassification:
         for kfold, res in ensemble_results.items():
             dataframe = pd.concat(res[0])
             report = pd.concat({x.index.name: x for x  in res[1]})
-            write_excel(self.output_path/"ensemble_report.xlsx", report, f"split_{kfold}")
+            write_excel(self.output_path/ "ensemble_report.xlsx", report, f"split_{kfold}")
             write_excel(self.output_path/ "ensemble_results.xlsx", dataframe, f"split_{kfold}")
 
     @staticmethod

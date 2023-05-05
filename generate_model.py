@@ -4,6 +4,7 @@ import argparse
 import pandas as pd
 from collections import defaultdict
 import joblib
+from utilities import scale
 
 def arg_parse():
     parser = argparse.ArgumentParser(description="Generate the models from the ensemble")
@@ -105,17 +106,15 @@ class GenerateModel:
         label_dict =defaultdict(dict)
         for sheet, feature in features.items():
             random_state = 22342
-            if with_split:
-                for ind in model_index[sheet]:
+            for ind in model_index[sheet]:
+                if with_split:
                     sub_feat = feature.loc[:, f"split_{ind}"].sample(frac=1, random_state=random_state)
-                    feature_dict[sheet][ind] = sub_feat
-                    label_dict[sheet][ind] = self.label.sample(frac=1, random_state=random_state)
-                    random_state += 10000
-            else:
-                for ind in model_index[sheet]:
-                    feature_dict[sheet][ind] = feature.sample(frac=1, random_state=random_state)
-                    label_dict[sheet][ind] = self.label.sample(frac=1, random_state=random_state)
-                    random_state += 10000
+                else:
+                    sub_feat = feature.sample(frac=1, random_state=random_state)
+                transformed, scaler_dict = scale(self.scaler, sub_feat)
+                feature_dict[sheet][ind] = transformed
+                label_dict[sheet][ind] = self.label.sample(frac=1, random_state=random_state)
+                random_state += 10000
 
         return feature_dict, label_dict
 

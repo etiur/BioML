@@ -11,8 +11,8 @@ from collections import defaultdict
 
 
 def arg_parse():
-    parser = argparse.ArgumentParser(description="Generate the models from the ensemble")
-
+    parser = argparse.ArgumentParser(description="Predict using the models and average the votations")
+    parser.add_argument("-i", "--fasta_file", help="The fasta file path", required=True)
     parser.add_argument("-e", "--excel", required=False,
                         help="The file to where the selected features are saved in excel format",
                         default="training_features/selected_features.xlsx")
@@ -33,9 +33,15 @@ def arg_parse():
     parser.add_argument("-ne", "--extracted", required=False,
                         help="The file where the extracted features from the new data are stored",
                         default="extracted_features/new_features.xlsx")
+    parser.add_argument("-d", "--res_dir", required=False,
+                        help="The file where the extracted features from the new data are stored",
+                        default="prediction_results")
+    parser.add_argument("-nss", "--number_similar_samples", required=False, default=1, type=int,
+                        help="The number of similar training samples to filter the predictions")
     args = parser.parse_args()
 
-    return [args.excel, args.scaler, args.model_output, args.prediction_threshold, args.sheets, args.extracted]
+    return [args.fasta, args.excel, args.scaler, args.model_output, args.prediction_threshold, args.sheets,
+            args.extracted, args.res_dir, args.number_similar_samples]
 
 
 
@@ -44,8 +50,8 @@ class EnsembleVoting:
     A class to perform ensemble voting
     """
 
-    def __init__(self, sheets, extracted_out="extracted_features/new_features.xlsx", models="models",
-                 selected_features="training_features/selected_features.xlsx", scaler="robust", prediction_threshold=1):
+    def __init__(self, sheets, extracted_features="extracted_features/new_features.xlsx", models="models",
+                 selected_features="training_features/selected_features.xlsx", scaler="robust"):
         """
         Initialize the class EnsembleVoting
 
@@ -54,11 +60,10 @@ class EnsembleVoting:
         extracted_out: str
             The path to the directory where the new extracted feature files are
         """
-        self.extracted_out = Path(extracted_out)
+        self.extracted_out = Path(extracted_features)
         self.training_features = Path(selected_features)
         self.models = Path(models)
         self.scaler = scaler
-        self.prediction_threshold = prediction_threshold
 
         if sheets:
             self.selected_sheets = []
@@ -106,7 +111,8 @@ class EnsembleVoting:
         """
         Make predictions on new samples
         """
-        prediction = defaultdict(dict)
+        feature_dict = {}
+        predictions = {}
         models = self.get_models()
         # extract the features
         features, with_split, new_features = self._check_features()
@@ -121,11 +127,12 @@ class EnsembleVoting:
                 old_feat_scaled, scaler_dict, new_feat_scaled = scale(self.scaler, sub_feat, sub_new_feat)
                 pred = mod.predict(new_feat_scaled)
                 name = mod.__class__.__name__
-                prediction[sheet][f"{name}_{ind}"] = pred
+                predictions[f"{sheet}_{name}_{ind}"] = pred
+                feature_dict[f"{sheet}_{name}_{ind}"] = (old_feat_scaled, new_feat_scaled)
 
-        return prediction
+        return predictions, feature_dict
 
-    def vote(self, *args):
+    def vote(self, val=1, *args):
         """
         Hard voting for the ensembles
 
@@ -140,10 +147,10 @@ class EnsembleVoting:
         for s, x in enumerate(mean):
             if x == 1 or x == 0:
                 vote_.append(int(x))
-            elif x >= self.prediction_threshold:
+            elif x >= val:
                 vote_.append(1)
                 index.append(s)
-            elif x < self.prediction_threshold:
+            elif x < val:
                 vote_.append(0)
                 index.append(s)
 
@@ -155,7 +162,7 @@ class ApplicabilityDomain():
     A class that looks for the applicability domain
     """
 
-    def __init__(self, sheets, selected_features="training_features/selected_features.xlsx"):
+    def __init__(self):
         """
         Initialize the class
         """
@@ -166,36 +173,8 @@ class ApplicabilityDomain():
         self.pred = []
         self.dataframe = None
         self.n_insiders = []
-        path_to_esterase = "/gpfs/projects/bsc72/ruite/enzyminer/data/final_features.xlsx"
-        x_svc = pd.read_excel(f"{path_to_esterase}", index_col=0, sheet_name=f"ch2_30", engine='openpyxl')
         self.ad_indices = []
-        self.selected_sheets = []
-        self.selected_kfolds = {}
-        self._check_sheets(sheets)
-        self.feature_path = Path(selected_features)
-        self.training_names = x_svc.index
 
-    def _check_sheets(self, sheets):
-        for x in sheets:
-            indices = x.split(":")
-            sh = indices[0]
-            if sh.isdigit():
-                sh = int(sh)
-            self.selected_sheets.append(sh)
-            if len(indices) > 1:
-                kfold = tuple(int(x) for x in indices[1].split(","))
-                self.selected_kfolds[sh] = kfold
-            else:
-                self.selected_kfolds[sh] = ()
-    def _check_features(self):
-        with_split = True
-        features = pd.read_excel(self.feature_path, index_col=0, sheet_name=self.selected_sheets, header=[0, 1],
-                                 engine='openpyxl')
-        if f"split_{0}" not in list(features.values())[0].columns.unique(0):
-            with_split = False
-            features = pd.read_excel(self.feature_path, index_col=0, sheet_name=self.selected_sheets, header=0,
-                                     engine='openpyxl')
-        return features, with_split
     def fit(self, x_train):
         """
         A function to calculate the training sample threshold for the applicability domain
@@ -245,25 +224,19 @@ class ApplicabilityDomain():
         d_train_test = np.array([distance.cdist(np.array(x).reshape(1, -1), self.x_train) for x in self.x_test])
         for i in d_train_test:  # for each sample
             # saving indexes of training with distance < threshold
-            idxs = [self.training_names[j] for j, d in enumerate(i[0]) if d <= self.thresholds[j]]
+            idxs = [j for j, d in enumerate(i[0]) if d <= self.thresholds[j]]
             self.n_insiders.append(len(idxs))  # for each test sample see how many training samples is within the AD
-            idxs = "_".join(idxs)
-            self.ad_indices.append(idxs)
 
-        return self.n_insiders, self.ad_indices
+        return self.n_insiders
 
-    def _filter_models_vote(self, svc, knn, ridge, filtered_names, min_num=1):
+    def _filter_models_vote(self, model_predictions, filtered_names, min_num=1):
         """
         Eliminate the models individual predictions of sequences that did not pass the applicability domain threshold
 
         Parameters
         ----------
-        svc: dict
-            Predictions from SVCs
-        knn: dict
-            Predictions from KNNs
-        ridge: dict
-            Prediction from ridge classifiers
+        model_predictions: dict[dict[np.ndarray]]
+            Prediction from all the classifiers
         filtered_names: list[str]
             Names of the test samples after the filtering
         min_num: int
@@ -276,19 +249,13 @@ class ApplicabilityDomain():
             and the rows the different sequences
         """
         results = {}
-        for s, pred in svc.items():
-            sv = [d[0] for x, d in enumerate(zip(pred, self.n_insiders)) if d[1] >= min_num]
-            results[s] = sv
-        for s, pred in ridge.items():
-            sv = [d[0] for x, d in enumerate(zip(pred, self.n_insiders)) if d[1] >= min_num]
-            results[s] = sv
-        for s, pred in knn.items():
-            sv = [d[0] for x, d in enumerate(zip(pred, self.n_insiders)) if d[1] >= min_num]
-            results[s] = sv
+        for sheet, pred in model_predictions.items():
+            filtered_pred = [d[0] for x, d in enumerate(zip(pred, self.n_insiders)) if d[1] >= min_num]
+            results[sheet] = filtered_pred
 
         return pd.DataFrame(results, index=filtered_names)
 
-    def filter(self, prediction, svc, knn, ridge, min_num=1, path_name="filtered_predictions.parquet"):
+    def filter(self, prediction, model_predictions, min_num=1, path_name="filtered_predictions.parquet"):
         """
         Filter those predictions that have less than min_num training samples
 
@@ -304,19 +271,19 @@ class ApplicabilityDomain():
             The predictions of the different ridge models
         index: array
             The index of those predictions that were not unanimous between different models
-        path_name: str, optional
+        path_name: Path | str, optional
             The path for the csv file
         min_num: int, optional
             The minimun number of training samples within the AD of the test samples
         """
-        # filter the predictions and names based on the if it passed the threshold of similar samples
+        # filter the ensemble predictions and names based on if it passed the threshold of similar samples
         filtered_pred = [d[0] for x, d in enumerate(zip(prediction, self.n_insiders)) if d[1] >= min_num]
         filtered_names = [d[0] for y, d in enumerate(zip(self.test_names, self.n_insiders)) if d[1] >= min_num]
         filtered_n_insiders = [d for s, d in enumerate(self.n_insiders) if d >= min_num]
         # Turn the different arrays into pandas Series or dataframes
         pred = pd.Series(filtered_pred, index=filtered_names)
         n_applicability = pd.Series(filtered_n_insiders, index=filtered_names)
-        models = self._filter_models_vote(svc, knn, ridge, filtered_names, min_num)
+        models = self._filter_models_vote(model_predictions, filtered_names, min_num) # individual votes
         # concatenate all the objects
         self.pred = pd.concat([pred, n_applicability, models], axis=1)
         self.pred.columns = ["prediction", "AD_number"] + list(models.columns)
@@ -340,11 +307,11 @@ class ApplicabilityDomain():
         if pred is not None:
             self.pred = pred
         # separating the records according to if the prediction is positive or negative
-        if dirname(fasta_file) != "":
-            base = dirname(fasta_file)
-        else:
-            base = "."
-        with open(f"{base}/no_short.fasta") as inp:
+        self.fasta_file = Path(fasta_file)
+        if (self.fasta_file.parent / "no_short.fasta").exists():
+            self.fasta_file = self.fasta_file.parent / "no_short.fasta"
+
+        with open(self.fasta_file) as inp:
             record = SeqIO.parse(inp, "fasta")
             p = 0
             positive = []
@@ -366,33 +333,8 @@ class ApplicabilityDomain():
 
         return positive, negative
 
-    def find_max_ad(self, pred1, pred2, pred3):
-        """
-        find the maximum applicability domain of the 2 preds
-        parameters
-        ___________
-        pred1: array
-            svc predictions
-        pred2: array
-            knn predictions
-        pred3: array
-            ridge predictions
-        """
-        assert len(pred1) == len(pred2) == len(pred3), "The predictions have different lengths"
-        ad = []
-        pred = pred1.copy()
-        for idx in pred1.index:
-            if pred3["AD_number"].loc[idx] <= pred1["AD_number"].loc[idx] >= pred2["AD_number"].loc[idx]:
-                ad.append(f'{pred1["AD_number"].loc[idx]}-svc')
-            elif pred1["AD_number"].loc[idx] <= pred2["AD_number"].loc[idx] >= pred3["AD_number"].loc[idx]:
-                ad.append(f'{pred2["AD_number"].loc[idx]}-knn')
-            else:
-                ad.append(f'{pred3["AD_number"].loc[idx]}-ridge')
-        pred["AD_number"] = ad
-        return pred
-
-    def extract(self, fasta_file, pred1=None, pred2=None, pred3=None, positive_fasta="positive.fasta",
-                negative_fasta="negative.fasta", res_dir="results"):
+    def extract(self, fasta_file, pred=None, positive_fasta="positive.fasta", negative_fasta="negative.fasta",
+                res_dir="results"):
         """
         A function to extract those test fasta sequences that passed the filter
 
@@ -406,20 +348,63 @@ class ApplicabilityDomain():
             The new filtered fasta file with positive predictions
         negative_fasta: str, optional
             The new filtered fasta file with negative sequences
-        res_dir: str, optional
+        res_dir: Path | str, optional
             The folder where to keep the prediction results
         """
-        if pred2 is not None and pred3 is not None:
-            pred1 = self.find_max_ad(pred1, pred2, pred3)
-        positive, negative = self.separate_negative_positive(fasta_file, pred1)
+        positive, negative = self.separate_negative_positive(fasta_file, pred)
         # writing the positive and negative fasta sequences to different files
         with open(f"{res_dir}/{positive_fasta}", "w") as pos:
             positive = sorted(positive, reverse=True, key=lambda x: (float(x.id.split("###")[1].split(":")[1]),
-                                                                     int(x.id.split("###")[2].split(":")[1].split("-")[0])))
+                                                             int(x.id.split("###")[2].split(":")[1].split("-")[0])))
             fasta_pos = FastaIO.FastaWriter(pos, wrap=None)
             fasta_pos.write_file(positive)
         with open(f"{res_dir}/{negative_fasta}", "w") as neg:
             negative = sorted(negative, reverse=True, key=lambda x: (float(x.id.split("###")[1].split(":")[1]),
-                                                                     int(x.id.split("###")[2].split(":")[1].split("-")[0])))
+                                                             int(x.id.split("###")[2].split(":")[1].split("-")[0])))
             fasta_neg = FastaIO.FastaWriter(neg, wrap=None)
             fasta_neg.write_file(negative)
+
+
+def vote_and_filter(fasta_file, sheets, extracted_features="extracted_features/new_features.xlsx", models="models",
+                    selected_features="training_features/selected_features.xlsx", scaler="robust",
+                    prediction_threshold=1, res_dir="prediction_results", min_num=1):
+
+    res_dir = Path(res_dir)
+    (res_dir / "domain").mkdir(parents=True, exist_ok=True)
+    (res_dir / "positive").mkdir(parents=True, exist_ok=True)
+    (res_dir / "negative").mkdir(parents=True, exist_ok=True)
+
+    ensemble = EnsembleVoting(sheets, extracted_features, models, selected_features, scaler)
+    # predictions
+    predictions, feature_dict = ensemble.predicting()
+    all_voting, all_index = ensemble.vote(prediction_threshold, *predictions.values())
+    # applicability domain for each of the models
+    domain_list = []
+    for key, scaled_feature in feature_dict.items():
+        domain = ApplicabilityDomain()
+        domain.fit(scaled_feature[0])
+        domain.predict(scaled_feature[1])
+    # return the prediction after the applicability domain filter of SVC (the filter depends on the feature space)
+        pred = domain.filter(all_voting, predictions, min_num, res_dir/"domain"/f"{key}.parquet")
+        domain.extract(fasta_file, pred, positive_fasta=f"positive/{key}.fasta",
+                       negative_fasta=f"negative/{key}.fasta", res_dir=res_dir)
+        domain_list.append(pred)
+
+    # Then filter again to see which sequences are within the AD of all the algorithms since it is an ensemble classifier
+    name_set = set(domain_list[0].index).intersection(*tuple(x.index for x in domain_list[1:]))
+    name_set = sorted(name_set, key=lambda x: int(x.split("_")[1]))
+    common_domain = domain_list[0].loc[name_set]
+    common_domain.to_parquet(f"{res_dir}/common_domain.parquet")
+    # the positive sequences extracted will have the AD of the SVC
+    domain.extract(fasta_file, common_domain, positive_fasta=f"common_positive.fasta",
+                       negative_fasta=f"common_negative.fasta", res_dir=res_dir)
+
+    def main():
+        fasta, selected_features, scaler, model_output, prediction_threshold, sheets, extracted, res_dir, \
+            number_similar_samples = arg_parse()
+        vote_and_filter(fasta, sheets, extracted, model_output, selected_features, scaler, prediction_threshold,
+                        res_dir, number_similar_samples)
+
+    if __name__ == "__main__":
+        # Run this if this file is executed from command line but not if is imported as API
+        main()

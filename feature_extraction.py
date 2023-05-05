@@ -97,7 +97,7 @@ class ExtractFeatures:
         """
         self.fasta_file = Path(fasta_file)
         if (self.fasta_file.parent / "no_short.fasta").exists():
-            self.fasta_file = self.fasta_file / "no_short.fasta"
+            self.fasta_file = self.fasta_file.parent / "no_short.fasta"
         self.pssm_dir = pssm_dir
         self.fasta_dir = fasta_dir
         self.ifeature = f"{ifeature_dir}/iFeature.py"
