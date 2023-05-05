@@ -166,7 +166,7 @@ class ExtractFeatures:
                         fasta_out.write_file(batch)
                 del record
             else:
-                shutil.copyfile(f"{self.fasta_file.parent}/no_short.fasta", f"{self.fasta_file.parent}/group_1.fasta")
+                shutil.copyfile(self.fasta_file, f"{self.fasta_file.parent}/group_1.fasta")
 
     @staticmethod
     def run_progam(commands, program_name=None):
