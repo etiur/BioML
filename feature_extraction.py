@@ -30,7 +30,7 @@ def arg_parse():
                         default="possum_features")
     parser.add_argument("-eo", "--extracted_out", required=False,
                         help="The directory for the extracted features from the new data or from the training data",
-                        default="training_features")
+                        default="extracted_features")
     parser.add_argument("-e", "--excel", required=False,
                         help="The path to where the selected features from training are saved in excel format, it will"
                              "be used to select specific columns from all the generated features for the new data",
@@ -45,11 +45,10 @@ def arg_parse():
                         help="The number of threads to use for the generation of pssm profiles")
     parser.add_argument("-t", "--type", required=False, default="all", nargs="+", choices=("all", "APAAC", "PAAC",
                         "CKSAAGP","Moran", "Geary", "NMBroto", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC",
-                        "QSOrder", "SOCNumber", "GAAC", "KSCtriad",
-                        "aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm", "dpc_pssm", "edp", "eedp", "rpm_pssm",
-                        "k_separated_bigrams_pssm", "pssm_ac", "pssm_cc", "pssm_composition", "rpssm", "s_fpssm",
-                        "smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9", "tpc", "tri_gram_pssm", "pse_pssm:1",
-                        "pse_pssm:2", "pse_pssm:3"),
+                        "QSOrder", "SOCNumber", "GAAC", "KSCtriad", "aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm",
+                        "dpc_pssm", "edp", "eedp", "rpm_pssm", "k_separated_bigrams_pssm", "pssm_ac", "pssm_cc",
+                        "pssm_composition", "rpssm", "s_fpssm", "smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9",
+                        "tpc", "tri_gram_pssm", "pse_pssm:1", "pse_pssm:2", "pse_pssm:3"),
                         help="A list of the features to extract")
     parser.add_argument("-tf", "--type_file", required=False, help="the path to the a file with the feature names")
     parser.add_argument("-s", "--sheets", required=False, nargs="+",
@@ -342,8 +341,6 @@ class ExtractFeatures:
 
         Parameters
         ----------
-        restart: str
-            The file to restart the programmes with
         long:
             If to run only the longer features
         """
@@ -545,7 +542,7 @@ class ReadFeatures:
                 if self.selected_kfolds[sheet] and ind not in self.selected_kfolds: continue
                 sub_feat = feature.loc[:, f"split_{ind}"]
                 feature_dict[f"split_{ind}"] = self.features[sub_feat.columns]
-            write_excel(self.extracted_out/"extracted_features", pd.concat(feature_dict, axis=1), f"{sheet}")
+            write_excel(self.extracted_out/"new_features", pd.concat(feature_dict, axis=1), f"{sheet}")
 
 
 def extract_and_filter(fasta_file=None, pssm_dir="pssm", fasta_dir="fasta_files", ifeature_out="ifeature_features",
