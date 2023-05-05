@@ -1,6 +1,6 @@
 import argparse
 import pandas as pd
-from helper import scale, analyse_composition, write_excel
+from utilities import scale, analyse_composition, write_excel
 from pathlib import Path
 from ITMO_FS.filters.univariate import select_k_best, UnivariateFilter, SPEC
 from ITMO_FS.filters.unsupervised import MCFS, TraceRatioLaplacian
@@ -33,7 +33,7 @@ def arg_parse():
                         help="The number of threads to use for parallelizing the feature selection")
     parser.add_argument("-v", "--variance_threshold", required=False, default=7, type=float,
                         help="it will influence the features to be eliminated the larger the less restrictive")
-    parser.add_argument("-s", "--scaler", required=True, default="robust", choices=("robust", "standard", "minmax"),
+    parser.add_argument("-s", "--scaler", required=False, default="robust", choices=("robust", "standard", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
     parser.add_argument("-e", "--excel", required=False,
                         help="The file path to where the selected features will be saved in excel format",

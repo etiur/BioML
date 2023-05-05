@@ -1,10 +1,3 @@
-from xgboost import XGBClassifier
-from sklearn.svm import SVC
-from sklearn.linear_model import RidgeClassifier, SGDClassifier, PassiveAggressiveClassifier
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
-from lightgbm import LGBMClassifier
-from sklearn.neural_network import MLPClassifier
 from pathlib import Path
 import numpy as np
 import argparse
@@ -13,31 +6,31 @@ from sklearn.model_selection import StratifiedShuffleSplit
 import pandas as pd
 from sklearn.metrics import matthews_corrcoef, confusion_matrix, r2_score
 from sklearn.metrics import classification_report as class_re
-from helper import scale, write_excel
+from utilities import scale, write_excel, interesting_classifiers
 from itertools import combinations
 
 
 def arg_parse():
     parser = argparse.ArgumentParser(description="Detect outliers from the selected features")
 
-    parser.add_argument("-e", "--excel", required=True,
+    parser.add_argument("-e", "--excel", required=False,
                         help="The file to where the selected features are saved in excel format",
                         default="training_features/selected_features.xlsx")
-    parser.add_argument("-o", "--ensemble_output", required=True,
+    parser.add_argument("-o", "--ensemble_output", required=False,
                         help="The path to the output for the ensemble results",
                         default="ensemble_results")
-    parser.add_argument("-hp", "--hyperparameter_path", required=True,
-                        help="Path to the hyperparameter file")
-    parser.add_argument("-sc", "--sheets", required=False, nargs="+",
+    parser.add_argument("-hp", "--hyperparameter_path", required=False, help="Path to the hyperparameter file",
+                        default="training_features/hyperparameters.xlsx")
+    parser.add_argument("-s", "--sheets", required=True, nargs="+",
                         help="Names or index of the selected sheets for both features and hyperparameters")
     parser.add_argument("-va", "--prediction_threshold", required=False, default=0.5, type=float,
                         help="Between 0.5 and 1")
-
+    parser.add_argument("-n", "--num_thread", required=False, default=10, type=int,
+                        help="The number of threads to use for the parallelization of outlier detection")
     parser.add_argument("-pw", "--precision_weight", required=False, default=1, type=float,
                         help="Weights to specify how relevant is the precision for the ranking of the different features")
     parser.add_argument("-rw", "--recall_weight", required=False, default=0.8, type=float,
                         help="Weights to specify how relevant is the recall for the ranking of the different features")
-
     parser.add_argument("-c0", "--class0_weight", required=False, default=0.5, type=float,
                         help="Weights to specify how relevant is the f1, precision and recall scores of the class 0"
                              " or the negative class for the ranking of the different features with respect to class 1 or "
@@ -52,34 +45,18 @@ def arg_parse():
                         help="The parameters for the kfold in num_split:test_size format", default="5:0.2")
     parser.add_argument("-l", "--label", required=True,
                         help="The path to the labels of the training set in a csv format")
-    parser.add_argument("-s", "--scaler", required=True, default="robust", choices=("robust", "standard", "minmax"),
+    parser.add_argument("-sc", "--scaler", required=False, default="robust", choices=("robust", "standard", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
+    parser.add_argument("-ot", "--outliers", nargs="+", required=False, default=(),
+                        help="A list of outliers if any, the name should be the same as in the excel file with the "
+                             "filtered features, you can also specify the path to a file in plain text format, each "
+                             "record should be in a new line")
 
     args = parser.parse_args()
 
     return [args.excel, args.label, args.scaler, args.ensemble_output, args.hyperparameter_path, args.sheets,
-            args.prediction_threshold,  args.kfold_parameters, args.outliers, args.precision_weight,
-            args.recall_weight, args.class0_weight, args.report_weight, args.difference_weight]
-
-
-def interesting_classifiers(name, params):
-    """
-    All classifiers
-    """
-    classifiers = {
-        "RandomForestClassifier": RandomForestClassifier,
-        "ExtraTreesClassifier": ExtraTreesClassifier,
-        "SGDClassifier": SGDClassifier,
-        "RidgeClassifier": RidgeClassifier,
-        "PassiveAggressiveClassifier": PassiveAggressiveClassifier,
-        "MLPClassifier": MLPClassifier,
-        "SVC": SVC,
-        "XGBClassifier": XGBClassifier,
-        "LGBMClassifier": LGBMClassifier,
-        "KNeighborsClassifier": KNeighborsClassifier
-    }
-
-    return classifiers[name](**params)
+            args.prediction_threshold, args.kfold_parameters, args.outliers, args.precision_weight,
+            args.recall_weight, args.class0_weight, args.report_weight, args.difference_weight, args.num_thread]
 
 
 class EnsembleClassification:
@@ -87,7 +64,7 @@ class EnsembleClassification:
                  hyperparameter_path: str | Path, selected_sheets: list[str | int], outliers: list[str] | [str] = (),
                  scaler: str = "robust",  num_splits: int = 5, test_size: float = 0.2,
                  prediction_threshold: float = 0.2, precision_weight=1, recall_weight=1, report_weight=0.4,
-                 difference_weight=0.8, class0_weight=0.5):
+                 difference_weight=0.8, class0_weight=0.5, num_threads=10):
 
         self.features = Path(selected_features)
         self.output_path = Path(ensemble_output)
@@ -108,6 +85,7 @@ class EnsembleClassification:
         self.report_weight = report_weight
         self.difference_weight = difference_weight
         self.class0_weight = class0_weight
+        self.num_threads = num_threads
 
     @staticmethod
     def vote(val=0.6, *args):
@@ -167,6 +145,8 @@ class EnsembleClassification:
             for ind in data.index.unique(level=0):
                 name = data.loc[ind].index.unique(level=0)[0]
                 param = data.loc[(ind, name), 0].to_dict()
+                if "n_jobs" in param:
+                    param["n_jobs"] = self.num_threads
                 # each sheet should have 5 models representing each split index
                 models[sheet][ind] = interesting_classifiers(name, param)
 
@@ -308,8 +288,8 @@ class EnsembleClassification:
         for kfold, res in ensemble_results.items():
             dataframe = pd.concat(res[0])
             report = pd.concat({x.index.name: x for x  in res[1]})
-            write_excel(self.output_path/"classification_report.xlsx", report, f"split_{kfold}")
-            write_excel(self.output_path / "ensemble_results.xlsx", dataframe, f"split_{kfold}")
+            write_excel(self.output_path/"ensemble_report.xlsx", report, f"split_{kfold}")
+            write_excel(self.output_path/ "ensemble_results.xlsx", dataframe, f"split_{kfold}")
 
     @staticmethod
     def get_score(pred_train_y, pred_test_y, Y_train, Y_test):
@@ -399,7 +379,7 @@ class EnsembleClassification:
 def main():
     selected_features, label, scaler, ensemble_output, hyperparameter_path, sheets, prediction_threshold, \
     kfold_parameters, outliers, precision_weight, recall_weight, class0_weight, report_weight, \
-    difference_weight = arg_parse()
+    difference_weight, num_thread = arg_parse()
     num_split, test_size = int(kfold_parameters.split(":")[0]), float(kfold_parameters.split(":")[1])
     if Path(outliers[0]).exists():
         with open(outliers) as out:
@@ -408,5 +388,5 @@ def main():
         sheets = [int(x) for x in sheets]
     ensemble = EnsembleClassification(selected_features, label,  ensemble_output, hyperparameter_path, sheets, outliers,
                  scaler,  num_split, test_size, prediction_threshold, precision_weight, recall_weight, report_weight,
-                 difference_weight, class0_weight)
+                 difference_weight, class0_weight, num_thread)
     ensemble.run()

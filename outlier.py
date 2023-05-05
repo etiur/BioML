@@ -10,7 +10,7 @@ from pyod.models.ocsvm import OCSVM
 from pyod.models.ecod import ECOD
 from openpyxl import load_workbook
 import pandas as pd
-from helper import scale
+from utilities import scale
 import dill
 dill.settings['recurse'] = True # solves the import problem for multiprocess in Windows (might be different in linux)
 from multiprocess.pool import Pool

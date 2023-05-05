@@ -5,7 +5,7 @@ from sklearn.metrics import classification_report as class_re
 from collections import namedtuple
 from openpyxl import load_workbook
 from hpsklearn import HyperoptEstimator
-from helper import scale, write_excel
+from utilities import scale, write_excel
 from hyperopt import hp, tpe
 from pathlib import Path
 from hpsklearn import  random_forest_classifier, extra_trees_classifier
@@ -26,14 +26,14 @@ def arg_parse():
                         help="The path to the labels of the training set in a csv format")
     parser.add_argument("-n", "--num_thread", required=False, default=50, type=int,
                         help="The number of threads to search for the hyperparameter space")
-    parser.add_argument("-s", "--scaler", required=True, default="robust", choices=("robust", "standard", "minmax"),
+    parser.add_argument("-s", "--scaler", required=False, default="robust", choices=("robust", "standard", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
     parser.add_argument("-e", "--excel", required=False,
                         help="The file to where the selected features are saved in excel format",
                         default="training_features/selected_features.xlsx")
     parser.add_argument("-k", "--kfold_parameters", required=False,
                         help="The parameters for the kfold in num_split:test_size format", default="5:0.2")
-    parser.add_argument("-ot", "--outliers", nargs="+",
+    parser.add_argument("-ot", "--outliers", nargs="+", required=False, default=(),
                         help="A list of outliers if any, the name should be the same as in the excel file with the "
                              "filtered features, you can also specify the path to a file in plain text format, each "
                              "record should be in a new line")
@@ -44,7 +44,6 @@ def arg_parse():
                         help="Weights to specify how relevant is the precision for the ranking of the different features")
     parser.add_argument("-rw", "--recall_weight", required=False, default=0.8, type=float,
                         help="Weights to specify how relevant is the recall for the ranking of the different features")
-
     parser.add_argument("-c0", "--class0_weight", required=False, default=0.5, type=float,
                         help="Weights to specify how relevant is the f1, precision and recall scores of the class 0"
                              " or the negative class for the ranking of the different features with respect to class 1 or "
@@ -164,16 +163,22 @@ class Classifier:
         transformed_x, scaler_dict, test_x = scale(self.scaler, X_train, X_test)
 
         return transformed_x, test_x, Y_test, Y_train
+
+    def _check_features(self, sheet):
+        with_split = True
+        features = pd.read_excel(self.features, index_col=0, sheet_name=sheet, header=[0, 1], engine='openpyxl')
+        if f"split_{0}" not in features.columns.unique(level=0):
+            with_split = False
+            features = pd.read_excel(self.features, index_col=0, sheet_name=sheet, header=0, engine='openpyxl')
+
+        return features, with_split
+
     def nested_cv(self, sheet):
         """Performs something similar to a nested cross-validation"""
         metric_scalar = []
         parameter_list = []
         split_index = []
-        with_split = True
-        features = pd.read_excel(self.features, index_col=0, sheet_name=sheet, header=[0, 1], engine='openpyxl')
-        if not f"split_{0}" in features.columns.unique(level=0):
-            with_split = False
-            features = pd.read_excel(self.features, index_col=0, sheet_name=sheet, header=0, engine='openpyxl')
+        features, with_split = self._check_features(sheet)
         skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=20)
         for ind, (train_index, test_index) in enumerate(skf.split(features, self.labels)):
             split_index.append(ind)
