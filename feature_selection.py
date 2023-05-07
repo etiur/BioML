@@ -8,13 +8,15 @@ from ITMO_FS.filters.unsupervised import MCFS, TraceRatioLaplacian
 # but it has its own errors. Use multiprocessing.get_context('fork') seems to solve the problem but only available in Unix
 # https://medium.com/devopss-hole/python-multiprocessing-pickle-issue-e2d35ccf96a9
 from multiprocessing import Pool
-from sklearn.ensemble import RandomForestClassifier as rfc
 import xgboost as xgb
 from sklearn.feature_selection import RFE
 from sklearn.linear_model import RidgeClassifier
 from sklearn.model_selection import StratifiedShuffleSplit
 from ITMO_FS.filters.multivariate import STIR, TraceRatioFisher
 from collections import defaultdict
+import shap
+import numpy as np
+import matplotlib.pyplot as plt
 
 
 def arg_parse():
@@ -43,11 +45,15 @@ def arg_parse():
     parser.add_argument("-st", "--rfe_steps", required=False, type=int,
                         help="The number of steps for the RFE algorithm, the more step the more precise "
                              "but also more time consuming", default=40)
+    parser.add_argument("-p", "--plot", required=False, action="store_false",
+                        help="Default to true, plot the feature importance using shap")
+    parser.add_argument("-pk", "--plot_num_features", required=False, default=20,type=int,
+                        help="How many features to include in the plot")
 
     args = parser.parse_args()
 
     return [args.features, args.label, args.variance_threshold, args.feature_range, args.num_thread, args.scaler,
-            args.excel, args.kfold_parameters, args.rfe_steps]
+            args.excel, args.kfold_parameters, args.rfe_steps, args.plot, args.plot_num_features]
 
 
 class FeatureSelection:
@@ -118,17 +124,7 @@ class FeatureSelection:
 
         return scores
 
-    def random_classification(self, X_train, Y_train):
-        rfc_classi = rfc(class_weight="balanced_subsample", random_state=27, max_features=0.7, max_samples=0.8,
-                         min_samples_split=5, n_estimators=200, n_jobs=self.num_thread)
-        rfc_classi.fit(X_train, Y_train)
-        gini_importance = rfc_classi.feature_importances_
-        gini_importance = pd.Series(gini_importance, index=X_train.columns)
-        gini_importance.sort_values(ascending=False, inplace=True)
-
-        return gini_importance, rfc_classi
-
-    def xgbtree(self, X_train, Y_train):
+    def xgbtree(self, X_train, Y_train, feature_names, plot=True, plot_num_features=20):
         """computes the feature importance"""
         XGBOOST = xgb.XGBClassifier(learning_rate=0.01, n_estimators=200, max_depth=4, min_child_weight=6, gamma=0,
                                     subsample=0.8, colsample_bytree=0.8, objective='binary:logistic',
@@ -138,8 +134,17 @@ class FeatureSelection:
         important_features = XGBOOST.get_booster().get_score(importance_type='gain')
         important_features = pd.Series(important_features)
         important_features.sort_values(ascending=False, inplace=True)
-
-        return important_features, XGBOOST
+        xgboost_explainer = shap.TreeExplainer(XGBOOST, X_train, feature_names=feature_names)
+        shap_values = xgboost_explainer.shap_values(X_train, Y_train)
+        shap_importance = pd.Series(np.abs(shap_values).mean(axis=0), X_train.columns).sort_values(ascending=False)
+        if plot and not (self.excel_file.parent/ f"shap_top_20_features.png").exists():
+            shap.summary_plot(shap_values, X_train, feature_names=feature_names, plot_type='bar', show=False,
+                              max_display=plot_num_features)
+            plt.savefig(self.excel_file.parent/ f"shap_top_20_features.png", dpi=800)
+            shap.summary_plot(shap_values, X_train, feature_names=X_train.columns, show=False,
+                              max_display=plot_num_features)
+            plt.savefig(self.excel_file.parent/ f"feature_influence_on_model_prediction.png", dpi=800)
+        return shap_importance.loc[lambda x: x > 0]
 
     @staticmethod
     def rfe_linear(X_train, Y_train, num_features, feature_names, step=30):
@@ -148,7 +153,7 @@ class FeatureSelection:
         features = rfe.get_feature_names_out(feature_names)
         return features
 
-    def parallel_filtering(self, X_train, Y_train, num_features, feature_names):
+    def parallel_filtering(self, X_train, Y_train, num_features, feature_names, plot=True, plot_num_features=20):
         results = {}
         filter_names = ["FitCriterion", "FRatio", "GiniIndex", "SymmetricUncertainty", "SpearmanCorr", "PearsonCorr",
                         "FechnerCorr", "KendallCorr", "ReliefF", "Chi2", "Anova", "LaplacianScore", "InformationGain",
@@ -169,13 +174,13 @@ class FeatureSelection:
             for num, res in enumerate(pool.starmap(self.unsupervised, arg_unsupervised)):
                 results[filter_unsupervised[num]] = res
 
-        results["xgbtree"] = self.xgbtree(X_train, Y_train)
-        results["random_forest"] = self.random_classification(X_train, Y_train)
+        results["xgbtree"] = self.xgbtree(X_train, Y_train, feature_names, plot, plot_num_features)
 
         results = pd.concat(results)
         return results
 
-    def construct_feature_set(self, num_features_min=20, num_features_max=None, step_range=10, rfe_step=40):
+    def construct_feature_set(self, num_features_min=20, num_features_max=None, step_range=10, rfe_step=40,
+                              plot=True, plot_num_features=20):
         features = self.preprocess()
         skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=20)
         feature_dict = defaultdict(dict)
@@ -191,7 +196,8 @@ class FeatureSelection:
             transformed, scaler_dict = scale(self.scaler, X_train)
             # for each split I do again feature selection and save all the features selected from different splits
             # but with the same selector in the same dictionary
-            ordered_features = self.parallel_filtering(transformed, Y_train, num_features_max, X_train.columns)
+            ordered_features = self.parallel_filtering(transformed, Y_train, num_features_max, X_train.columns,
+                                                       plot, plot_num_features)
             for num_features in num_feature_range:
                 for filters in ordered_features.index.get_level_values(0).unique():
                     feat = ordered_features.loc[filters]
@@ -204,7 +210,8 @@ class FeatureSelection:
             write_excel(self.excel_file, final_dict[key], key)
 
 def main():
-    features, label, variance_threshold, feature_range, num_thread, scaler, excel_file, kfold, rfe_steps = arg_parse()
+    features, label, variance_threshold, feature_range, num_thread, scaler, excel_file, kfold, rfe_steps, plot, \
+        plot_num_features = arg_parse()
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     feature_range = feature_range.split(":")
     if len(feature_range) > 1:
@@ -221,7 +228,7 @@ def main():
         num_features_max = None
     selection = FeatureSelection(features, label, excel_file, variance_threshold, num_thread, scaler,
                                  num_split, test_size)
-    selection.construct_feature_set(num_features_min, num_features_max, step, rfe_steps)
+    selection.construct_feature_set(num_features_min, num_features_max, step, rfe_steps, plot, plot_num_features)
 
 
 if __name__ == "__main__":
