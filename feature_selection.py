@@ -155,11 +155,12 @@ class FeatureSelection:
 
     def parallel_filtering(self, X_train, Y_train, num_features, feature_names, plot=True, plot_num_features=20):
         results = {}
-        filter_names = ["FitCriterion", "FRatio", "GiniIndex", "SymmetricUncertainty", "SpearmanCorr", "PearsonCorr",
+        filter_names = ("FitCriterion", "FRatio", "GiniIndex", "SymmetricUncertainty", "SpearmanCorr", "PearsonCorr",
                         "FechnerCorr", "KendallCorr", "ReliefF", "Chi2", "Anova", "LaplacianScore", "InformationGain",
-                        "ModifiedTScore", "SPEC"]
-        multivariate = ["STIR", "TraceRatioFisher"]
-        filter_unsupervised = ["TraceRatioLaplacian", "MCFS"]
+                        "ModifiedTScore", "SPEC")
+        filter_names = np.random.sample(filter_names, 10, replace=False)
+        multivariate = ("STIR", "TraceRatioFisher")
+        filter_unsupervised = ("TraceRatioLaplacian", "MCFS")
 
         arg_univariate = [(X_train, Y_train, num_features, feature_names, x) for x in filter_names]
         arg_multivariate = [(X_train, Y_train, num_features, feature_names, x) for x in multivariate]
@@ -186,7 +187,7 @@ class FeatureSelection:
         feature_dict = defaultdict(dict)
         if step_range:
             if not num_features_max:
-                num_features_max = int(len(features.index) / 2)
+                num_features_max = int(len(features.index) * 0.6)
             num_feature_range = range(num_features_min, num_features_max, step_range)
         else:
             num_feature_range = [num_features_min]
