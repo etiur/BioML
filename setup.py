@@ -21,4 +21,4 @@ setup(name="BioML", author="Ruite Xiang", author_email="ruite.xiang@bsc.es",
                         "hpsklearn@git+https://github.com/hyperopt/hyperopt-sklearn.git",
                         "numpy", "pandas", "matplotlib", "biopython", "pyod","scipy",
                         "ITMO_FS@git+https://github.com/ctlab/ITMO_FS.git", "xgboost", "shap", "lightgbm"],
-      keywords="bioprospecting, bioinformatics, machine learning, promiscuity")
+      keywords="bioprospecting, bioinformatics, machine learning")
