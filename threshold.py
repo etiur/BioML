@@ -27,7 +27,7 @@ class Threshold:
         else:
             data.loc[dataset <= threshold] = 1
             data.loc[dataset > threshold] = 0
-        print(Counter(dataset))
+        print(f"using the threshold {threshold} returns these proportions", Counter(dataset))
         return data
 
     def save_csv(self, threshold, greater, column_name='temperature'):
