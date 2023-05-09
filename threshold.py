@@ -1,12 +1,13 @@
-
+import pandas as pd
+from collections import Counter
 
 
 class Threshold:
 
-    def __init__(self) -> None:
-        pass
+    def __init__(self, csv_file, sep=","):
+        self.csv_file = pd.read_csv(csv_file, sep=sep, index_col=0)
 
-    def apply_threshold(self, dataset, threshold, greater, column_name='temperature'):
+    def apply_threshold(self, threshold, greater, column_name='temperature'):
         """
         Apply threshold to dataset
         :param dataset: dataset to apply threshold
@@ -15,23 +16,15 @@ class Threshold:
         :param column_name: column name to apply threshold
         :return: filtered dataset
         """
-
-        count_1, count_0 = 0, 0
+        dataset = self.csv_file[column_name].copy()
+        dataset = pd.to_numeric(dataset, errors="coerce")
+        dataset.dropna(inplace=True)
+        data = dataset.copy()
         if greater:
-            for row in dataset:
-                if row[column_name] > threshold:
-                    row[column_name] = 1
-                    count_1 += 1
-                else:
-                    row[column_name] = 0
-                    count_0 += 1
+            data.loc[dataset >= threshold] = 1
+            data.loc[dataset < threshold] = 0
         else:
-            for row in dataset:
-                if row[column_name] < threshold:
-                    row[column_name] = 1
-                    count_1 += 1
-                else:
-                    row[column_name] = 0
-                    count_0 += 1
-
-        return dataset, [count_0, count_1]
+            data.loc[dataset <= threshold] = 1
+            data.loc[dataset > threshold] = 0
+        print(Counter(dataset))
+        return data
