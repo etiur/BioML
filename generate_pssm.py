@@ -13,6 +13,7 @@ from Bio.SeqIO import FastaIO
 from subprocess import call
 import shlex
 
+
 def arg_parse():
     parser = argparse.ArgumentParser(description="creates a database and performs psiblast")
     parser.add_argument("-i", "--fasta_file", help="The fasta file path", required=False)
@@ -28,10 +29,12 @@ def arg_parse():
     parser.add_argument("-num", "--number", required=False, help="a number for the files", default="*")
     parser.add_argument("-iter", "--iterations", required=False, default=3, type=int, help="The number of iterations "
                                                                                          "in PSIBlast")
+    parser.add_argument("-Po", "--possum_dir", required=False, help="A path to the possum programme",
+                        default="/gpfs/projects/bsc72/ruite/enzyminer/POSSUM_Toolkit/")
     args = parser.parse_args()
 
     return [args.fasta_dir, args.pssm_dir, args.dbinp, args.dbout, args.num_thread, args.number,
-            args.fasta_file, args.iterations]
+            args.fasta_file, args.iterations, args.possum_dir]
 
 
 class ExtractPssm:
@@ -40,7 +43,7 @@ class ExtractPssm:
     """
     def __init__(self, num_threads=100, fasta_dir="fasta_files", pssm_dir="pssm", dbinp=None,
                  dbout="/gpfs/projects/bsc72/ruite/enzyminer/database/uniref50", fasta=None,
-                 iterations=3):
+                 iterations=3, possum_dir="/gpfs/projects/bsc72/ruite/enzyminer/POSSUM_Toolkit/"):
         """
         Initialize the ExtractPssm class
 
@@ -71,6 +74,7 @@ class ExtractPssm:
         else:
             self.base = "."
         self.iter = iterations
+        self.possum = possum_dir
 
     def makedata(self):
         """
