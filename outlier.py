@@ -11,9 +11,8 @@ from pyod.models.ecod import ECOD
 from openpyxl import load_workbook
 import pandas as pd
 from utilities import scale
-import dill
-dill.settings['recurse'] = True # solves the import problem for multiprocess in Windows (might be different in linux)
-from multiprocess.pool import Pool
+# solves the import problem for multiprocess in Windows (might be different in linux)
+from multiprocessing import Pool
 from pathlib import Path
 import argparse
 
