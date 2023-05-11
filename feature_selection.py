@@ -1,6 +1,4 @@
 import argparse
-import shutil
-
 import pandas as pd
 from utilities import scale, analyse_composition, write_excel
 from pathlib import Path
@@ -49,7 +47,7 @@ def arg_parse():
                              "but also more time consuming", default=40)
     parser.add_argument("-p", "--plot", required=False, action="store_false",
                         help="Default to true, plot the feature importance using shap")
-    parser.add_argument("-pk", "--plot_num_features", required=False, default=20,type=int,
+    parser.add_argument("-pk", "--plot_num_features", required=False, default=20, type=int,
                         help="How many features to include in the plot")
 
     args = parser.parse_args()
@@ -151,13 +149,13 @@ class FeatureSelection:
         xgboost_explainer = shap.TreeExplainer(XGBOOST, X_train, feature_names=feature_names)
         shap_values = xgboost_explainer.shap_values(X_train, Y_train)
         shap_importance = pd.Series(np.abs(shap_values).mean(axis=0), X_train.columns).sort_values(ascending=False)
-        if plot and not (self.excel_file.parent/ f"shap_top_20_features.png").exists():
+        if plot and not (self.excel_file.parent / f"shap_top_20_features.png").exists():
             shap.summary_plot(shap_values, X_train, feature_names=feature_names, plot_type='bar', show=False,
                               max_display=plot_num_features)
-            plt.savefig(self.excel_file.parent/ f"shap_top_20_features.png", dpi=800)
+            plt.savefig(self.excel_file.parent / f"shap_top_20_features.png", dpi=800)
             shap.summary_plot(shap_values, X_train, feature_names=X_train.columns, show=False,
                               max_display=plot_num_features)
-            plt.savefig(self.excel_file.parent/ f"feature_influence_on_model_prediction.png", dpi=800)
+            plt.savefig(self.excel_file.parent / f"feature_influence_on_model_prediction.png", dpi=800)
         return shap_importance.loc[lambda x: x > 0]
 
     @staticmethod
@@ -172,7 +170,7 @@ class FeatureSelection:
         filter_names = ("FitCriterion", "FRatio", "GiniIndex", "SymmetricUncertainty", "SpearmanCorr", "PearsonCorr",
                         "FechnerCorr", "KendallCorr", "ReliefF", "Chi2", "Anova", "LaplacianScore", "InformationGain",
                         "ModifiedTScore", "SPEC")
-        filter_names = np.random.sample(filter_names, 10, replace=False)
+        filter_names = np.random.choice(filter_names, 7, replace=False)
         multivariate = ("STIR", "TraceRatioFisher")
         filter_unsupervised = ("TraceRatioLaplacian", "MCFS")
 
@@ -223,6 +221,7 @@ class FeatureSelection:
         final_dict = {key: pd.concat(value, axis=1) for key, value in feature_dict.items()}
         for key in final_dict.keys():
             write_excel(self.excel_file, final_dict[key], key)
+
 
 def main():
     features, label, variance_threshold, feature_range, num_thread, scaler, excel_file, kfold, rfe_steps, plot, \
