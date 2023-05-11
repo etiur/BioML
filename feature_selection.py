@@ -1,4 +1,6 @@
 import argparse
+import shutil
+
 import pandas as pd
 from utilities import scale, analyse_composition, write_excel
 from pathlib import Path
@@ -67,6 +69,7 @@ class FeatureSelection:
         else:
             self.label = self.features[label]
             self.features.drop(label, axis=1, inplace=True)
+        self._check_label(label)
         self.variance_thres = variance_thres
         self.num_thread = num_thread
         self.scaler = scaler
@@ -74,6 +77,17 @@ class FeatureSelection:
         self.test_size = test_size
         self.excel_file = Path(excel_file)
         self.excel_file.parent.mkdir(parents=True, exist_ok=True)
+
+    def _check_label(self, label):
+        if len(self.label) != len(self.features):
+            try:
+                self.label = self.label.loc[self.features.index]
+                label_path = Path(label)
+                if not label_path.with_stem("labels_wrong").exists():
+                    label_path.rename(label_path.with_stem("labels_wrong"))
+                self.label.to_csv(label)
+            except KeyError:
+                raise KeyError("several names, keys or sequence ids in the fasta file are not present in the label")
 
     def preprocess(self):
         """
