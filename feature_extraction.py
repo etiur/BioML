@@ -578,7 +578,7 @@ def extract_and_filter(fasta_file=None, pssm_dir="pssm", ifeature_out="ifeature_
         filtering = ReadFeatures(fasta_file, ifeature_out, possum_out, extracted_out, types, type_file,
                                  excel_feature_file, selected)
         every_features = filtering.read()
-        every_features.to_csv(f"{extracted_out}/every_feature.csv")
+        every_features.to_csv(f"{extracted_out}/every_features.csv")
     # feature extraction for prediction
     if "filter" in purpose:
         # feature filtering
