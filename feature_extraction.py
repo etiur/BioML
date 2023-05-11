@@ -10,7 +10,6 @@ from utilities import write_excel
 from os.path import basename
 from multiprocessing import Pool
 from pathlib import Path
-import subprocess
 
 
 def arg_parse():
@@ -33,8 +32,9 @@ def arg_parse():
                         help="The path to where the selected features from training are saved in excel format, it will"
                              "be used to select specific columns from all the generated features for the new data",
                         default="training_features/selected_features.xlsx")
-    parser.add_argument("-on", "--purpose", nargs="+", choices=("extract", "read", "filter"), default=("extract", "read"),
-                        help="Choose the operation between extracting, reading for training or filtering for prediction")
+    parser.add_argument("-on", "--purpose", nargs="+", choices=("extract", "read", "filter"),
+                        default=("extract", "read"),
+                        help="Choose the operation between extracting, reading for training or filtering")
     parser.add_argument("-lg", "--long", required=False, help="true when restarting from the long commands",
                         action="store_true")
     parser.add_argument("-r", "--run", required=False, choices=("possum", "ifeature", "both"), default="both",
@@ -42,7 +42,7 @@ def arg_parse():
     parser.add_argument("-n", "--num_thread", required=False, default=100, type=int,
                         help="The number of threads to use for the generation of pssm profiles")
     parser.add_argument("-t", "--type", required=False, default="all", nargs="+", choices=("all", "APAAC", "PAAC",
-                        "CKSAAGP","Moran", "Geary", "NMBroto", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC",
+                        "CKSAAGP", "Moran", "Geary", "NMBroto", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC",
                         "QSOrder", "SOCNumber", "GAAC", "KSCTriad", "aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm",
                         "dpc_pssm", "edp", "eedp", "rpm_pssm", "k_separated_bigrams_pssm", "pssm_ac", "pssm_cc",
                         "pssm_composition", "rpssm", "s_fpssm", "smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9",
@@ -52,9 +52,9 @@ def arg_parse():
     parser.add_argument("-s", "--sheets", required=False, nargs="+",
                         help="Names or index of the selected sheets from the features and the "
                              "index of the models in this format-> sheet (name, index):index model1,index model2 "
-                             "without the spaces. If only index or name of the sheets, it is assumed that all kfold models "
-                             "are selected. It is possible to have one sheet with kfold indices but in another ones "
-                             "without")
+                             "without the spaces. If only index or name of the sheets, it is assumed that all kfold "
+                             "models are selected. It is possible to have one sheet with kfold indices but in another "
+                             "ones without")
 
     args = parser.parse_args()
 
@@ -105,7 +105,7 @@ class ExtractFeatures:
                           "k_separated_bigrams_pssm", "pssm_ac", "pssm_composition", "rpssm", "s_fpssm", "tpc"]
         self.pse_pssm = ["pse_pssm:1", "pse_pssm:2", "pse_pssm:3"]
         self.smoothed_pssm = ["smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9"]
-        self.ifea_short = ["APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC","QSOrder",
+        self.ifea_short = ["APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC", "QSOrder",
                            "SOCNumber", "GAAC", "KSCTriad"]
         self.pos_long = ["pssm_cc", "tri_gram_pssm"]
         self. ifea_long = ["Moran", "Geary", "NMBroto"]
@@ -136,7 +136,8 @@ class ExtractFeatures:
         else:
             print("Extracting all features for training new models only")
 
-    def _batch_iterable(self, iterable, batch_size):
+    @staticmethod
+    def _batch_iterable(iterable, batch_size):
         length = len(iterable)
         for ndx in range(0, length, batch_size):
             yield iterable[ndx:min(ndx + batch_size, length)]
@@ -398,7 +399,7 @@ class ReadFeatures:
         self.pse_pssm = ["pse_pssm:1", "pse_pssm:2", "pse_pssm:3"]
         self.smoothed_pssm = ["smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9"]
 
-        self. ifea = ["APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC","QSOrder",
+        self. ifea = ["APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC", "QSOrder",
                       "SOCNumber", "GAAC", "KSCTriad", "Moran", "Geary", "NMBroto"]
         if type_file:
             with open(type_file) as file:
@@ -453,12 +454,12 @@ class ReadFeatures:
             for x, v in feat.items():
                 val = pd.concat(v)
                 val.columns = [f"{c}_{x}" for c in val.columns]
-                feat[x] = v
+                feat[x] = val
         else:
             for x, v in feat.items():
                 val = v[0]
                 val.columns = [f"{c}_{x}" for c in val.columns]
-                feat[x] = v
+                feat[x] = val
 
         all_data = pd.concat(feat.values(), axis=1)
         # change the column names
@@ -561,7 +562,7 @@ def extract_and_filter(fasta_file=None, pssm_dir="pssm", ifeature_out="ifeature_
     possum_out: str, optional
         A directory for the extraction results from possum
     filtered_out: str, optional
-        A directory to store the filtered features from all thegenerated features
+        A directory to store the filtered features from all the generated features
     thread: int
         The number of poolworkers to use to run the programmes
     run: str
@@ -594,6 +595,7 @@ def main():
 
     extract_and_filter(fasta_file, pssm_dir, ifeature_out, possum_dir, ifeature_dir, possum_out,
                        extracted_out, purpose, long, num_thread, run, types, type_file, excel, sheets)
+
 
 if __name__ == "__main__":
     # Run this if this file is executed from command line but not if is imported as API
