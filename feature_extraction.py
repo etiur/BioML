@@ -1,5 +1,4 @@
 import argparse
-import os
 import shutil
 from Bio import SeqIO
 from Bio.SeqIO import FastaIO
@@ -97,8 +96,8 @@ class ExtractFeatures:
         self.pssm_dir = pssm_dir
         self.ifeature = f"{ifeature_dir}/iFeature.py"
         self.possum = f"{possum_dir}/possum_standalone.pl"
-        self.ifeature_out = ifeature_out
-        self.possum_out = possum_out
+        self.ifeature_out = Path(ifeature_out)
+        self.possum_out = Path(possum_out)
         self.thread = thread
         self.run = run
         self.pos_short = ["aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm", "dpc_pssm", "edp", "eedp", "rpm_pssm",
@@ -339,10 +338,8 @@ class ExtractFeatures:
         long:
             If to run only the longer features
         """
-        if not os.path.exists(f"{self.possum_out}"):
-            os.makedirs(f"{self.possum_out}")
-        if not os.path.exists(f"{self.ifeature_out}"):
-            os.makedirs(f"{self.ifeature_out}")
+        self.possum_out.mkdir(parents=True, exist_ok=True)
+        self.ifeature_out.mkdir(parents=True, exist_ok=True)
         name = self.fasta_file.parent/"group_1.fasta"
         if not name.exists():
             self._separate_bunch()
