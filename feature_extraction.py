@@ -18,8 +18,6 @@ def arg_parse():
     parser.add_argument("-i", "--fasta_file", help="The fasta file path", required=True)
     parser.add_argument("-p", "--pssm_dir", help="The pssm files directory's path", required=False,
                         default="pssm")
-    parser.add_argument("-f", "--fasta_dir", required=False, help="The directory for the fasta files",
-                        default="fasta_files")
     parser.add_argument("-id", "--ifeature_dir", required=False, help="Path to the iFeature programme folder",
                         default="/gpfs/projects/bsc72/ruite/enzyminer/iFeature")
     parser.add_argument("-Po", "--possum_dir", required=False, help="A path to the possum programme",
@@ -50,7 +48,7 @@ def arg_parse():
                         "pssm_composition", "rpssm", "s_fpssm", "smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9",
                         "tpc", "tri_gram_pssm", "pse_pssm:1", "pse_pssm:2", "pse_pssm:3"),
                         help="A list of the features to extract")
-    parser.add_argument("-tf", "--type_file", required=False, help="the path to the a file with the feature names")
+    parser.add_argument("-tf", "--type_file", required=False, help="the path to the file with the feature names")
     parser.add_argument("-s", "--sheets", required=False, nargs="+",
                         help="Names or index of the selected sheets from the features and the "
                              "index of the models in this format-> sheet (name, index):index model1,index model2 "
@@ -60,7 +58,7 @@ def arg_parse():
 
     args = parser.parse_args()
 
-    return [args.fasta_file, args.pssm_dir, args.fasta_dir, args.ifeature_dir, args.possum_dir, args.ifeature_out,
+    return [args.fasta_file, args.pssm_dir, args.ifeature_dir, args.possum_dir, args.ifeature_out,
             args.possum_out, args.extracted_out, args.purpuse, args.long, args.run, args.num_thread, args.type,
             args.type_file, args.sheets, args.excel]
 
@@ -70,7 +68,7 @@ class ExtractFeatures:
     A class to extract features using Possum and iFeatures
     """
 
-    def __init__(self, fasta_file, pssm_dir="pssm", fasta_dir="fasta_files",
+    def __init__(self, fasta_file, pssm_dir="pssm",
                  ifeature_out="ifeature_features", possum_out="possum_features",
                  ifeature_dir="/gpfs/projects/bsc72/ruite/enzyminer/iFeature",
                  thread=12, run="both", possum_dir="/gpfs/projects/bsc72/ruite/enzyminer/POSSUM_Toolkit", types="all",
@@ -84,8 +82,6 @@ class ExtractFeatures:
             The fasta file to be analysed
         pssm_dir: str, optional
             The directory of the generated pssm files
-        fasta_dir: str, optional
-            The directory to store the new fasta files
         ifeature: str, optional
             A path to the iFeature programme
         ifeature_out: str, optional
@@ -99,7 +95,6 @@ class ExtractFeatures:
         if (self.fasta_file.parent / "no_short.fasta").exists():
             self.fasta_file = self.fasta_file.parent / "no_short.fasta"
         self.pssm_dir = pssm_dir
-        self.fasta_dir = fasta_dir
         self.ifeature = f"{ifeature_dir}/iFeature.py"
         self.possum = f"{possum_dir}/possum_standalone.pl"
         self.ifeature_out = ifeature_out
@@ -545,7 +540,7 @@ class ReadFeatures:
             write_excel(self.extracted_out/"new_features", pd.concat(feature_dict, axis=1), f"{sheet}")
 
 
-def extract_and_filter(fasta_file=None, pssm_dir="pssm", fasta_dir="fasta_files", ifeature_out="ifeature_features",
+def extract_and_filter(fasta_file=None, pssm_dir="pssm", ifeature_out="ifeature_features",
                        possum_dir="/gpfs/home/bsc72/bsc72661/feature_extraction/POSSUM_Toolkit",
                        ifeature_dir="/gpfs/projects/bsc72/ruite/enzyminer/iFeature", possum_out="possum_features",
                        extracted_out="training_features", purpose=("extract", "read"), long=False, thread=100,
@@ -559,8 +554,6 @@ def extract_and_filter(fasta_file=None, pssm_dir="pssm", fasta_dir="fasta_files"
         The fasta file to be analysed
     pssm_dir: str, optional
         The directory of the generated pssm files
-    fasta_dir: str, optional
-        The directory to store the new fasta files
     ifeature: str, optional
         A path to the iFeature programme
     ifeature_out: str, optional
@@ -578,7 +571,7 @@ def extract_and_filter(fasta_file=None, pssm_dir="pssm", fasta_dir="fasta_files"
     """
     # Feature extraction for both training or prediction later
     if "extract" in purpose:
-        extract = ExtractFeatures(fasta_file, pssm_dir, fasta_dir, ifeature_out, possum_out, ifeature_dir, thread, run,
+        extract = ExtractFeatures(fasta_file, pssm_dir, ifeature_out, possum_out, ifeature_dir, thread, run,
                                   possum_dir, types, type_file)
         extract.run_extraction_parallel(long)
     # feature reading for the training
@@ -598,10 +591,10 @@ def extract_and_filter(fasta_file=None, pssm_dir="pssm", fasta_dir="fasta_files"
 
 
 def main():
-    fasta_file, pssm_dir, fasta_dir, ifeature_dir, possum_dir, ifeature_out, possum_out, extracted_out, purpose, \
+    fasta_file, pssm_dir, ifeature_dir, possum_dir, ifeature_out, possum_out, extracted_out, purpose, \
     long, run, num_thread, types, type_file, sheets, excel = arg_parse()
 
-    extract_and_filter(fasta_file, pssm_dir, fasta_dir, ifeature_out, possum_dir, ifeature_dir, possum_out,
+    extract_and_filter(fasta_file, pssm_dir, ifeature_out, possum_dir, ifeature_dir, possum_out,
                        extracted_out, purpose, long, num_thread, run, types, type_file, excel, sheets)
 
 if __name__ == "__main__":
