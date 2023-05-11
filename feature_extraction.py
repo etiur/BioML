@@ -43,7 +43,7 @@ def arg_parse():
                         help="The number of threads to use for the generation of pssm profiles")
     parser.add_argument("-t", "--type", required=False, default="all", nargs="+", choices=("all", "APAAC", "PAAC",
                         "CKSAAGP","Moran", "Geary", "NMBroto", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC",
-                        "QSOrder", "SOCNumber", "GAAC", "KSCtriad", "aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm",
+                        "QSOrder", "SOCNumber", "GAAC", "KSCTriad", "aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm",
                         "dpc_pssm", "edp", "eedp", "rpm_pssm", "k_separated_bigrams_pssm", "pssm_ac", "pssm_cc",
                         "pssm_composition", "rpssm", "s_fpssm", "smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9",
                         "tpc", "tri_gram_pssm", "pse_pssm:1", "pse_pssm:2", "pse_pssm:3"),
@@ -59,7 +59,7 @@ def arg_parse():
     args = parser.parse_args()
 
     return [args.fasta_file, args.pssm_dir, args.ifeature_dir, args.possum_dir, args.ifeature_out,
-            args.possum_out, args.extracted_out, args.purpuse, args.long, args.run, args.num_thread, args.type,
+            args.possum_out, args.extracted_out, args.purpose, args.long, args.run, args.num_thread, args.type,
             args.type_file, args.sheets, args.excel]
 
 
@@ -106,7 +106,7 @@ class ExtractFeatures:
         self.pse_pssm = ["pse_pssm:1", "pse_pssm:2", "pse_pssm:3"]
         self.smoothed_pssm = ["smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9"]
         self.ifea_short = ["APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC","QSOrder",
-                           "SOCNumber", "GAAC", "KSCtriad"]
+                           "SOCNumber", "GAAC", "KSCTriad"]
         self.pos_long = ["pssm_cc", "tri_gram_pssm"]
         self. ifea_long = ["Moran", "Geary", "NMBroto"]
         if type_file:
@@ -401,7 +401,7 @@ class ReadFeatures:
         self.smoothed_pssm = ["smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9"]
 
         self. ifea = ["APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC","QSOrder",
-                      "SOCNumber", "GAAC", "KSCtriad", "Moran", "Geary", "NMBroto"]
+                      "SOCNumber", "GAAC", "KSCTriad", "Moran", "Geary", "NMBroto"]
         if type_file:
             with open(type_file) as file:
                 types = [x.strip() for x in file.readlines()]
