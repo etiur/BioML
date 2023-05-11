@@ -10,6 +10,7 @@ from utilities import write_excel
 from os.path import basename
 from multiprocessing import Pool
 from pathlib import Path
+import subprocess
 
 
 def arg_parse():
@@ -18,9 +19,9 @@ def arg_parse():
     parser.add_argument("-p", "--pssm_dir", help="The pssm files directory's path", required=False,
                         default="pssm")
     parser.add_argument("-id", "--ifeature_dir", required=False, help="Path to the iFeature programme folder",
-                        default="/gpfs/projects/bsc72/ruite/enzyminer/iFeature")
+                        default="iFeature")
     parser.add_argument("-Po", "--possum_dir", required=False, help="A path to the possum programme",
-                        default="/gpfs/projects/bsc72/ruite/enzyminer/POSSUM_Toolkit/")
+                        default="POSSUM_Toolkit/")
     parser.add_argument("-io", "--ifeature_out", required=False, help="The directory where the ifeature features are",
                         default="ifeature_features")
     parser.add_argument("-po", "--possum_out", required=False, help="The directory for the possum extractions",
@@ -69,8 +70,8 @@ class ExtractFeatures:
 
     def __init__(self, fasta_file, pssm_dir="pssm",
                  ifeature_out="ifeature_features", possum_out="possum_features",
-                 ifeature_dir="/gpfs/projects/bsc72/ruite/enzyminer/iFeature",
-                 thread=12, run="both", possum_dir="/gpfs/projects/bsc72/ruite/enzyminer/POSSUM_Toolkit", types="all",
+                 ifeature_dir="iFeature",
+                 thread=12, run="both", possum_dir="POSSUM_Toolkit", types="all",
                  type_file=None):
         """
         Initialize the ExtractFeatures class

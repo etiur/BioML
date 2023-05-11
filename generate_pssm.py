@@ -23,14 +23,14 @@ def arg_parse():
                         default="pssm")
     parser.add_argument("-di", "--dbinp", required=False, help="The path to the fasta files to create the database")
     parser.add_argument("-do", "--dbout", required=False, help="The name for the created database",
-                        default="/gpfs/projects/bsc72/ruite/enzyminer/database/uniref50")
+                        default="database/uniref50")
     parser.add_argument("-n", "--num_thread", required=False, default=100, type=int,
                         help="The number of threads to use for the generation of pssm profiles")
     parser.add_argument("-num", "--number", required=False, help="a number for the files", default="*")
     parser.add_argument("-iter", "--iterations", required=False, default=3, type=int, help="The number of iterations "
                                                                                          "in PSIBlast")
     parser.add_argument("-Po", "--possum_dir", required=False, help="A path to the possum programme",
-                        default="/gpfs/projects/bsc72/ruite/enzyminer/POSSUM_Toolkit/")
+                        default="POSSUM_Toolkit/")
     args = parser.parse_args()
 
     return [args.fasta_dir, args.pssm_dir, args.dbinp, args.dbout, args.num_thread, args.number,
