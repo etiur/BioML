@@ -1,5 +1,5 @@
 from pyod.models.abod import ABOD
-#from pyod.models.cblof import CBLOF
+# from pyod.models.cblof import CBLOF
 from pyod.models.feature_bagging import FeatureBagging
 from pyod.models.hbos import HBOS
 from pyod.models.iforest import IForest
@@ -30,19 +30,19 @@ def arg_parse():
                         help="The number of threads to use for the parallelization of outlier detection")
     parser.add_argument("-s", "--scaler", required=False, default="robust", choices=("robust", "standard", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
-    parser.add_argument("-c", "--contamination", required=False, default=0.06, type=float, help="The expected number of outliers")
+    parser.add_argument("-c", "--contamination", required=False, default=0.06, type=float,
+                        help="The expected % of outliers")
 
     args = parser.parse_args()
 
     return [args.excel, args.outlier, args.scaler, args.contamination, args.num_thread]
 
 
-
 class OutlierDetection:
     def __init__(self, feature_file="training_features/selected_features.xlsx", output="results/outliers.csv",
                  scaler="robust", contamination=0.06, num_thread=10):
         self.scaler = scaler
-        self.contamination=contamination
+        self.contamination = contamination
         self.feature_file = feature_file
         self.num_threads = num_thread
         self.book = load_workbook(feature_file)
@@ -58,14 +58,14 @@ class OutlierDetection:
         iforest = IForest(n_estimators=200, random_state=0, max_features=0.8, contamination=self.contamination)
         knn = KNN(method="mean", contamination=self.contamination)
         bagging = FeatureBagging(LOF(), random_state=20, contamination=self.contamination)
-        #cblof = CBLOF(random_state=10)
+        # cblof = CBLOF(random_state=10)
         hbos = HBOS(contamination=self.contamination)
         abod = ABOD(contamination=self.contamination)
         pca = PCA(contamination=self.contamination)
         ocsvm = OCSVM(contamination=self.contamination)
         ecod = ECOD(contamination=self.contamination)
         classifiers = {"iforest": iforest, "knn": knn, "bagging": bagging, "hbos": hbos, "abod": abod,
-                       "pca": pca, "ocsvm":ocsvm, "ecod": ecod}
+                       "pca": pca, "ocsvm": ocsvm, "ecod": ecod}
 
         prediction = {}
         raw = {}
@@ -79,11 +79,13 @@ class OutlierDetection:
 
         return prediction
 
-    def counting(self, prediction):
+    @staticmethod
+    def counting(prediction, index):
 
         pred = {key: pd.DataFrame(value).T for key, value in prediction.items()}
         pred = pd.concat(pred)
         summed = pred.sum()
+        summed.index = index
         summed.sort_values(ascending=False, inplace=True)
         return summed
 
@@ -110,7 +112,7 @@ class OutlierDetection:
         excel_data = {key: x.sample(frac=1, random_state=0) for key, x in excel_data.items()}
         scaled_data = []
         for x in excel_data.values():
-            transformed_x, scaler_dict =  scale(self.scaler, x)
+            transformed_x, scaler_dict = scale(self.scaler, x)
             scaled_data.append(transformed_x)
         # parallelized
         scaled_data = random.sample(scaled_data, min(40, len(scaled_data)))
@@ -118,7 +120,7 @@ class OutlierDetection:
             for num, res in enumerate(pool.map(self.outlier, scaled_data)):
                 results[book[num]] = res
 
-        summed = self.counting(results)
+        summed = self.counting(results, x.index)
         summed.to_csv(self.output)
         return summed
 
@@ -126,7 +128,8 @@ class OutlierDetection:
 def main():
     excel, outlier, scaler, contamination, num_thread = arg_parse()
     detection = OutlierDetection(excel, outlier, scaler, contamination, num_thread)
-    summed = detection.run()
+    detection.run()
+
 
 if __name__ == "__main__":
     # Run this if this file is executed from command line but not if is imported as API
