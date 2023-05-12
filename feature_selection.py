@@ -7,7 +7,6 @@ from ITMO_FS.filters.unsupervised import MCFS, TraceRatioLaplacian
 # Multiprocess instead of Multiprocessing solves the pickle problem in Windows (might be different in linux)
 # but it has its own errors. Use multiprocessing.get_context('fork') seems to solve the problem but only available in Unix
 # https://medium.com/devopss-hole/python-multiprocessing-pickle-issue-e2d35ccf96a9
-from multiprocessing import Pool
 import xgboost as xgb
 from sklearn.feature_selection import RFE
 from sklearn.linear_model import RidgeClassifier
@@ -17,6 +16,8 @@ from collections import defaultdict
 import shap
 import numpy as np
 import matplotlib.pyplot as plt
+import random
+from multiprocessing import get_context
 
 
 def arg_parse():
@@ -57,8 +58,8 @@ def arg_parse():
 
 
 class FeatureSelection:
-    def __init__(self, features, label, excel_file, variance_thres=7, num_thread=10, scaler="robust", num_split=5,
-                 test_size=0.2):
+    def __init__(self, label, excel_file, features="training_features/every_features.csv", variance_thres=7,
+                 num_thread=10, scaler="robust", num_split=5, test_size=0.2):
         print("Reading the features")
         self.features = pd.read_csv(f"{features}", index_col=0)
         analyse_composition(self.features)
@@ -118,9 +119,10 @@ class FeatureSelection:
     def multivariate(X_train, Y_train, num_features, feature_names, filter_name):
         if filter_name == "STIR":
             ufilter = STIR(num_features, k=5).fit(X_train, Y_train)
+            scores = {x: v for x, v in zip(feature_names, ufilter.feature_scores_)}
         else:
             ufilter = TraceRatioFisher(num_features).fit(X_train, Y_train)
-        scores = {x: v for x, v in zip(feature_names, ufilter.feature_scores_)}
+            scores = {x: v for x, v in zip(feature_names, ufilter.score_)}
         scores = pd.Series(dict(sorted(scores.items(), key=lambda items: items[1], reverse=True)))
         return scores
 
@@ -136,7 +138,7 @@ class FeatureSelection:
 
         return scores
 
-    def xgbtree(self, X_train, Y_train, feature_names, plot=True, plot_num_features=20):
+    def xgbtree(self, X_train, Y_train, feature_names, split_ind, plot=True, plot_num_features=20):
         """computes the feature importance"""
         XGBOOST = xgb.XGBClassifier(learning_rate=0.01, n_estimators=200, max_depth=4, min_child_weight=6, gamma=0,
                                     subsample=0.8, colsample_bytree=0.8, objective='binary:logistic',
@@ -148,15 +150,20 @@ class FeatureSelection:
         important_features.sort_values(ascending=False, inplace=True)
         xgboost_explainer = shap.TreeExplainer(XGBOOST, X_train, feature_names=feature_names)
         shap_values = xgboost_explainer.shap_values(X_train, Y_train)
-        shap_importance = pd.Series(np.abs(shap_values).mean(axis=0), X_train.columns).sort_values(ascending=False)
-        if plot and not (self.excel_file.parent / f"shap_top_20_features.png").exists():
+        shap_importance = pd.Series(np.abs(shap_values).mean(axis=0), feature_names).sort_values(ascending=False)
+        shap_importance = shap_importance.loc[lambda x: x > 0]
+
+        if plot:
+            shap_dir = (self.excel_file.parent / "shap_features")
+            shap_dir.mkdir(parents=True, exist_ok=True)
+            shap_importance.to_csv(shap_dir / f"shap_importance_kfold{split_ind}.csv")
             shap.summary_plot(shap_values, X_train, feature_names=feature_names, plot_type='bar', show=False,
                               max_display=plot_num_features)
-            plt.savefig(self.excel_file.parent / f"shap_top_20_features.png", dpi=800)
-            shap.summary_plot(shap_values, X_train, feature_names=X_train.columns, show=False,
+            plt.savefig(shap_importance / f"shap_kfold{split_ind}_top_{plot_num_features}_features.png", dpi=800)
+            shap.summary_plot(shap_values, X_train, feature_names=feature_names, show=False,
                               max_display=plot_num_features)
-            plt.savefig(self.excel_file.parent / f"feature_influence_on_model_prediction.png", dpi=800)
-        return shap_importance.loc[lambda x: x > 0]
+            plt.savefig(self.excel_file.parent / f"feature_influence_on_model_prediction_kfold{split_ind}.png", dpi=800)
+        return shap_importance
 
     @staticmethod
     def rfe_linear(X_train, Y_train, num_features, feature_names, step=30):
@@ -165,29 +172,32 @@ class FeatureSelection:
         features = rfe.get_feature_names_out(feature_names)
         return features
 
-    def parallel_filtering(self, X_train, Y_train, num_features, feature_names, plot=True, plot_num_features=20):
+    def parallel_filtering(self, X_train, Y_train, num_features, feature_names, split_ind, plot=True, plot_num_features=20):
         results = {}
         filter_names = ("FitCriterion", "FRatio", "GiniIndex", "SymmetricUncertainty", "SpearmanCorr", "PearsonCorr",
                         "FechnerCorr", "KendallCorr", "ReliefF", "Chi2", "Anova", "LaplacianScore", "InformationGain",
                         "ModifiedTScore", "SPEC")
-        filter_names = np.random.choice(filter_names, 7, replace=False)
+        filter_names = random.sample(filter_names, 7)
         multivariate = ("STIR", "TraceRatioFisher")
         filter_unsupervised = ("TraceRatioLaplacian", "MCFS")
 
         arg_univariate = [(X_train, Y_train, num_features, feature_names, x) for x in filter_names]
         arg_multivariate = [(X_train, Y_train, num_features, feature_names, x) for x in multivariate]
         arg_unsupervised = [(X_train, num_features, feature_names, x) for x in filter_unsupervised]
-        with Pool(self.num_thread) as pool:
+        with get_context("spawn").Pool(self.num_thread) as pool:
             for num, res in enumerate(pool.starmap(self.univariate, arg_univariate)):
+                print(f"univariate filter: {filter_names[num]}")
                 results[filter_names[num]] = res
 
             for num, res in enumerate(pool.starmap(self.multivariate, arg_multivariate)):
+                print(f"multivariate filter: {multivariate[num]}")
                 results[multivariate[num]] = res
 
             for num, res in enumerate(pool.starmap(self.unsupervised, arg_unsupervised)):
+                print(f"unsupervised filter: {filter_unsupervised[num]}")
                 results[filter_unsupervised[num]] = res
 
-        results["xgbtree"] = self.xgbtree(X_train, Y_train, feature_names, plot, plot_num_features)
+        results["xgbtree"] = self.xgbtree(X_train, Y_train, feature_names, split_ind, plot, plot_num_features)
 
         results = pd.concat(results)
         return results
@@ -204,20 +214,24 @@ class FeatureSelection:
         else:
             num_feature_range = [num_features_min]
         for i, (train_index, test_index) in enumerate(skf.split(features, self.label)):
+            print(f"kfold {i}")
             X_train = features.iloc[train_index]
-            Y_train = self.label.iloc[train_index]
+            Y_train = self.label.iloc[train_index].values.ravel()
+            print("scaling the features")
             transformed, scaler_dict = scale(self.scaler, X_train)
             # for each split I do again feature selection and save all the features selected from different splits
             # but with the same selector in the same dictionary
-            ordered_features = self.parallel_filtering(transformed, Y_train, num_features_max, X_train.columns,
+            print("filtering the features")
+            ordered_features = self.parallel_filtering(transformed, Y_train, num_features_max, X_train.columns, i,
                                                        plot, plot_num_features)
             for num_features in num_feature_range:
+                print(f"generating a feature set of {num_features} dimensions")
                 for filters in ordered_features.index.get_level_values(0).unique():
                     feat = ordered_features.loc[filters]
                     feature_dict[f"{filters}_{num_features}"][f"split_{i}"] = features[feat.index[:num_features]]
                 rfe_results = self.rfe_linear(transformed, Y_train, num_features, X_train.columns, rfe_step)
                 feature_dict[f"rfe_{num_features}"][f"split_{i}"] = features[rfe_results]
-
+        
         final_dict = {key: pd.concat(value, axis=1) for key, value in feature_dict.items()}
         for key in final_dict.keys():
             write_excel(self.excel_file, final_dict[key], key)
@@ -240,7 +254,7 @@ def main():
         num_features_min = int(feature_range[0])
         step = None
         num_features_max = None
-    selection = FeatureSelection(features, label, excel_file, variance_threshold, num_thread, scaler,
+    selection = FeatureSelection(label, excel_file, features, variance_threshold, num_thread, scaler,
                                  num_split, test_size)
     selection.construct_feature_set(num_features_min, num_features_max, step, rfe_steps, plot, plot_num_features)
 

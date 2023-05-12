@@ -8,6 +8,7 @@ import time
 import pandas as pd
 from utilities import write_excel
 from os.path import basename
+from multiprocessing import get_context
 from multiprocessing import Pool
 from pathlib import Path
 
@@ -347,7 +348,7 @@ class ExtractFeatures:
             self._separate_bunch()
         file = list(self.fasta_file.parent.glob(f"group_*.fasta"))
         file.sort(key=lambda x: int(basename(x).replace(".fasta", "").split("_")[1]))
-        with Pool(processes=self.thread) as pool:
+        with get_context("spawn").Pool(processes=self.thread) as pool:
             if self.run == "both":
                 if not long:
                     pool.map(self.extraction_all, file)
