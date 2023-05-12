@@ -5,7 +5,7 @@ from Bio.SeqIO import FastaIO
 import shlex
 from subprocess import Popen, PIPE
 import time
-import modin.pandas as pd
+import pandas as pd
 from utilities import write_excel
 from os.path import basename
 from multiprocessing import get_context
