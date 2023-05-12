@@ -5,7 +5,8 @@ from pathlib import Path
 from ITMO_FS.filters.univariate import select_k_best, UnivariateFilter, SPEC
 from ITMO_FS.filters.unsupervised import MCFS, TraceRatioLaplacian
 # Multiprocess instead of Multiprocessing solves the pickle problem in Windows (might be different in linux)
-# but it has its own errors. Use multiprocessing.get_context('fork') seems to solve the problem but only available in Unix
+# but it has its own errors. Use multiprocessing.get_context('fork') seems to solve the problem but only available
+# in Unix. Altough now it seems that with fork the programme can hang indefinitely so use spaw instead
 # https://medium.com/devopss-hole/python-multiprocessing-pickle-issue-e2d35ccf96a9
 import xgboost as xgb
 from sklearn.feature_selection import RFE
@@ -17,7 +18,7 @@ import shap
 import numpy as np
 import matplotlib.pyplot as plt
 import random
-from multiprocessing import get_context
+from multiprocessing import get_context # https://pythonspeed.com/articles/python-multiprocessing/
 
 
 def arg_parse():
@@ -75,6 +76,8 @@ class FeatureSelection:
         self.num_splits = num_split
         self.test_size = test_size
         self.excel_file = Path(excel_file)
+        if not str(self.excel_file).endswith(".xlsx"):
+            self.excel_file = self.excel_file.with_suffix(".xlsx")
         self.excel_file.parent.mkdir(parents=True, exist_ok=True)
 
     def _check_label(self, label):
@@ -233,8 +236,9 @@ class FeatureSelection:
                 feature_dict[f"rfe_{num_features}"][f"split_{i}"] = features[rfe_results]
         
         final_dict = {key: pd.concat(value, axis=1) for key, value in feature_dict.items()}
-        for key in final_dict.keys():
-            write_excel(self.excel_file, final_dict[key], key)
+        with pd.ExcelWriter(self.excel_file, mode="w", engine="openpyxl") as writer:
+            for key in final_dict.keys():
+                write_excel(writer, final_dict[key], key)
 
 
 def main():
