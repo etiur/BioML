@@ -1,5 +1,5 @@
 from pyod.models.abod import ABOD
-from pyod.models.cblof import CBLOF
+#from pyod.models.cblof import CBLOF
 from pyod.models.feature_bagging import FeatureBagging
 from pyod.models.hbos import HBOS
 from pyod.models.iforest import IForest
@@ -13,6 +13,7 @@ import pandas as pd
 from utilities import scale
 from multiprocessing import get_context
 from pathlib import Path
+import random
 import argparse
 
 
@@ -57,13 +58,13 @@ class OutlierDetection:
         iforest = IForest(n_estimators=200, random_state=0, max_features=0.8, contamination=self.contamination)
         knn = KNN(method="mean", contamination=self.contamination)
         bagging = FeatureBagging(LOF(), random_state=20, contamination=self.contamination)
-        cblof = CBLOF(random_state=10)
+        #cblof = CBLOF(random_state=10)
         hbos = HBOS(contamination=self.contamination)
         abod = ABOD(contamination=self.contamination)
         pca = PCA(contamination=self.contamination)
         ocsvm = OCSVM(contamination=self.contamination)
         ecod = ECOD(contamination=self.contamination)
-        classifiers = {"iforest": iforest, "knn": knn, "bagging": bagging, "cblof": cblof, "hbos": hbos, "abod": abod,
+        classifiers = {"iforest": iforest, "knn": knn, "bagging": bagging, "hbos": hbos, "abod": abod,
                        "pca": pca, "ocsvm":ocsvm, "ecod": ecod}
 
         prediction = {}
@@ -83,7 +84,7 @@ class OutlierDetection:
         pred = {key: pd.DataFrame(value).T for key, value in prediction.items()}
         pred = pd.concat(pred)
         summed = pred.sum()
-
+        summed.sort_values(ascending=False, inplace=True)
         return summed
 
     def _check_features(self, book):
@@ -112,6 +113,7 @@ class OutlierDetection:
             transformed_x, scaler_dict =  scale(self.scaler, x)
             scaled_data.append(transformed_x)
         # parallelized
+        scaled_data = random.sample(scaled_data, min(40, len(scaled_data)))
         with get_context("spawn").Pool(self.num_threads) as pool:
             for num, res in enumerate(pool.map(self.outlier, scaled_data)):
                 results[book[num]] = res
@@ -119,7 +121,6 @@ class OutlierDetection:
         summed = self.counting(results)
         summed.to_csv(self.output)
         return summed
-
 
 
 def main():
