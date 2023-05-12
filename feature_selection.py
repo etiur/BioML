@@ -19,7 +19,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 from multiprocessing import get_context # https://pythonspeed.com/articles/python-multiprocessing/
-shap.initjs(keep_js=False)
 
 
 def arg_parse():
