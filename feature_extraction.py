@@ -9,7 +9,6 @@ import pandas as pd
 from utilities import write_excel
 from os.path import basename
 from multiprocessing import get_context
-from multiprocessing import Pool
 from pathlib import Path
 
 

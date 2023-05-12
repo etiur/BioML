@@ -6,7 +6,7 @@ import glob
 from os import path
 from os.path import basename, dirname, abspath
 import time
-from multiprocessing import Pool
+from multiprocessing import get_context
 import shutil
 from Bio import SeqIO
 from Bio.SeqIO import FastaIO
@@ -108,7 +108,7 @@ class ExtractPssm:
         Accelerates the checking of files
         """
         file = glob.glob(f"{abspath(self.pssm)}/seq_{num}*.pssm")
-        with Pool(processes=self.num_thread) as executor:
+        with get_context("spawn").Pool(processes=self.num_thread) as executor:
             executor.map(self._check_pssm, file)
 
     def generate(self, file=None):
