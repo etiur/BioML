@@ -102,6 +102,7 @@ class Classifier:
         self.report_weight = report_weight
         self.difference_weight = difference_weight
         self.class0_weight = class0_weight
+        self.with_split = True
 
     def train(self, X_train, Y_train, X_test):
         estimator = HyperoptEstimator(classifier=interesting_classifiers("automl"), preprocessing=[], algo=tpe.suggest,
@@ -145,9 +146,9 @@ class Classifier:
 
         return scalar_scores, param_scores
 
-    def _scale(self, features, with_split, train_index, test_index, split_index):
+    def _scale(self, features, train_index, test_index, split_index):
         # split and filter
-        if with_split:
+        if self.with_split:
             feat_subset = features.loc[:, f"split_{split_index}"] # each split different features and different fold of
             # training and test data
         else:
@@ -164,25 +165,25 @@ class Classifier:
 
         return transformed_x, test_x, Y_test, Y_train
 
-    def _check_features(self, sheet):
-        with_split = True
-        features = pd.read_excel(self.features, index_col=0, sheet_name=sheet, header=[0, 1], engine='openpyxl')
+    def _check_features(self, sheet_names):
+        features = pd.read_excel(self.features, index_col=0, header=[0, 1], engine='openpyxl')
         if f"split_{0}" not in features.columns.unique(level=0):
-            with_split = False
-            features = pd.read_excel(self.features, index_col=0, sheet_name=sheet, header=0, engine='openpyxl')
+            self.with_split = False
+        if self.with_split:
+            excel_data = pd.read_excel(self.features, index_col=0, sheet_name=sheet_names, header=[0, 1])
+        else:
+            excel_data = pd.read_excel(self.features, index_col=0, sheet_name=sheet_names, header=0)
+        return excel_data
 
-        return features, with_split
-
-    def nested_cv(self, sheet):
+    def nested_cv(self, feature):
         """Performs something similar to a nested cross-validation"""
         metric_scalar = []
         parameter_list = []
         split_index = []
-        features, with_split = self._check_features(sheet)
         skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=20)
-        for ind, (train_index, test_index) in enumerate(skf.split(features, self.labels)):
+        for ind, (train_index, test_index) in enumerate(skf.split(feature, self.labels)):
             split_index.append(ind)
-            transformed_x, test_x, Y_test, Y_train = self._scale(features, with_split, train_index, test_index, ind)
+            transformed_x, test_x, Y_test, Y_train = self._scale(feature, train_index, test_index, ind)
             pred = self.train(transformed_x, Y_train, test_x)
             scalar_scores, param_scores = self.get_score(pred, Y_train, Y_test)
             metric_scalar.append(scalar_scores)
@@ -263,19 +264,20 @@ class Classifier:
 
         return rank
 
-    def _run(self, sheet):
+    def _run(self, feature):
         # creating list of results
-        metric_scalar, parameter_list, split_index = self.nested_cv(sheet)
+        metric_scalar, parameter_list, split_index = self.nested_cv(feature)
         dataframe, report, params = self.to_dataframe(metric_scalar, parameter_list, split_index)
         return dataframe, report, params
     def run(self):
         """A function that runs nested_cv several times, as many as the sheets in the Excel"""
         # reading the data
-        book = load_workbook(self.features)
+        sheet_names = load_workbook(self.features).sheetnames
+        excel_data = self._check_features(sheet_names)
         result_list = []
         with Pool(self.num_threads) as pool:
-            for num, (dataframe, report, params) in enumerate(pool.map(self._run, book.sheetnames)):
-                result_list.append((book.sheetnames[num], dataframe, report, params))
+            for num, (dataframe, report, params) in enumerate(pool.map(self._run, excel_data.values())):
+                result_list.append((sheet_names[num], dataframe, report, params))
 
         result_list.sort(key=self.rank_results, reverse=True)
         with (pd.ExcelWriter(self.output_path/"training_results.xlsx", mode="w", engine="openpyxl") as writer1,
