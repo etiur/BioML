@@ -156,9 +156,9 @@ class Classifier:
         else:
             feat_subset = features
         X_train = feat_subset.iloc[train_index]
-        Y_train = feat_subset.iloc[train_index]
+        Y_train = self.labels.iloc[train_index]
         X_test = feat_subset.iloc[test_index]
-        Y_test = feat_subset.iloc[test_index]
+        Y_test = self.labels.iloc[test_index]
         X_train = X_train.loc[[x for x in X_train.index if x not in self.outliers]]
         X_test = X_test.loc[[x for x in X_test.index if x not in self.outliers]]
         Y_train = Y_train.loc[[x for x in Y_train.index if x not in self.outliers]].values.ravel()
