@@ -530,13 +530,14 @@ class ReadFeatures:
         self.read()
         training_features = pd.read_excel(self.excel_feature, index_col=0, sheet_name=self.selected_sheets, header=[0, 1],
                                           engine='openpyxl')
-        for sheet, feature in training_features.items():
-            for col in feature.columns.unique(level=0):
-                ind = int(col.split("_")[-1])
-                if self.selected_kfolds[sheet] and ind not in self.selected_kfolds: continue
-                sub_feat = feature.loc[:, f"split_{ind}"]
-                feature_dict[f"split_{ind}"] = self.features[sub_feat.columns]
-            write_excel(self.extracted_out/"new_features", pd.concat(feature_dict, axis=1), f"{sheet}")
+        with pd.ExcelWriter(self.extracted_out/"new_features.xlsx", mode="w", engine="openpyxl") as writer:
+            for sheet, feature in training_features.items():
+                for col in feature.columns.unique(level=0):
+                    ind = int(col.split("_")[-1])
+                    if self.selected_kfolds[sheet] and ind not in self.selected_kfolds: continue
+                    sub_feat = feature.loc[:, f"split_{ind}"]
+                    feature_dict[f"split_{ind}"] = self.features[sub_feat.columns]
+                write_excel(writer, pd.concat(feature_dict, axis=1), f"{sheet}")
 
 
 def extract_and_filter(fasta_file=None, pssm_dir="pssm", ifeature_out="ifeature_features",
