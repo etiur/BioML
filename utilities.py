@@ -36,14 +36,16 @@ def analyse_composition(dataframe):
 
 
 def write_excel(file, dataframe, sheet_name, overwrite=False):
-    if not str(file).endswith(".xlsx"):
-        file = Path(file).with_suffix(".xlsx")
-    if overwrite or not Path(file).exists():
-        mode = "w"
+    if not isinstance(file, pd.io.excel._openpyxl.OpenpyxlWriter):
+        if overwrite or not Path(file).exists():
+            mode = "w"
+        else:
+            mode = "a"
+        with pd.ExcelWriter(file, mode=mode, engine="openpyxl") as writer:
+            dataframe.to_excel(writer, sheet_name=sheet_name)
     else:
-        mode = "a"
-    with pd.ExcelWriter(file, mode=mode, engine="openpyxl") as writer:
-        dataframe.to_excel(writer, sheet_name=sheet_name)
+        dataframe.to_excel(file, sheet_name=sheet_name)
+
 
 def interesting_classifiers(name, params):
     """
