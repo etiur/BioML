@@ -278,11 +278,14 @@ class Classifier:
                 result_list.append((book.sheetnames[num], dataframe, report, params))
 
         result_list.sort(key=self.rank_results, reverse=True)
-        for x in result_list:
-            sheet, dataframe, report, params = x
-            write_excel(self.output_path/"training_results.xlsx", dataframe, sheet)
-            write_excel(self.output_path/"hyperparameters.xlsx", params, sheet)
-            write_excel(self.output_path/"classification_report.xlsx", report, sheet)
+        with (pd.ExcelWriter(self.output_path/"training_results.xlsx", mode="w", engine="openpyxl") as writer1,
+              pd.ExcelWriter(self.output_path/"hyperparameters.xlsx", mode="w", engine="openpyxl") as writer2,
+              pd.ExcelWriter(self.output_path/"classification_report.xlsx", mode="w", engine="openpyxl") as writer3):
+            for x in result_list:
+                sheet, dataframe, report, params = x
+                write_excel(writer1, dataframe, sheet)
+                write_excel(writer2, params, sheet)
+                write_excel(writer3, report, sheet)
 
 def main():
     label, training_output, hyperparameter_tuning, num_thread, scaler, excel, kfold, outliers, \
