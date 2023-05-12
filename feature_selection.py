@@ -19,6 +19,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 from multiprocessing import get_context # https://pythonspeed.com/articles/python-multiprocessing/
+import time
 
 
 def arg_parse():
@@ -79,6 +80,7 @@ class FeatureSelection:
         if not str(self.excel_file).endswith(".xlsx"):
             self.excel_file = self.excel_file.with_suffix(".xlsx")
         self.excel_file.parent.mkdir(parents=True, exist_ok=True)
+        self.seed = time.time()
 
     def _check_label(self, label):
         if len(self.label) != len(self.features):
@@ -176,11 +178,13 @@ class FeatureSelection:
         return features
 
     def parallel_filtering(self, X_train, Y_train, num_features, feature_names, split_ind, plot=True, plot_num_features=20):
+        random.seed(self.seed)
         results = {}
         filter_names = ("FitCriterion", "FRatio", "GiniIndex", "SymmetricUncertainty", "SpearmanCorr", "PearsonCorr",
                         "FechnerCorr", "KendallCorr", "ReliefF", "Chi2", "Anova", "LaplacianScore", "InformationGain",
                         "ModifiedTScore", "SPEC")
         filter_names = random.sample(filter_names, 7)
+        print(filter_names)
         multivariate = ("STIR", "TraceRatioFisher")
         filter_unsupervised = ("TraceRatioLaplacian", "MCFS")
 
@@ -207,6 +211,7 @@ class FeatureSelection:
 
     def construct_feature_set(self, num_features_min=20, num_features_max=None, step_range=10, rfe_step=40,
                               plot=True, plot_num_features=20):
+
         features = self.preprocess()
         skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=20)
         feature_dict = defaultdict(dict)
