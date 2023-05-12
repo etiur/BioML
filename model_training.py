@@ -8,12 +8,12 @@ from hpsklearn import HyperoptEstimator
 from utilities import scale, write_excel
 from hyperopt import hp, tpe
 from pathlib import Path
-from hpsklearn import  random_forest_classifier, extra_trees_classifier
+from hpsklearn import random_forest_classifier, extra_trees_classifier
 from hpsklearn import sgd_classifier, ridge_classifier, passive_aggressive_classifier
 from hpsklearn import mlp_classifier, k_neighbors_classifier, xgboost_classification, lightgbm_classification
 from hpsklearn import svc
 import argparse
-from multiprocessing import Pool
+from concurrent.futures import ProcessPoolExecutor as Pool
 
 
 def arg_parse():
@@ -37,17 +37,18 @@ def arg_parse():
                         help="A list of outliers if any, the name should be the same as in the excel file with the "
                              "filtered features, you can also specify the path to a file in plain text format, each "
                              "record should be in a new line")
-    parser.add_argument("-hp", "--hyperparameter_tuning", required=False, default="200:30",
-                        help="The parameters for the class that performs hyerparameter tuning"
+    parser.add_argument("-hp", "--hyperparameter_tuning", required=False, default="80:30",
+                        help="The parameters for the class that performs hyperparameter tuning"
                              " in max_evals: trial_time format")
     parser.add_argument("-pw", "--precision_weight", required=False, default=1, type=float,
-                        help="Weights to specify how relevant is the precision for the ranking of the different features")
+                        help="Weights to specify how relevant is the precision for the ranking of the different "
+                             "features")
     parser.add_argument("-rw", "--recall_weight", required=False, default=0.8, type=float,
                         help="Weights to specify how relevant is the recall for the ranking of the different features")
     parser.add_argument("-c0", "--class0_weight", required=False, default=0.5, type=float,
                         help="Weights to specify how relevant is the f1, precision and recall scores of the class 0"
-                             " or the negative class for the ranking of the different features with respect to class 1 or "
-                             "the positive class")
+                             " or the negative class for the ranking of the different features with respect to class 1 "
+                             "or the positive class")
     parser.add_argument("-rpw", "--report_weight", required=False, default=0.25, type=float,
                         help="Weights to specify how relevant is the f1, precision and recall for the ranking of the "
                              "different features with respect to MCC and the R2 which are more general measures of "
@@ -83,19 +84,19 @@ def interesting_classifiers(name):
 
 
 class Classifier:
-    def __init__(self, feature_path, label, training_output, num_splits=5, test_size=0.2, outliers=(), scaler="robust",
-                 max_evals=200, trial_time=30, num_threads=10, precision_weight=1, recall_weight=1,
-                 report_weight=0.4, difference_weight=0.8, class0_weight=0.5):
+    def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
+                 outliers=(), scaler="robust", max_evals=200, trial_time=30, num_threads=10, precision_weight=1,
+                 recall_weight=1, report_weight=0.4, difference_weight=0.8, class0_weight=0.5):
         self.outliers = outliers
         self.num_splits = num_splits
         self.test_size = test_size
-        self.features = Path(feature_path) # if only one features it will perform split and train
+        self.features = Path(feature_path)  # if only one features it will perform split and train
         self.labels = pd.read_csv(label, index_col=0)
         self.scaler = scaler
         self.max_evals = max_evals
         self.trial_time_out = trial_time
         self.num_threads = num_threads
-        self.output_path = Path(training_output) # for the model results
+        self.output_path = Path(training_output)  # for the model results
         self.output_path.mkdir(parents=True, exist_ok=True)
         self.pre_weight = precision_weight
         self.rec_weight = recall_weight
@@ -116,7 +117,8 @@ class Classifier:
         pred = namedtuple("prediction", ["fitted", "pred_test_y", "pred_train_y"])
         return pred(*[estimator, pred_test_y, pred_train_y])
 
-    def get_score(self, pred, Y_train, Y_test):
+    @staticmethod
+    def get_score(pred, Y_train, Y_test):
         """ The function prints the scores of the models and the prediction performance """
         target_names = ["class 0", "class 1"]
 
@@ -124,7 +126,7 @@ class Classifier:
         parameter_record = namedtuple("parameters", ["params", "test_confusion", "tr_report", "te_report",
                                                      "train_confusion", "model_name"])
         # Model comparison
-        cv_score = 1- pred.fitted._best_loss
+        cv_score = 1 - pred.fitted._best_loss
         model_params = pred.fitted.best_model()["learner"].get_params()
         model_params = {key: value for key, value in model_params.items() if key not in ["warm_start", "verbose",
                                                                                          "oob_score"]}
@@ -159,8 +161,8 @@ class Classifier:
         Y_test = feat_subset.iloc[test_index]
         X_train = X_train.loc[[x for x in X_train.index if x not in self.outliers]]
         X_test = X_test.loc[[x for x in X_test.index if x not in self.outliers]]
-        Y_train = Y_train.loc[[x for x in Y_train.index if x not in self.outliers]]
-        Y_test = Y_test.loc[[x for x in Y_test.index if x not in self.outliers]]
+        Y_train = Y_train.loc[[x for x in Y_train.index if x not in self.outliers]].values.ravel()
+        Y_test = Y_test.loc[[x for x in Y_test.index if x not in self.outliers]].values.ravel()
         transformed_x, scaler_dict, test_x = scale(self.scaler, X_train, X_test)
 
         return transformed_x, test_x, Y_test, Y_train
@@ -191,7 +193,8 @@ class Classifier:
 
         return metric_scalar, parameter_list, split_index
 
-    def to_dataframe(self, metric_scalar, parameter_list, split_index):
+    @staticmethod
+    def to_dataframe(metric_scalar, parameter_list, split_index):
         matrix = namedtuple("confusion_matrix", ["true_n", "false_p", "false_n", "true_p"])
         # performance scores
         test_mathew = [x.test_matthews for x in metric_scalar]
@@ -201,7 +204,7 @@ class Classifier:
         train_r2 = [x.r2_train for x in metric_scalar]
         # model parameters
         model_name = [x.model_name for x in parameter_list]
-        params = pd.concat({i : pd.concat({x.model_name: x.params}) for i, x in zip(split_index, parameter_list)})
+        params = pd.concat({i: pd.concat({x.model_name: x.params}) for i, x in zip(split_index, parameter_list)})
         # Taking the confusion matrix
         test_confusion = [matrix(*x.test_confusion.ravel()) for x in parameter_list]
         training_confusion = [matrix(*x.train_confusion.ravel()) for x in parameter_list]
@@ -211,7 +214,7 @@ class Classifier:
         tr_report = {num: pd.DataFrame(x.tr_report).transpose() for num, x in zip(split_index, parameter_list)}
         tr_report = pd.concat(tr_report)
         tr_report.index.names = ["split_index", "labels"]
-        report = pd.concat({"train":tr_report.T, "test": te_report.T})
+        report = pd.concat({"train": tr_report.T, "test": te_report.T})
         # Separating confusion matrix into individual elements
         test_true_n = [y.true_n for y in test_confusion]
         test_false_p = [y.false_p for y in test_confusion]
@@ -239,9 +242,10 @@ class Classifier:
         return ((dataframe["train_MCC"] + dataframe["test_MCC"] + dataframe["train_R2"] + dataframe["test_R2"])
                 - self.difference_weight * (abs(dataframe["test_MCC"] - dataframe["train_MCC"]) +
                                             abs(dataframe["test_R2"] - dataframe["train_R2"]))).sum()
+
     def _calculate_score_report(self, report, class_label):
         class_level = report.loc[report.index.get_level_values(1) == class_label,
-        report.columns.get_level_values(1).isin(["precision", "recall"])]
+                                 report.columns.get_level_values(1).isin(["precision", "recall"])]
         pre_sum = self.pre_weight * (class_level.loc[(slice(None), class_label), ("test", "precision")] +
                                      class_level.loc[(slice(None), class_label), ("train", "precision")])
         rec_sum = self.rec_weight * (class_level.loc[(slice(None), class_label), ("test", "recall")] +
@@ -260,7 +264,8 @@ class Classifier:
         score_report_class0 = self._calculate_score_report(report, "class 0")
         score_report_class1 = self._calculate_score_report(report, "class 1")
         # Calculate the overall rank as the sum of the scores -> the greater, the better
-        rank = score_dataframe + (self.report_weight * (self.class0_weight * score_report_class0 + score_report_class1)/2)
+        rank = score_dataframe + (self.report_weight * (self.class0_weight * score_report_class0 +
+                                                        score_report_class1)/2)
 
         return rank
 
@@ -269,6 +274,7 @@ class Classifier:
         metric_scalar, parameter_list, split_index = self.nested_cv(feature)
         dataframe, report, params = self.to_dataframe(metric_scalar, parameter_list, split_index)
         return dataframe, report, params
+
     def run(self):
         """A function that runs nested_cv several times, as many as the sheets in the Excel"""
         # reading the data
@@ -289,6 +295,7 @@ class Classifier:
                 write_excel(writer2, params, sheet)
                 write_excel(writer3, report, sheet)
 
+
 def main():
     label, training_output, hyperparameter_tuning, num_thread, scaler, excel, kfold, outliers, \
         precision_weight, recall_weight, class0_weight, report_weight, difference_weight = arg_parse()
@@ -301,6 +308,7 @@ def main():
                           trial_time, num_thread, precision_weight, recall_weight, report_weight, difference_weight,
                           class0_weight)
     training.run()
+
 
 if __name__ == "__main__":
     # Run this if this file is executed from command line but not if is imported as API
