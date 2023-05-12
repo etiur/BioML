@@ -159,10 +159,10 @@ class FeatureSelection:
             shap_importance.to_csv(shap_dir / f"shap_importance_kfold{split_ind}.csv")
             shap.summary_plot(shap_values, X_train, feature_names=feature_names, plot_type='bar', show=False,
                               max_display=plot_num_features)
-            plt.savefig(shap_importance / f"shap_kfold{split_ind}_top_{plot_num_features}_features.png", dpi=800)
+            plt.savefig(shap_dir / f"shap_kfold{split_ind}_top_{plot_num_features}_features.png", dpi=800)
             shap.summary_plot(shap_values, X_train, feature_names=feature_names, show=False,
                               max_display=plot_num_features)
-            plt.savefig(self.excel_file.parent / f"feature_influence_on_model_prediction_kfold{split_ind}.png", dpi=800)
+            plt.savefig(shap_dir / f"feature_influence_on_model_prediction_kfold{split_ind}.png", dpi=800)
         return shap_importance
 
     @staticmethod
