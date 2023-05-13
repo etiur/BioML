@@ -565,7 +565,7 @@ def extract_and_filter(fasta_file=None, pssm_dir="pssm", ifeature_out="ifeature_
     filtered_out: str, optional
         A directory to store the filtered features from all the generated features
     thread: int
-        The number of poolworkers to use to run the programmes
+        The number of pool workers to use to run the programmes
     run: str
         which programme to run
     """

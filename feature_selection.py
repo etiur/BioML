@@ -184,7 +184,6 @@ class FeatureSelection:
                         "FechnerCorr", "KendallCorr", "ReliefF", "Chi2", "Anova", "LaplacianScore", "InformationGain",
                         "ModifiedTScore", "SPEC")
         filter_names = random.sample(filter_names, 7)
-        print(filter_names)
         multivariate = ("STIR", "TraceRatioFisher")
         filter_unsupervised = ("TraceRatioLaplacian", "MCFS")
 

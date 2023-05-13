@@ -53,6 +53,7 @@ class GenerateModel:
         self.selected_sheets = []
         self.selected_kfolds = {}
         self._check_sheets(sheets)
+        self.with_split = True
 
     def _check_sheets(self, sheets):
         for x in sheets:
@@ -91,23 +92,25 @@ class GenerateModel:
         return models, model_indices
 
     def _check_features(self):
-        with_split = True
-        features = pd.read_excel(self.selected_features, index_col=0, sheet_name=self.selected_sheets, header=[0, 1],
-                                 engine='openpyxl')
-        if f"split_{0}" not in list(features.values())[0].columns.unique(0):
-            with_split = False
+        features = pd.read_excel(self.selected_features, index_col=0, header=[0, 1], engine='openpyxl')
+        if f"split_{0}" not in features.columns.unique(0):
+            self.with_split = False
+        if self.with_split:
+            features = pd.read_excel(self.selected_features, index_col=0, sheet_name=self.selected_sheets,
+                                     header=[0, 1], engine='openpyxl')
+        else:
             features = pd.read_excel(self.selected_features, index_col=0, sheet_name=self.selected_sheets, header=0,
                                      engine='openpyxl')
-        return features, with_split
+        return features
 
-    def get_features(self, features, with_split, model_index):
+    def get_features(self, features, model_index):
 
         feature_dict = defaultdict(dict)
         label_dict =defaultdict(dict)
         for sheet, feature in features.items():
             random_state = 22342
             for ind in model_index[sheet]:
-                if with_split:
+                if self.with_split:
                     sub_feat = feature.loc[:, f"split_{ind}"].sample(frac=1, random_state=random_state)
                 else:
                     sub_feat = feature.sample(frac=1, random_state=random_state)
@@ -119,10 +122,10 @@ class GenerateModel:
         return feature_dict, label_dict
 
     def refit_save(self):
-        """ Fit the models and get the predictions"""
+        """Fit the models and get the predictions"""
         models, model_indices = self.get_hyperparameter()
-        features, with_split = self._check_features()
-        feature_dict, label_dict = self.get_features(features, with_split, model_indices)
+        features = self._check_features()
+        feature_dict, label_dict = self.get_features(features, model_indices)
         for sheet, shuffled_feature in feature_dict.items():
             out = self.model_output / sheet
             out.mkdir(parents=True, exist_ok=True)
@@ -131,7 +134,7 @@ class GenerateModel:
                 label = label_dict[sheet][split_ind]
                 models[sheet][split_ind].fit(feat, label)
                 name = models[sheet][split_ind].__class__.__name__
-                joblib.dump(models[sheet][split_ind], out/f"{name}_{split_ind}.joblib")
+                joblib.dump(models[sheet][split_ind], out / f"{name}_{split_ind}.joblib")
 
 
 def main():
