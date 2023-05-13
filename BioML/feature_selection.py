@@ -2,7 +2,7 @@ import argparse
 import pandas as pd
 from BioML.utilities import scale, analyse_composition, write_excel
 from pathlib import Path
-from ITMO_FS.filters.univariate import select_k_best, UnivariateFilter, SPEC
+from ITMO_FS.filters.univariate import select_k_best, UnivariateFilter
 from ITMO_FS.filters.unsupervised import MCFS, TraceRatioLaplacian
 # Multiprocess instead of Multiprocessing solves the pickle problem in Windows (might be different in linux)
 # but it has its own errors. Use multiprocessing.get_context('fork') seems to solve the problem but only available
@@ -106,12 +106,8 @@ class FeatureSelection:
     @staticmethod
     def univariate(X_train, Y_train, num_features, feature_names, filter_name):
         """Features are considered one at the time and we are using statistical filters"""
-        if filter_name != "SPEC":
-            ufilter = UnivariateFilter(filter_name, select_k_best(num_features))
-            ufilter.fit(X_train, Y_train)
-        else:
-            ufilter = SPEC(num_features)
-            ufilter.fit(X_train, Y_train)
+        ufilter = UnivariateFilter(filter_name, select_k_best(num_features))
+        ufilter.fit(X_train, Y_train)
         scores = {x: v for x, v in zip(feature_names, ufilter.feature_scores_)}
         # sorting the features
         if filter_name != "LaplacianScore":

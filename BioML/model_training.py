@@ -87,6 +87,12 @@ def interesting_classifiers(name, small=True):
         """
         return scope.int(hp.uniform(name, 20, 30))
 
+    def _neighbors_p(name: str):
+        """
+        Declaration search space 'p' parameter
+        """
+        return scope.int(hp.uniform(name, 1, 5))
+
     classifiers = [
         random_forest_classifier(name + ".random_forest"),
         extra_trees_classifier(name + ".extra_trees"),
@@ -97,7 +103,8 @@ def interesting_classifiers(name, small=True):
         svc(name + ".svc"),
         k_neighbors_classifier(name + ".knn", algorithm="auto", leaf_size=_neighbors_leaf_size(_name("leaf_size")),
                                n_neighbors=scope.int(hp.uniform(_name("n_neighbors"), 1, 10)),
-                               metric=_neighbors_metric(_name("metric")))
+                               metric=_neighbors_metric(_name("metric")),
+                               p=_neighbors_p(_name("p")))
     ]
     if not small:
         classifiers.append(lightgbm_classification(name + ".lightgbm"))
