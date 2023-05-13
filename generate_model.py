@@ -4,7 +4,7 @@ import argparse
 import pandas as pd
 from collections import defaultdict
 import joblib
-from utilities import scale
+from utilities import scale, modify_param
 
 def arg_parse():
     parser = argparse.ArgumentParser(description="Generate the models from the ensemble")
@@ -27,7 +27,7 @@ def arg_parse():
                         help="Names or index of the selected sheets for both features and hyperparameters and the "
                              "index of the models in this format-> sheet (name, index):index model1,index model2 "
                              "without the spaces. If only index or name of the sheets, it is assumed that all kfold models "
-                             "are selected. It is possible to have one sheet with kfold indices but in another ones "
+                             "are selected. It is possible to have kfold indices in one sheet and in another ones "
                              "without")
     parser.add_argument("-ot", "--outliers", nargs="+", required=False, default=(),
                         help="A list of outliers if any, the name should be the same as in the excel file with the "
@@ -45,7 +45,7 @@ class GenerateModel:
                  outliers=(), model_output="model"):
         self.selected_features = selected_features
         self.hyperparameter_path = hyperparameter_path
-        self.label = label
+        self.label = pd.read_csv(label, index_col=0)
         self.scaler = scaler
         self.num_threads = num_threads
         self.outliers = outliers
@@ -83,8 +83,7 @@ class GenerateModel:
                 if self.selected_kfolds[sheet] and ind not in self.selected_kfolds: continue
                 name = data.loc[ind].index.unique(level=0)[0]
                 param = data.loc[(ind, name), 0].to_dict()
-                if "n_jobs" in param:
-                    param["n_jobs"] = self.num_threads
+                param = modify_param(param, name, self.num_threads)
                 # each sheet should have 5 models representing each split index
                 models[sheet][ind] = interesting_classifiers(name, param)
                 model_indices[sheet].append(ind)
@@ -116,7 +115,7 @@ class GenerateModel:
                     sub_feat = feature.sample(frac=1, random_state=random_state)
                 transformed, scaler_dict = scale(self.scaler, sub_feat)
                 feature_dict[sheet][ind] = transformed
-                label_dict[sheet][ind] = self.label.sample(frac=1, random_state=random_state)
+                label_dict[sheet][ind] = self.label.sample(frac=1, random_state=random_state).values.ravel()
                 random_state += 10000
 
         return feature_dict, label_dict
@@ -127,7 +126,7 @@ class GenerateModel:
         features = self._check_features()
         feature_dict, label_dict = self.get_features(features, model_indices)
         for sheet, shuffled_feature in feature_dict.items():
-            out = self.model_output / sheet
+            out = self.model_output / f"sheet_{sheet}"
             out.mkdir(parents=True, exist_ok=True)
             # refit the models with its corresponding index split and feature set
             for split_ind, feat in shuffled_feature.items():
