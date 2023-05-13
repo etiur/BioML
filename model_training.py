@@ -13,6 +13,7 @@ from hpsklearn import sgd_classifier, ridge_classifier, passive_aggressive_class
 from hpsklearn import mlp_classifier, k_neighbors_classifier, xgboost_classification, lightgbm_classification
 from hpsklearn import svc
 import argparse
+from hyperopt.pyll import scope
 
 
 def arg_parse():
@@ -36,7 +37,7 @@ def arg_parse():
                         help="A list of outliers if any, the name should be the same as in the excel file with the "
                              "filtered features, you can also specify the path to a file in plain text format, each "
                              "record should be in a new line")
-    parser.add_argument("-hp", "--hyperparameter_tuning", required=False, default="50:10",
+    parser.add_argument("-hp", "--hyperparameter_tuning", required=False, default="50:30",
                         help="The parameters for the class that performs hyperparameter tuning"
                              " in max_evals: trial_time format. Max_evals refers to how many model configurations or "
                              "hyperparameters to test and the trial_time is the total time allocated to test each "
@@ -56,18 +57,29 @@ def arg_parse():
                              "the performance of a model")
     parser.add_argument("-dw", "--difference_weight", required=False, default=0.8, type=float,
                         help="How important is to have similar training and test metrics")
+    parser.add_argument("-sm", "--small", required=False, action="store_false",
+                        help="Default to true, The number of samples is < 1000")
 
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.hyperparameter_tuning, args.num_thread, args.scaler,
             args.excel, args.kfold_parameters, args.outliers, args.precision_weight, args.recall_weight,
-            args.class0_weight, args.report_weight, args.difference_weight]
+            args.class0_weight, args.report_weight, args.difference_weight, args.small]
 
 
-def interesting_classifiers(name):
+def interesting_classifiers(name, small=True):
     """
     All classifiers
     """
+    def _name(msg):
+        return f"{name}.k_neighbors_classifier_{msg}"
+
+    def _neighbors_metric(name: str):
+        """
+        Declaration search space 'metric' parameter
+        """
+        return hp.choice(name, ["l1", "l2", "minkowski", "euclidean", "manhattan"])
+
     classifiers = [
         random_forest_classifier(name + ".random_forest"),
         extra_trees_classifier(name + ".extra_trees"),
@@ -76,10 +88,14 @@ def interesting_classifiers(name):
         passive_aggressive_classifier(name + ".passive_aggressive"),
         mlp_classifier(name + ".mlp"),
         svc(name + ".svc"),
-        xgboost_classification(name + ".xgboost"),
-        lightgbm_classification(name + ".lightgbm"),
-        k_neighbors_classifier(name + ".knn")
+        k_neighbors_classifier(name + ".knn", algorithm="auto",
+                               n_neighbors=scope.int(hp.uniform(_name("n_neighbors"), 1, 10)),
+                               metric=_neighbors_metric(name))
     ]
+    if not small:
+        classifiers.append(lightgbm_classification(name + ".lightgbm"))
+        classifiers.append(xgboost_classification(name + ".xgboost"))
+
 
     return hp.choice(name, classifiers)
 
@@ -87,7 +103,7 @@ def interesting_classifiers(name):
 class Classifier:
     def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
                  outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, precision_weight=1,
-                 recall_weight=1, report_weight=0.4, difference_weight=0.8, class0_weight=0.5):
+                 recall_weight=1, report_weight=0.4, difference_weight=0.8, class0_weight=0.5, small=True):
         self.outliers = outliers
         self.num_splits = num_splits
         self.test_size = test_size
@@ -105,10 +121,11 @@ class Classifier:
         self.difference_weight = difference_weight
         self.class0_weight = class0_weight
         self.with_split = True
+        self.small = small
 
     def train(self, X_train, Y_train, X_test):
-        estimator = HyperoptEstimator(classifier=interesting_classifiers("automl"), preprocessing=[], algo=tpe.suggest,
-                                      max_evals=self.max_evals, trial_timeout=self.trial_time_out,
+        estimator = HyperoptEstimator(classifier=interesting_classifiers("automl", self.small), preprocessing=[],
+                                      algo=tpe.suggest, max_evals=self.max_evals, trial_timeout=self.trial_time_out,
                                       n_jobs=self.num_threads, verbose=True)
         estimator.fit(X_train, Y_train)
         # Model predictions
@@ -295,7 +312,7 @@ class Classifier:
 
 def main():
     label, training_output, hyperparameter_tuning, num_thread, scaler, excel, kfold, outliers, \
-        precision_weight, recall_weight, class0_weight, report_weight, difference_weight = arg_parse()
+        precision_weight, recall_weight, class0_weight, report_weight, difference_weight, small = arg_parse()
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     max_evals, trial_time = int(hyperparameter_tuning.split(":")[0]), hyperparameter_tuning.split(":")[1]
     if trial_time.isdigit():
@@ -307,7 +324,7 @@ def main():
             outliers = [x.strip() for x in out.readlines()]
     training = Classifier(excel, label, training_output, num_split, test_size, outliers, scaler, max_evals,
                           trial_time, num_thread, precision_weight, recall_weight, report_weight, difference_weight,
-                          class0_weight)
+                          class0_weight, small)
     training.run()
 
 
