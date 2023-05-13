@@ -81,6 +81,12 @@ def interesting_classifiers(name, small=True):
         """
         return hp.choice(name, ["l1", "l2", "minkowski", "euclidean", "manhattan"])
 
+    def _neighbors_leaf_size(name: str):
+        """
+        Declaration search space 'leaf_size' parameter
+        """
+        return scope.int(hp.uniform(name, 20, 30))
+
     classifiers = [
         random_forest_classifier(name + ".random_forest"),
         extra_trees_classifier(name + ".extra_trees"),
@@ -89,7 +95,7 @@ def interesting_classifiers(name, small=True):
         passive_aggressive_classifier(name + ".passive_aggressive"),
         mlp_classifier(name + ".mlp"),
         svc(name + ".svc"),
-        k_neighbors_classifier(name + ".knn", algorithm="auto",
+        k_neighbors_classifier(name + ".knn", algorithm="auto", leaf_size=_neighbors_leaf_size(_name("leaf_size")),
                                n_neighbors=scope.int(hp.uniform(_name("n_neighbors"), 1, 10)),
                                metric=_neighbors_metric(_name("metric")))
     ]
