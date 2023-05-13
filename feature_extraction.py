@@ -534,7 +534,7 @@ class ReadFeatures:
             for sheet, feature in training_features.items():
                 for col in feature.columns.unique(level=0):
                     ind = int(col.split("_")[-1])
-                    if self.selected_kfolds[sheet] and ind not in self.selected_kfolds: continue
+                    if self.selected_kfolds[sheet] and ind not in self.selected_kfolds[sheet]: continue
                     sub_feat = feature.loc[:, f"split_{ind}"]
                     feature_dict[f"split_{ind}"] = self.features[sub_feat.columns]
                 write_excel(writer, pd.concat(feature_dict, axis=1), f"{sheet}")
