@@ -1,12 +1,12 @@
 __version__ = "1.0.0"
 
-import BioML.ensemble
-import BioML.feature_extraction
-import BioML.feature_selection
-import BioML.generate_model
-import BioML.generate_pssm
-import BioML.model_training
-import BioML.outlier
-import BioML.predict
-import BioML.threshold
-import BioML.utilities
+from BioML.ensemble import *
+from BioML.feature_extraction import *
+from BioML.feature_selection import *
+from BioML.generate_model import *
+from BioML.generate_pssm import *
+from BioML.model_training import *
+from BioML.outlier import *
+from BioML.predict import *
+from BioML.threshold import *
+from BioML.utilities import *
