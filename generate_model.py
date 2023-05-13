@@ -80,7 +80,7 @@ class GenerateModel:
         hp = {key: value.where(value.notnull(), None) for key, value in hp.items()}
         for sheet, data in hp.items():
             for ind in data.index.unique(level=0):
-                if self.selected_kfolds[sheet] and ind not in self.selected_kfolds: continue
+                if self.selected_kfolds[sheet] and ind not in self.selected_kfolds[sheet]: continue
                 name = data.loc[ind].index.unique(level=0)[0]
                 param = data.loc[(ind, name), 0].to_dict()
                 param = modify_param(param, name, self.num_threads)
