@@ -382,11 +382,12 @@ def vote_and_filter(fasta_file, extracted_features="extracted_features/new_featu
     domain.extract(fasta_file, common_domain, positive_fasta=f"common_positive.fasta",
                        negative_fasta=f"common_negative.fasta", res_dir=res_dir)
 
-    def main():
-        fasta, selected_features, scaler, model_output, prediction_threshold, extracted, res_dir, \
-            number_similar_samples = arg_parse()
-        vote_and_filter(fasta, extracted, model_output, selected_features, scaler, prediction_threshold,
-                        res_dir, number_similar_samples)
+def main():
+    fasta, selected_features, scaler, model_output, prediction_threshold, extracted, res_dir, \
+        number_similar_samples = arg_parse()
+    vote_and_filter(fasta, extracted, model_output, selected_features, scaler, prediction_threshold,
+                    res_dir, number_similar_samples)
+
 
 if __name__ == "__main__":
     # Run this if this file is executed from command line but not if is imported as API
