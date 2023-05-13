@@ -526,12 +526,12 @@ class ReadFeatures:
             A dictionary of {algorithm name: features_kfold index} if there are different kfold indices
 
         """
-        feature_dict = {}
         self.read()
         training_features = pd.read_excel(self.excel_feature, index_col=0, sheet_name=self.selected_sheets, header=[0, 1],
                                           engine='openpyxl')
         with pd.ExcelWriter(self.extracted_out/"new_features.xlsx", mode="w", engine="openpyxl") as writer:
             for sheet, feature in training_features.items():
+                feature_dict = {}
                 for col in feature.columns.unique(level=0):
                     ind = int(col.split("_")[-1])
                     if self.selected_kfolds[sheet] and ind not in self.selected_kfolds[sheet]: continue
