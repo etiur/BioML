@@ -79,7 +79,7 @@ def interesting_classifiers(name, small=True):
         """
         Declaration search space 'metric' parameter
         """
-        return hp.choice(name, ["l1", "l2", "minkowski", "euclidean", "manhattan"])
+        return hp.choice(name, ["minkowski", "euclidean", "manhattan"])
 
     def _neighbors_leaf_size(name: str):
         """
