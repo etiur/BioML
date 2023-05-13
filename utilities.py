@@ -8,6 +8,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
 from lightgbm import LGBMClassifier
 from sklearn.neural_network import MLPClassifier
+import ast
 
 
 def scale(scaler, X_train, X_test=None):
@@ -65,3 +66,30 @@ def interesting_classifiers(name, params):
     }
 
     return classifiers[name](**params)
+
+def modify_param( param, name, num_threads=-1):
+    if "n_jobs" in param:
+        param["n_jobs"] = num_threads
+    if "MLPClassifier" in name:
+        param['hidden_layer_sizes'] = ast.literal_eval(param['hidden_layer_sizes'])
+    if "XGBClassifier" in name:
+        if param['scale_pos_weight'] == True:
+            param['scale_pos_weight'] = 1
+        if param['scale_pos_weight'] == False:
+            param['scale_pos_weight'] = 0
+        if param['missing'] is None:
+            param["missing"] = np.nan
+        if param["max_delta_step"] == False:
+            param["max_delta_step"] = None
+    if "LGBMClassifier" in name:
+        if param["min_split_gain"] == False:
+            param["min_split_gain"] = 0.0
+        if param["min_split_gain"] == True:
+            param["min_split_gain"] = 1.0
+        if param["subsample_freq"] == False:
+            param["subsample_freq"] = 0
+        if param["subsample_freq"] == True:
+            param["subsample_freq"] = 1
+        if param["max_delta_step"] == False:
+            param["max_delta_step"] = None
+    return param
