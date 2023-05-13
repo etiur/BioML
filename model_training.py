@@ -5,7 +5,7 @@ from sklearn.metrics import classification_report as class_re
 from collections import namedtuple
 from openpyxl import load_workbook
 from hpsklearn import HyperoptEstimator
-from utilities import scale, write_excel
+from BioML.utilities import scale, write_excel
 from hyperopt import hp, tpe
 from pathlib import Path
 from hpsklearn import  random_forest_classifier, extra_trees_classifier
@@ -37,7 +37,7 @@ def arg_parse():
                         help="A list of outliers if any, the name should be the same as in the excel file with the "
                              "filtered features, you can also specify the path to a file in plain text format, each "
                              "record should be in a new line")
-    parser.add_argument("-hp", "--hyperparameter_tuning", required=False, default="200:30",
+    parser.add_argument("-hp", "--hyperparameter_tuning", required=False, default="50:60",
                         help="The parameters for the class that performs hyerparameter tuning"
                              " in max_evals: trial_time format")
     parser.add_argument("-pw", "--precision_weight", required=False, default=1, type=float,
@@ -83,9 +83,9 @@ def interesting_classifiers(name):
 
 
 class Classifier:
-    def __init__(self, feature_path, label, training_output, num_splits=5, test_size=0.2, outliers=(), scaler="robust",
-                 max_evals=200, trial_time=30, num_threads=10, precision_weight=1, recall_weight=1,
-                 report_weight=0.4, difference_weight=0.8, class0_weight=0.5):
+    def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
+                 outliers=(), scaler="robust", max_evals=60, trial_time=50, num_threads=10, precision_weight=1,
+                 recall_weight=1, report_weight=0.4, difference_weight=0.8, class0_weight=0.5):
         self.outliers = outliers
         self.num_splits = num_splits
         self.test_size = test_size
