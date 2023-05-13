@@ -11,7 +11,7 @@ from pyod.models.ecod import ECOD
 from openpyxl import load_workbook
 import pandas as pd
 from utilities import scale
-from multiprocessing import get_context
+from concurrent.futures import ProcessPoolExecutor as Pool
 from pathlib import Path
 import random
 import argparse
@@ -25,7 +25,7 @@ def arg_parse():
                         default="training_features/selected_features.xlsx")
     parser.add_argument("-o", "--outlier", required=False,
                         help="The path to the output for the outliers",
-                        default="results/outliers.csv")
+                        default="training_results/outliers.csv")
     parser.add_argument("-n", "--num_thread", required=False, default=10, type=int,
                         help="The number of threads to use for the parallelization of outlier detection")
     parser.add_argument("-s", "--scaler", required=False, default="robust", choices=("robust", "standard", "minmax"),
@@ -39,7 +39,7 @@ def arg_parse():
 
 
 class OutlierDetection:
-    def __init__(self, feature_file="training_features/selected_features.xlsx", output="results/outliers.csv",
+    def __init__(self, feature_file="training_features/selected_features.xlsx", output="training_results/outliers.csv",
                  scaler="robust", contamination=0.06, num_thread=10):
         self.scaler = scaler
         self.contamination = contamination
@@ -116,11 +116,12 @@ class OutlierDetection:
             scaled_data.append(transformed_x)
         # parallelized
         scaled_data = random.sample(scaled_data, min(40, len(scaled_data)))
-        with get_context("spawn").Pool(self.num_threads) as pool:
+        with Pool(self.num_threads) as pool:
             for num, res in enumerate(pool.map(self.outlier, scaled_data)):
                 results[book[num]] = res
 
         summed = self.counting(results, x.index)
+        print("saving the outlier file")
         summed.to_csv(self.output)
         return summed
 

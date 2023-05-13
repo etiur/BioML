@@ -13,7 +13,6 @@ from hpsklearn import sgd_classifier, ridge_classifier, passive_aggressive_class
 from hpsklearn import mlp_classifier, k_neighbors_classifier, xgboost_classification, lightgbm_classification
 from hpsklearn import svc
 import argparse
-from concurrent.futures import ProcessPoolExecutor as Pool
 
 
 def arg_parse():
@@ -37,9 +36,11 @@ def arg_parse():
                         help="A list of outliers if any, the name should be the same as in the excel file with the "
                              "filtered features, you can also specify the path to a file in plain text format, each "
                              "record should be in a new line")
-    parser.add_argument("-hp", "--hyperparameter_tuning", required=False, default="80:30",
+    parser.add_argument("-hp", "--hyperparameter_tuning", required=False, default="50:10",
                         help="The parameters for the class that performs hyperparameter tuning"
-                             " in max_evals: trial_time format")
+                             " in max_evals: trial_time format. Max_evals refers to how many model configurations or "
+                             "hyperparameters to test and the trial_time is the total time allocated to test each "
+                             "configuration, could be None in which case there is no time limit")
     parser.add_argument("-pw", "--precision_weight", required=False, default=1, type=float,
                         help="Weights to specify how relevant is the precision for the ranking of the different "
                              "features")
@@ -85,7 +86,7 @@ def interesting_classifiers(name):
 
 class Classifier:
     def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
-                 outliers=(), scaler="robust", max_evals=200, trial_time=30, num_threads=10, precision_weight=1,
+                 outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, precision_weight=1,
                  recall_weight=1, report_weight=0.4, difference_weight=0.8, class0_weight=0.5):
         self.outliers = outliers
         self.num_splits = num_splits
@@ -151,7 +152,7 @@ class Classifier:
     def _scale(self, features, train_index, test_index, split_index):
         # split and filter
         if self.with_split:
-            feat_subset = features.loc[:, f"split_{split_index}"] # each split different features and different fold of
+            feat_subset = features.loc[:, f"split_{split_index}"]  # each split different features and different fold of
             # training and test data
         else:
             feat_subset = features
@@ -167,7 +168,7 @@ class Classifier:
 
         return transformed_x, test_x, Y_test, Y_train
 
-    def _check_features(self, sheet_names):
+    def _check_features(self, sheet_names) -> dict:
         features = pd.read_excel(self.features, index_col=0, header=[0, 1], engine='openpyxl')
         if f"split_{0}" not in features.columns.unique(level=0):
             self.with_split = False
@@ -269,26 +270,22 @@ class Classifier:
 
         return rank
 
-    def _run(self, feature):
-        # creating list of results
-        metric_scalar, parameter_list, split_index = self.nested_cv(feature)
-        dataframe, report, params = self.to_dataframe(metric_scalar, parameter_list, split_index)
-        return dataframe, report, params
-
     def run(self):
         """A function that runs nested_cv several times, as many as the sheets in the Excel"""
         # reading the data
         sheet_names = load_workbook(self.features).sheetnames
         excel_data = self._check_features(sheet_names)
         result_list = []
-        with Pool(self.num_threads) as pool:
-            for num, (dataframe, report, params) in enumerate(pool.map(self._run, excel_data.values())):
-                result_list.append((sheet_names[num], dataframe, report, params))
+        for num, feature in enumerate(excel_data.values()):
+            print(f"using {sheet_names[num]} for training")
+            metric_scalar, parameter_list, split_index = self.nested_cv(feature)
+            dataframe, report, params = self.to_dataframe(metric_scalar, parameter_list, split_index)
+            result_list.append((sheet_names[num], dataframe, report, params))
 
         result_list.sort(key=self.rank_results, reverse=True)
-        with (pd.ExcelWriter(self.output_path/"training_results.xlsx", mode="w", engine="openpyxl") as writer1,
-              pd.ExcelWriter(self.output_path/"hyperparameters.xlsx", mode="w", engine="openpyxl") as writer2,
-              pd.ExcelWriter(self.output_path/"classification_report.xlsx", mode="w", engine="openpyxl") as writer3):
+        with (pd.ExcelWriter(self.output_path / "training_results.xlsx", mode="w", engine="openpyxl") as writer1,
+              pd.ExcelWriter(self.output_path / "hyperparameters.xlsx", mode="w", engine="openpyxl") as writer2,
+              pd.ExcelWriter(self.output_path / "classification_report.xlsx", mode="w", engine="openpyxl") as writer3):
             for x in result_list:
                 sheet, dataframe, report, params = x
                 write_excel(writer1, dataframe, sheet)
@@ -300,7 +297,11 @@ def main():
     label, training_output, hyperparameter_tuning, num_thread, scaler, excel, kfold, outliers, \
         precision_weight, recall_weight, class0_weight, report_weight, difference_weight = arg_parse()
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
-    max_evals, trial_time = int(hyperparameter_tuning.split(":")[0]), int(hyperparameter_tuning.split(":")[1])
+    max_evals, trial_time = int(hyperparameter_tuning.split(":")[0]), hyperparameter_tuning.split(":")[1]
+    if trial_time.isdigit():
+        trial_time = int(trial_time)
+    else:
+        trial_time = None
     if Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = [x.strip() for x in out.readlines()]
