@@ -180,10 +180,9 @@ class FeatureSelection:
     def parallel_filtering(self, X_train, Y_train, num_features, feature_names, split_ind, plot=True, plot_num_features=20):
         random.seed(self.seed)
         results = {}
-        filter_names = ("FitCriterion", "FRatio", "GiniIndex", "SymmetricUncertainty", "SpearmanCorr", "PearsonCorr",
-                        "FechnerCorr", "KendallCorr", "ReliefF", "Chi2", "Anova", "LaplacianScore", "InformationGain",
-                        "ModifiedTScore", "SPEC")
-        filter_names = random.sample(filter_names, 7)
+        filter_names = ("FRatio", "SymmetricUncertainty", "SpearmanCorr", "PearsonCorr", "Chi2", "Anova",
+                        "LaplacianScore", "InformationGain",)
+        filter_names = random.sample(filter_names, 6)
         multivariate = ("STIR", "TraceRatioFisher")
         filter_unsupervised = ("TraceRatioLaplacian", "MCFS")
 
