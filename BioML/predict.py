@@ -3,7 +3,7 @@ import argparse
 from scipy.spatial import distance
 from Bio import SeqIO
 from Bio.SeqIO import FastaIO
-from utilities import scale
+from BioML.utilities import scale
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -24,12 +24,6 @@ def arg_parse():
     parser.add_argument("-va", "--prediction_threshold", required=False, default=1.0, type=float,
                         help="Between 0.5 and 1 and determines what considers to be a positive prediction, if 1 only"
                              "those predictions where all models agrees are considered to be positive")
-    parser.add_argument("-s", "--sheets", required=True, nargs="+",
-                        help="Names or index of the selected sheets for both features and hyperparameters and the "
-                             "index of the models in this format-> sheet (name, index):index model1,index model2 "
-                             "without the spaces. If only index or name of the sheets, it is assumed that all kfold models "
-                             "are selected. It is possible to have one sheet with kfold indices but in another ones "
-                             "without")
     parser.add_argument("-ne", "--extracted", required=False,
                         help="The file where the extracted features from the new data are stored",
                         default="extracted_features/new_features.xlsx")
@@ -40,9 +34,8 @@ def arg_parse():
                         help="The number of similar training samples to filter the predictions")
     args = parser.parse_args()
 
-    return [args.fasta, args.excel, args.scaler, args.model_output, args.prediction_threshold, args.sheets,
-            args.extracted, args.res_dir, args.number_similar_samples]
-
+    return [args.fasta_file, args.excel, args.scaler, args.model_output, args.prediction_threshold, args.extracted,
+            args.res_dir, args.number_similar_samples]
 
 
 class EnsembleVoting:
@@ -50,7 +43,7 @@ class EnsembleVoting:
     A class to perform ensemble voting
     """
 
-    def __init__(self, sheets, extracted_features="extracted_features/new_features.xlsx", models="models",
+    def __init__(self, extracted_features="extracted_features/new_features.xlsx", models="models",
                  selected_features="training_features/selected_features.xlsx", scaler="robust"):
         """
         Initialize the class EnsembleVoting
@@ -62,47 +55,37 @@ class EnsembleVoting:
         """
         self.extracted_out = Path(extracted_features)
         self.training_features = Path(selected_features)
-        self.models = Path(models)
+        self.models_path = Path(models)
         self.scaler = scaler
-
-        if sheets:
-            self.selected_sheets = []
-            self.selected_kfolds = {}
-            self._check_sheets(sheets)
-
-    def _check_sheets(self, sheets):
-        for x in sheets:
-            indices = x.split(":")
-            sh = indices[0]
-            if sh.isdigit():
-                sh = int(sh)
-            self.selected_sheets.append(sh)
-            if len(indices) > 1:
-                kfold = tuple(int(x) for x in indices[1].split(","))
-                self.selected_kfolds[sh] = kfold
-            else:
-                self.selected_kfolds[sh] = ()
+        self.with_split = True
+        self.models_dict = self.get_models()
+        self.selected_sheets = list(self.models_dict.keys())
 
     def _check_features(self):
-        with_split = True
-        features = pd.read_excel(self.training_features, index_col=0, sheet_name=self.selected_sheets, header=[0, 1],
-                                 engine='openpyxl')
-        new_features = pd.read_excel(self.extracted_out, index_col=0, sheet_name=self.selected_sheets, header=[0, 1],
-                                     engine='openpyxl')
-        if f"split_{0}" not in list(features.values())[0].columns.unique(0):
-            with_split = False
+        features = pd.read_excel(self.training_features, index_col=0, header=[0, 1], engine='openpyxl')
+        if f"split_{0}" not in features.columns.unique(0):
+            self.with_split = False
+
+        if self.with_split:
+            features = pd.read_excel(self.training_features, index_col=0, sheet_name=self.selected_sheets,
+                                     header=[0, 1], engine='openpyxl')
+            new_features = pd.read_excel(self.extracted_out, index_col=0, sheet_name=self.selected_sheets,
+                                         header=[0, 1], engine='openpyxl')
+        else:
             features = pd.read_excel(self.training_features, index_col=0, sheet_name=self.selected_sheets, header=0,
                                      engine='openpyxl')
             new_features = pd.read_excel(self.extracted_out, index_col=0, sheet_name=self.selected_sheets, header=0,
                                          engine='openpyxl')
 
-        return features, with_split, new_features
+        return features, new_features
 
     def get_models(self):
         model_dict = defaultdict(dict)
-        models = self.models.glob("*/*.joblib")
+        models = self.models_path.glob("*/*.joblib")
         for mod in models:
-            sheet = mod.parent.name
+            sheet = mod.parent.name[6:]
+            if sheet.isdigit():
+                sheet = int(sheet)
             split_ind = int(mod.stem.split("_")[-1])
             model_dict[sheet][split_ind] = joblib.load(mod)
         return model_dict
@@ -113,12 +96,11 @@ class EnsembleVoting:
         """
         feature_dict = {}
         predictions = {}
-        models = self.get_models()
         # extract the features
-        features, with_split, new_features = self._check_features()
-        for sheet, split_dict in models.items():
+        features, new_features = self._check_features()
+        for sheet, split_dict in self.models_dict.items():
             for ind, mod in split_dict.items():
-                if with_split:
+                if self.with_split:
                     sub_feat = features[sheet].loc[:, f"split_{ind}"]
                     sub_new_feat = new_features[sheet].loc[:, f"split_{ind}"]
                 else:
@@ -126,13 +108,15 @@ class EnsembleVoting:
                     sub_new_feat = new_features[sheet]
                 old_feat_scaled, scaler_dict, new_feat_scaled = scale(self.scaler, sub_feat, sub_new_feat)
                 pred = mod.predict(new_feat_scaled)
+                print("pred", len(pred))
                 name = mod.__class__.__name__
                 predictions[f"{sheet}_{name}_{ind}"] = pred
                 feature_dict[f"{sheet}_{name}_{ind}"] = (old_feat_scaled, new_feat_scaled)
 
         return predictions, feature_dict
 
-    def vote(self, val=1, *args):
+    @staticmethod
+    def vote(val=1, *args):
         """
         Hard voting for the ensembles
 
@@ -157,7 +141,7 @@ class EnsembleVoting:
         return vote_, index
 
 
-class ApplicabilityDomain():
+class ApplicabilityDomain:
     """
     A class that looks for the applicability domain
     """
@@ -255,7 +239,7 @@ class ApplicabilityDomain():
 
         return pd.DataFrame(results, index=filtered_names)
 
-    def filter(self, prediction, model_predictions, min_num=1, path_name="filtered_predictions.parquet"):
+    def filter(self, prediction, model_predictions, min_num=1, path_name: str | Path= "filtered_predictions.parquet"):
         """
         Filter those predictions that have less than min_num training samples
 
@@ -334,7 +318,7 @@ class ApplicabilityDomain():
         return positive, negative
 
     def extract(self, fasta_file, pred=None, positive_fasta="positive.fasta", negative_fasta="negative.fasta",
-                res_dir="results"):
+                res_dir: str | Path = "results"):
         """
         A function to extract those test fasta sequences that passed the filter
 
@@ -365,7 +349,7 @@ class ApplicabilityDomain():
             fasta_neg.write_file(negative)
 
 
-def vote_and_filter(fasta_file, sheets, extracted_features="extracted_features/new_features.xlsx", models="models",
+def vote_and_filter(fasta_file, extracted_features="extracted_features/new_features.xlsx", models="models",
                     selected_features="training_features/selected_features.xlsx", scaler="robust",
                     prediction_threshold=1, res_dir="prediction_results", min_num=1):
 
@@ -374,7 +358,7 @@ def vote_and_filter(fasta_file, sheets, extracted_features="extracted_features/n
     (res_dir / "positive").mkdir(parents=True, exist_ok=True)
     (res_dir / "negative").mkdir(parents=True, exist_ok=True)
 
-    ensemble = EnsembleVoting(sheets, extracted_features, models, selected_features, scaler)
+    ensemble = EnsembleVoting(extracted_features, models, selected_features, scaler)
     # predictions
     predictions, feature_dict = ensemble.predicting()
     all_voting, all_index = ensemble.vote(prediction_threshold, *predictions.values())
@@ -399,12 +383,13 @@ def vote_and_filter(fasta_file, sheets, extracted_features="extracted_features/n
     domain.extract(fasta_file, common_domain, positive_fasta=f"common_positive.fasta",
                        negative_fasta=f"common_negative.fasta", res_dir=res_dir)
 
-    def main():
-        fasta, selected_features, scaler, model_output, prediction_threshold, sheets, extracted, res_dir, \
-            number_similar_samples = arg_parse()
-        vote_and_filter(fasta, sheets, extracted, model_output, selected_features, scaler, prediction_threshold,
-                        res_dir, number_similar_samples)
+def main():
+    fasta, selected_features, scaler, model_output, prediction_threshold, extracted, res_dir, \
+        number_similar_samples = arg_parse()
+    vote_and_filter(fasta, extracted, model_output, selected_features, scaler, prediction_threshold,
+                    res_dir, number_similar_samples)
 
-    if __name__ == "__main__":
-        # Run this if this file is executed from command line but not if is imported as API
-        main()
+
+if __name__ == "__main__":
+    # Run this if this file is executed from command line but not if is imported as API
+    main()

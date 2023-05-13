@@ -1,5 +1,4 @@
 import argparse
-import os
 import shutil
 from Bio import SeqIO
 from Bio.SeqIO import FastaIO
@@ -7,9 +6,9 @@ import shlex
 from subprocess import Popen, PIPE
 import time
 import pandas as pd
-from utilities import write_excel
+from BioML.utilities import write_excel
 from os.path import basename
-from multiprocessing import Pool
+from multiprocessing import get_context
 from pathlib import Path
 
 
@@ -18,12 +17,10 @@ def arg_parse():
     parser.add_argument("-i", "--fasta_file", help="The fasta file path", required=True)
     parser.add_argument("-p", "--pssm_dir", help="The pssm files directory's path", required=False,
                         default="pssm")
-    parser.add_argument("-f", "--fasta_dir", required=False, help="The directory for the fasta files",
-                        default="fasta_files")
     parser.add_argument("-id", "--ifeature_dir", required=False, help="Path to the iFeature programme folder",
-                        default="/gpfs/projects/bsc72/ruite/enzyminer/iFeature")
+                        default="iFeature")
     parser.add_argument("-Po", "--possum_dir", required=False, help="A path to the possum programme",
-                        default="/gpfs/projects/bsc72/ruite/enzyminer/POSSUM_Toolkit/")
+                        default="POSSUM_Toolkit/")
     parser.add_argument("-io", "--ifeature_out", required=False, help="The directory where the ifeature features are",
                         default="ifeature_features")
     parser.add_argument("-po", "--possum_out", required=False, help="The directory for the possum extractions",
@@ -35,8 +32,9 @@ def arg_parse():
                         help="The path to where the selected features from training are saved in excel format, it will"
                              "be used to select specific columns from all the generated features for the new data",
                         default="training_features/selected_features.xlsx")
-    parser.add_argument("-on", "--purpose", nargs="+", choices=("extract", "read", "filter"), default=("extract", "read"),
-                        help="Choose the operation between extracting, reading for training or filtering for prediction")
+    parser.add_argument("-on", "--purpose", nargs="+", choices=("extract", "read", "filter"),
+                        default=("extract", "read"),
+                        help="Choose the operation between extracting, reading for training or filtering")
     parser.add_argument("-lg", "--long", required=False, help="true when restarting from the long commands",
                         action="store_true")
     parser.add_argument("-r", "--run", required=False, choices=("possum", "ifeature", "both"), default="both",
@@ -44,24 +42,24 @@ def arg_parse():
     parser.add_argument("-n", "--num_thread", required=False, default=100, type=int,
                         help="The number of threads to use for the generation of pssm profiles")
     parser.add_argument("-t", "--type", required=False, default="all", nargs="+", choices=("all", "APAAC", "PAAC",
-                        "CKSAAGP","Moran", "Geary", "NMBroto", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC",
-                        "QSOrder", "SOCNumber", "GAAC", "KSCtriad", "aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm",
+                        "CKSAAGP", "Moran", "Geary", "NMBroto", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC",
+                        "QSOrder", "SOCNumber", "GAAC", "KSCTriad", "aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm",
                         "dpc_pssm", "edp", "eedp", "rpm_pssm", "k_separated_bigrams_pssm", "pssm_ac", "pssm_cc",
                         "pssm_composition", "rpssm", "s_fpssm", "smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9",
                         "tpc", "tri_gram_pssm", "pse_pssm:1", "pse_pssm:2", "pse_pssm:3"),
                         help="A list of the features to extract")
-    parser.add_argument("-tf", "--type_file", required=False, help="the path to the a file with the feature names")
+    parser.add_argument("-tf", "--type_file", required=False, help="the path to the file with the feature names")
     parser.add_argument("-s", "--sheets", required=False, nargs="+",
                         help="Names or index of the selected sheets from the features and the "
                              "index of the models in this format-> sheet (name, index):index model1,index model2 "
-                             "without the spaces. If only index or name of the sheets, it is assumed that all kfold models "
-                             "are selected. It is possible to have one sheet with kfold indices but in another ones "
-                             "without")
+                             "without the spaces. If only index or name of the sheets, it is assumed that all kfold "
+                             "models are selected. It is possible to have one sheet with kfold indices but in another "
+                             "ones without")
 
     args = parser.parse_args()
 
-    return [args.fasta_file, args.pssm_dir, args.fasta_dir, args.ifeature_dir, args.possum_dir, args.ifeature_out,
-            args.possum_out, args.extracted_out, args.purpuse, args.long, args.run, args.num_thread, args.type,
+    return [args.fasta_file, args.pssm_dir, args.ifeature_dir, args.possum_dir, args.ifeature_out,
+            args.possum_out, args.extracted_out, args.purpose, args.long, args.run, args.num_thread, args.type,
             args.type_file, args.sheets, args.excel]
 
 
@@ -70,10 +68,10 @@ class ExtractFeatures:
     A class to extract features using Possum and iFeatures
     """
 
-    def __init__(self, fasta_file, pssm_dir="pssm", fasta_dir="fasta_files",
+    def __init__(self, fasta_file, pssm_dir="pssm",
                  ifeature_out="ifeature_features", possum_out="possum_features",
-                 ifeature_dir="/gpfs/projects/bsc72/ruite/enzyminer/iFeature",
-                 thread=12, run="both", possum_dir="/gpfs/projects/bsc72/ruite/enzyminer/POSSUM_Toolkit", types="all",
+                 ifeature_dir="iFeature",
+                 thread=12, run="both", possum_dir="POSSUM_Toolkit", types="all",
                  type_file=None):
         """
         Initialize the ExtractFeatures class
@@ -84,8 +82,6 @@ class ExtractFeatures:
             The fasta file to be analysed
         pssm_dir: str, optional
             The directory of the generated pssm files
-        fasta_dir: str, optional
-            The directory to store the new fasta files
         ifeature: str, optional
             A path to the iFeature programme
         ifeature_out: str, optional
@@ -99,19 +95,18 @@ class ExtractFeatures:
         if (self.fasta_file.parent / "no_short.fasta").exists():
             self.fasta_file = self.fasta_file.parent / "no_short.fasta"
         self.pssm_dir = pssm_dir
-        self.fasta_dir = fasta_dir
         self.ifeature = f"{ifeature_dir}/iFeature.py"
         self.possum = f"{possum_dir}/possum_standalone.pl"
-        self.ifeature_out = ifeature_out
-        self.possum_out = possum_out
+        self.ifeature_out = Path(ifeature_out)
+        self.possum_out = Path(possum_out)
         self.thread = thread
         self.run = run
         self.pos_short = ["aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm", "dpc_pssm", "edp", "eedp", "rpm_pssm",
                           "k_separated_bigrams_pssm", "pssm_ac", "pssm_composition", "rpssm", "s_fpssm", "tpc"]
         self.pse_pssm = ["pse_pssm:1", "pse_pssm:2", "pse_pssm:3"]
         self.smoothed_pssm = ["smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9"]
-        self.ifea_short = ["APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC","QSOrder",
-                           "SOCNumber", "GAAC", "KSCtriad"]
+        self.ifea_short = ["APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC", "QSOrder",
+                           "SOCNumber", "GAAC", "KSCTriad"]
         self.pos_long = ["pssm_cc", "tri_gram_pssm"]
         self. ifea_long = ["Moran", "Geary", "NMBroto"]
         if type_file:
@@ -141,7 +136,8 @@ class ExtractFeatures:
         else:
             print("Extracting all features for training new models only")
 
-    def _batch_iterable(self, iterable, batch_size):
+    @staticmethod
+    def _batch_iterable(iterable, batch_size):
         length = len(iterable)
         for ndx in range(0, length, batch_size):
             yield iterable[ndx:min(ndx + batch_size, length)]
@@ -344,16 +340,14 @@ class ExtractFeatures:
         long:
             If to run only the longer features
         """
-        if not os.path.exists(f"{self.possum_out}"):
-            os.makedirs(f"{self.possum_out}")
-        if not os.path.exists(f"{self.ifeature_out}"):
-            os.makedirs(f"{self.ifeature_out}")
+        self.possum_out.mkdir(parents=True, exist_ok=True)
+        self.ifeature_out.mkdir(parents=True, exist_ok=True)
         name = self.fasta_file.parent/"group_1.fasta"
         if not name.exists():
             self._separate_bunch()
         file = list(self.fasta_file.parent.glob(f"group_*.fasta"))
         file.sort(key=lambda x: int(basename(x).replace(".fasta", "").split("_")[1]))
-        with Pool(processes=self.thread) as pool:
+        with get_context("spawn").Pool(processes=self.thread) as pool:
             if self.run == "both":
                 if not long:
                     pool.map(self.extraction_all, file)
@@ -405,8 +399,8 @@ class ReadFeatures:
         self.pse_pssm = ["pse_pssm:1", "pse_pssm:2", "pse_pssm:3"]
         self.smoothed_pssm = ["smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9"]
 
-        self. ifea = ["APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC","QSOrder",
-                      "SOCNumber", "GAAC", "KSCtriad", "Moran", "Geary", "NMBroto"]
+        self. ifea = ["APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC", "QSOrder",
+                      "SOCNumber", "GAAC", "KSCTriad", "Moran", "Geary", "NMBroto"]
         if type_file:
             with open(type_file) as file:
                 types = [x.strip() for x in file.readlines()]
@@ -460,12 +454,12 @@ class ReadFeatures:
             for x, v in feat.items():
                 val = pd.concat(v)
                 val.columns = [f"{c}_{x}" for c in val.columns]
-                feat[x] = v
+                feat[x] = val
         else:
             for x, v in feat.items():
                 val = v[0]
                 val.columns = [f"{c}_{x}" for c in val.columns]
-                feat[x] = v
+                feat[x] = val
 
         all_data = pd.concat(feat.values(), axis=1)
         # change the column names
@@ -532,20 +526,21 @@ class ReadFeatures:
             A dictionary of {algorithm name: features_kfold index} if there are different kfold indices
 
         """
-        feature_dict = {}
         self.read()
         training_features = pd.read_excel(self.excel_feature, index_col=0, sheet_name=self.selected_sheets, header=[0, 1],
                                           engine='openpyxl')
-        for sheet, feature in training_features.items():
-            for col in feature.columns.unique(level=0):
-                ind = int(col.split("_")[-1])
-                if self.selected_kfolds[sheet] and ind not in self.selected_kfolds: continue
-                sub_feat = feature.loc[:, f"split_{ind}"]
-                feature_dict[f"split_{ind}"] = self.features[sub_feat.columns]
-            write_excel(self.extracted_out/"new_features", pd.concat(feature_dict, axis=1), f"{sheet}")
+        with pd.ExcelWriter(self.extracted_out/"new_features.xlsx", mode="w", engine="openpyxl") as writer:
+            for sheet, feature in training_features.items():
+                feature_dict = {}
+                for col in feature.columns.unique(level=0):
+                    ind = int(col.split("_")[-1])
+                    if self.selected_kfolds[sheet] and ind not in self.selected_kfolds[sheet]: continue
+                    sub_feat = feature.loc[:, f"split_{ind}"]
+                    feature_dict[f"split_{ind}"] = self.features[sub_feat.columns]
+                write_excel(writer, pd.concat(feature_dict, axis=1), f"{sheet}")
 
 
-def extract_and_filter(fasta_file=None, pssm_dir="pssm", fasta_dir="fasta_files", ifeature_out="ifeature_features",
+def extract_and_filter(fasta_file=None, pssm_dir="pssm", ifeature_out="ifeature_features",
                        possum_dir="/gpfs/home/bsc72/bsc72661/feature_extraction/POSSUM_Toolkit",
                        ifeature_dir="/gpfs/projects/bsc72/ruite/enzyminer/iFeature", possum_out="possum_features",
                        extracted_out="training_features", purpose=("extract", "read"), long=False, thread=100,
@@ -559,8 +554,6 @@ def extract_and_filter(fasta_file=None, pssm_dir="pssm", fasta_dir="fasta_files"
         The fasta file to be analysed
     pssm_dir: str, optional
         The directory of the generated pssm files
-    fasta_dir: str, optional
-        The directory to store the new fasta files
     ifeature: str, optional
         A path to the iFeature programme
     ifeature_out: str, optional
@@ -570,15 +563,15 @@ def extract_and_filter(fasta_file=None, pssm_dir="pssm", fasta_dir="fasta_files"
     possum_out: str, optional
         A directory for the extraction results from possum
     filtered_out: str, optional
-        A directory to store the filtered features from all thegenerated features
+        A directory to store the filtered features from all the generated features
     thread: int
-        The number of poolworkers to use to run the programmes
+        The number of pool workers to use to run the programmes
     run: str
         which programme to run
     """
     # Feature extraction for both training or prediction later
     if "extract" in purpose:
-        extract = ExtractFeatures(fasta_file, pssm_dir, fasta_dir, ifeature_out, possum_out, ifeature_dir, thread, run,
+        extract = ExtractFeatures(fasta_file, pssm_dir, ifeature_out, possum_out, ifeature_dir, thread, run,
                                   possum_dir, types, type_file)
         extract.run_extraction_parallel(long)
     # feature reading for the training
@@ -586,7 +579,7 @@ def extract_and_filter(fasta_file=None, pssm_dir="pssm", fasta_dir="fasta_files"
         filtering = ReadFeatures(fasta_file, ifeature_out, possum_out, extracted_out, types, type_file,
                                  excel_feature_file, selected)
         every_features = filtering.read()
-        every_features.to_csv(f"{extracted_out}/every_feature.csv")
+        every_features.to_csv(f"{extracted_out}/every_features.csv")
     # feature extraction for prediction
     if "filter" in purpose:
         # feature filtering
@@ -598,11 +591,12 @@ def extract_and_filter(fasta_file=None, pssm_dir="pssm", fasta_dir="fasta_files"
 
 
 def main():
-    fasta_file, pssm_dir, fasta_dir, ifeature_dir, possum_dir, ifeature_out, possum_out, extracted_out, purpose, \
+    fasta_file, pssm_dir, ifeature_dir, possum_dir, ifeature_out, possum_out, extracted_out, purpose, \
     long, run, num_thread, types, type_file, sheets, excel = arg_parse()
 
-    extract_and_filter(fasta_file, pssm_dir, fasta_dir, ifeature_out, possum_dir, ifeature_dir, possum_out,
+    extract_and_filter(fasta_file, pssm_dir, ifeature_out, possum_dir, ifeature_dir, possum_out,
                        extracted_out, purpose, long, num_thread, run, types, type_file, excel, sheets)
+
 
 if __name__ == "__main__":
     # Run this if this file is executed from command line but not if is imported as API

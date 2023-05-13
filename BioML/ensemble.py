@@ -6,7 +6,7 @@ from sklearn.model_selection import StratifiedShuffleSplit
 import pandas as pd
 from sklearn.metrics import matthews_corrcoef, confusion_matrix, r2_score
 from sklearn.metrics import classification_report as class_re
-from utilities import scale, write_excel, interesting_classifiers
+from BioML.utilities import scale, write_excel, interesting_classifiers, modify_param
 from itertools import combinations
 
 
@@ -61,8 +61,10 @@ def arg_parse():
 
 
 class EnsembleClassification:
-    def __init__(self, selected_features: str | Path, label: str | Path,  ensemble_output: str | Path,
-                 hyperparameter_path: str | Path, selected_sheets: list[str | int], outliers: list[str] | [str] = (),
+    def __init__(self, label: str | Path, selected_sheets: list[str | int],
+                 selected_features: str | Path = "training_features/selected_features.xlsx",
+                 ensemble_output: str | Path = "ensemble_results",
+                 hyperparameter_path: str | Path = "training_features/hyperparameters.xlsx",  outliers: list[str] = (),
                  scaler: str = "robust",  num_splits: int = 5, test_size: float = 0.2,
                  prediction_threshold: float = 1.0, precision_weight=1, recall_weight=1, report_weight=0.4,
                  difference_weight=0.8, class0_weight=0.5, num_threads=10):
@@ -122,13 +124,13 @@ class EnsembleClassification:
             feat_subset = features
 
         X_train = feat_subset.iloc[train_index]
-        Y_train = feat_subset.iloc[train_index]
+        Y_train = self.labels.iloc[train_index]
         X_test = feat_subset.iloc[test_index]
-        Y_test = feat_subset.iloc[test_index]
+        Y_test = self.labels.iloc[test_index]
         X_train = X_train.loc[[x for x in X_train.index if x not in self.outliers]]
         X_test = X_test.loc[[x for x in X_test.index if x not in self.outliers]]
-        Y_train = Y_train.loc[[x for x in Y_train.index if x not in self.outliers]]
-        Y_test = Y_test.loc[[x for x in Y_test.index if x not in self.outliers]]
+        Y_train = Y_train.loc[[x for x in Y_train.index if x not in self.outliers]].values.ravel()
+        Y_test = Y_test.loc[[x for x in Y_test.index if x not in self.outliers]].values.ravel()
         transformed_x, scaler_dict, test_x = scale(self.scaler, X_train, X_test)
 
         return transformed_x, test_x, Y_test, Y_train
@@ -146,8 +148,7 @@ class EnsembleClassification:
             for ind in data.index.unique(level=0):
                 name = data.loc[ind].index.unique(level=0)[0]
                 param = data.loc[(ind, name), 0].to_dict()
-                if "n_jobs" in param:
-                    param["n_jobs"] = self.num_threads
+                param = modify_param(param, name, self.num_threads)
                 # each sheet should have 5 models representing each split index
                 models[sheet][ind] = interesting_classifiers(name, param)
 
@@ -286,11 +287,13 @@ class EnsembleClassification:
         results = self.predict_all_split_sets(features, with_split, feature_indices, models, results)
         ensemble_results = self.ensemble_voting(results, label_dict)
         # save the results
-        for kfold, res in ensemble_results.items():
-            dataframe = pd.concat(res[0])
-            report = pd.concat({x.index.name: x for x  in res[1]})
-            write_excel(self.output_path/ "ensemble_report.xlsx", report, f"split_{kfold}")
-            write_excel(self.output_path/ "ensemble_results.xlsx", dataframe, f"split_{kfold}")
+        with (pd.ExcelWriter(self.output_path / "ensemble_report.xlsx", mode="w", engine="openpyxl") as writer1,
+        pd.ExcelWriter(self.output_path / "ensemble_results.xlsx", mode="w", engine="openpyxl") as writer2):
+            for kfold, res in ensemble_results.items():
+                dataframe = pd.concat(res[0])
+                report = pd.concat({x.index.name: x for x  in res[1]})
+                write_excel(writer1, report, f"split_{kfold}")
+                write_excel(writer2, dataframe, f"split_{kfold}")
 
     @staticmethod
     def get_score(pred_train_y, pred_test_y, Y_train, Y_test):
@@ -387,7 +390,11 @@ def main():
             outliers = tuple(x.strip() for x in out.readlines())
     if sheets[0].isdigit():
         sheets = [int(x) for x in sheets]
-    ensemble = EnsembleClassification(selected_features, label,  ensemble_output, hyperparameter_path, sheets, outliers,
+    ensemble = EnsembleClassification(label, sheets, selected_features, ensemble_output, hyperparameter_path,  outliers,
                  scaler,  num_split, test_size, prediction_threshold, precision_weight, recall_weight, report_weight,
                  difference_weight, class0_weight, num_thread)
     ensemble.run()
+
+if __name__ == "__main__":
+    # Run this if this file is executed from command line but not if is imported as API
+    main()

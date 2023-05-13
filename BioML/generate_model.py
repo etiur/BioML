@@ -1,10 +1,10 @@
-from utilities import interesting_classifiers
+from BioML.utilities import interesting_classifiers
 from pathlib import Path
 import argparse
 import pandas as pd
 from collections import defaultdict
 import joblib
-from utilities import scale
+from BioML.utilities import scale, modify_param
 
 def arg_parse():
     parser = argparse.ArgumentParser(description="Generate the models from the ensemble")
@@ -27,7 +27,7 @@ def arg_parse():
                         help="Names or index of the selected sheets for both features and hyperparameters and the "
                              "index of the models in this format-> sheet (name, index):index model1,index model2 "
                              "without the spaces. If only index or name of the sheets, it is assumed that all kfold models "
-                             "are selected. It is possible to have one sheet with kfold indices but in another ones "
+                             "are selected. It is possible to have kfold indices in one sheet and in another ones "
                              "without")
     parser.add_argument("-ot", "--outliers", nargs="+", required=False, default=(),
                         help="A list of outliers if any, the name should be the same as in the excel file with the "
@@ -42,10 +42,10 @@ def arg_parse():
 
 class GenerateModel:
     def __init__(self, selected_features, hyperparameter_path, label, sheets, scaler="robust", num_threads=10,
-                 outliers=(), model_output="model"):
+                 outliers=(), model_output="models"):
         self.selected_features = selected_features
         self.hyperparameter_path = hyperparameter_path
-        self.label = label
+        self.label = pd.read_csv(label, index_col=0)
         self.scaler = scaler
         self.num_threads = num_threads
         self.outliers = outliers
@@ -53,6 +53,7 @@ class GenerateModel:
         self.selected_sheets = []
         self.selected_kfolds = {}
         self._check_sheets(sheets)
+        self.with_split = True
 
     def _check_sheets(self, sheets):
         for x in sheets:
@@ -79,11 +80,10 @@ class GenerateModel:
         hp = {key: value.where(value.notnull(), None) for key, value in hp.items()}
         for sheet, data in hp.items():
             for ind in data.index.unique(level=0):
-                if self.selected_kfolds[sheet] and ind not in self.selected_kfolds: continue
+                if self.selected_kfolds[sheet] and ind not in self.selected_kfolds[sheet]: continue
                 name = data.loc[ind].index.unique(level=0)[0]
                 param = data.loc[(ind, name), 0].to_dict()
-                if "n_jobs" in param:
-                    param["n_jobs"] = self.num_threads
+                param = modify_param(param, name, self.num_threads)
                 # each sheet should have 5 models representing each split index
                 models[sheet][ind] = interesting_classifiers(name, param)
                 model_indices[sheet].append(ind)
@@ -91,47 +91,49 @@ class GenerateModel:
         return models, model_indices
 
     def _check_features(self):
-        with_split = True
-        features = pd.read_excel(self.selected_features, index_col=0, sheet_name=self.selected_sheets, header=[0, 1],
-                                 engine='openpyxl')
-        if f"split_{0}" not in list(features.values())[0].columns.unique(0):
-            with_split = False
+        features = pd.read_excel(self.selected_features, index_col=0, header=[0, 1], engine='openpyxl')
+        if f"split_{0}" not in features.columns.unique(0):
+            self.with_split = False
+        if self.with_split:
+            features = pd.read_excel(self.selected_features, index_col=0, sheet_name=self.selected_sheets,
+                                     header=[0, 1], engine='openpyxl')
+        else:
             features = pd.read_excel(self.selected_features, index_col=0, sheet_name=self.selected_sheets, header=0,
                                      engine='openpyxl')
-        return features, with_split
+        return features
 
-    def get_features(self, features, with_split, model_index):
+    def get_features(self, features, model_index):
 
         feature_dict = defaultdict(dict)
         label_dict =defaultdict(dict)
         for sheet, feature in features.items():
             random_state = 22342
             for ind in model_index[sheet]:
-                if with_split:
+                if self.with_split:
                     sub_feat = feature.loc[:, f"split_{ind}"].sample(frac=1, random_state=random_state)
                 else:
                     sub_feat = feature.sample(frac=1, random_state=random_state)
                 transformed, scaler_dict = scale(self.scaler, sub_feat)
                 feature_dict[sheet][ind] = transformed
-                label_dict[sheet][ind] = self.label.sample(frac=1, random_state=random_state)
+                label_dict[sheet][ind] = self.label.sample(frac=1, random_state=random_state).values.ravel()
                 random_state += 10000
 
         return feature_dict, label_dict
 
     def refit_save(self):
-        """ Fit the models and get the predictions"""
+        """Fit the models and get the predictions"""
         models, model_indices = self.get_hyperparameter()
-        features, with_split = self._check_features()
-        feature_dict, label_dict = self.get_features(features, with_split, model_indices)
+        features = self._check_features()
+        feature_dict, label_dict = self.get_features(features, model_indices)
         for sheet, shuffled_feature in feature_dict.items():
-            out = self.model_output / sheet
+            out = self.model_output / f"sheet_{sheet}"
             out.mkdir(parents=True, exist_ok=True)
             # refit the models with its corresponding index split and feature set
             for split_ind, feat in shuffled_feature.items():
                 label = label_dict[sheet][split_ind]
                 models[sheet][split_ind].fit(feat, label)
                 name = models[sheet][split_ind].__class__.__name__
-                joblib.dump(models[sheet][split_ind], out/f"{name}_{split_ind}.joblib")
+                joblib.dump(models[sheet][split_ind], out / f"{name}_{split_ind}.joblib")
 
 
 def main():
@@ -144,4 +146,7 @@ def main():
     generate.refit_save()
 
 
+if __name__ == "__main__":
+    # Run this if this file is executed from command line but not if is imported as API
+    main()
 

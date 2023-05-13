@@ -6,7 +6,7 @@ import glob
 from os import path
 from os.path import basename, dirname, abspath
 import time
-from multiprocessing import Pool
+from multiprocessing import get_context
 import shutil
 from Bio import SeqIO
 from Bio.SeqIO import FastaIO
@@ -23,14 +23,14 @@ def arg_parse():
                         default="pssm")
     parser.add_argument("-di", "--dbinp", required=False, help="The path to the fasta files to create the database")
     parser.add_argument("-do", "--dbout", required=False, help="The name for the created database",
-                        default="/gpfs/projects/bsc72/ruite/enzyminer/database/uniref50")
+                        default="database/uniref50")
     parser.add_argument("-n", "--num_thread", required=False, default=100, type=int,
                         help="The number of threads to use for the generation of pssm profiles")
     parser.add_argument("-num", "--number", required=False, help="a number for the files", default="*")
     parser.add_argument("-iter", "--iterations", required=False, default=3, type=int, help="The number of iterations "
                                                                                          "in PSIBlast")
     parser.add_argument("-Po", "--possum_dir", required=False, help="A path to the possum programme",
-                        default="/gpfs/projects/bsc72/ruite/enzyminer/POSSUM_Toolkit/")
+                        default="POSSUM_Toolkit/")
     args = parser.parse_args()
 
     return [args.fasta_dir, args.pssm_dir, args.dbinp, args.dbout, args.num_thread, args.number,
@@ -108,7 +108,7 @@ class ExtractPssm:
         Accelerates the checking of files
         """
         file = glob.glob(f"{abspath(self.pssm)}/seq_{num}*.pssm")
-        with Pool(processes=self.num_thread) as executor:
+        with get_context("spawn").Pool(processes=self.num_thread) as executor:
             executor.map(self._check_pssm, file)
 
     def generate(self, file=None):
@@ -202,7 +202,7 @@ class ExtractPssm:
 
 def generate_pssm(num_threads=100, fasta_dir="fasta_files", pssm_dir="pssm", dbinp=None,
                   dbout="/gpfs/projects/bsc72/ruite/enzyminer/database/uniref50", num="*", fasta=None,
-                  iterations=3):
+                  iterations=3, possum_dir="/gpfs/projects/bsc72/ruite/enzyminer/POSSUM_Toolkit/"):
     """
     A function that creates protein databases, generates the pssms and returns the list of files
 
@@ -225,7 +225,7 @@ def generate_pssm(num_threads=100, fasta_dir="fasta_files", pssm_dir="pssm", dbi
         os.makedirs(f"{fasta_dir}")
     if not path.exists(f"{abspath(pssm_dir)}"):
         os.makedirs(f"{abspath(pssm_dir)}")
-    pssm = ExtractPssm(num_threads, fasta_dir, pssm_dir, dbinp, dbout, fasta, iterations)
+    pssm = ExtractPssm(num_threads, fasta_dir, pssm_dir, dbinp, dbout, fasta, iterations, possum_dir)
     # generate teh database if not present
     pssm._clean_fasta()
     pssm._separate_single()
@@ -238,9 +238,9 @@ def generate_pssm(num_threads=100, fasta_dir="fasta_files", pssm_dir="pssm", dbi
 
 
 def main():
-    fasta_dir, pssm_dir, dbinp, dbout, num_thread, num, fasta_file, iterations = arg_parse()
+    fasta_dir, pssm_dir, dbinp, dbout, num_thread, num, fasta_file, iterations, possum_dir = arg_parse()
     
-    generate_pssm(num_thread, fasta_dir, pssm_dir, dbinp, dbout, num, fasta_file, iterations)
+    generate_pssm(num_thread, fasta_dir, pssm_dir, dbinp, dbout, num, fasta_file, iterations, possum_dir)
 
 
 if __name__ == "__main__":
