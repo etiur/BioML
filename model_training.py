@@ -58,7 +58,8 @@ def arg_parse():
     parser.add_argument("-dw", "--difference_weight", required=False, default=0.8, type=float,
                         help="How important is to have similar training and test metrics")
     parser.add_argument("-sm", "--small", required=False, action="store_false",
-                        help="Default to true, The number of samples is < 1000")
+                        help="Default to true, if the number of samples is < 300 or if you machine is slow. "
+                             "The hyperparameters tuning will fail if you set trial time short and your machine is slow")
 
     args = parser.parse_args()
 
@@ -90,7 +91,7 @@ def interesting_classifiers(name, small=True):
         svc(name + ".svc"),
         k_neighbors_classifier(name + ".knn", algorithm="auto",
                                n_neighbors=scope.int(hp.uniform(_name("n_neighbors"), 1, 10)),
-                               metric=_neighbors_metric(name))
+                               metric=_neighbors_metric(_name("metric")))
     ]
     if not small:
         classifiers.append(lightgbm_classification(name + ".lightgbm"))
