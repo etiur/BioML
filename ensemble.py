@@ -394,3 +394,7 @@ def main():
                  scaler,  num_split, test_size, prediction_threshold, precision_weight, recall_weight, report_weight,
                  difference_weight, class0_weight, num_thread)
     ensemble.run()
+
+if __name__ == "__main__":
+    # Run this if this file is executed from command line but not if is imported as API
+    main()

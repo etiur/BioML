@@ -388,6 +388,6 @@ def vote_and_filter(fasta_file, extracted_features="extracted_features/new_featu
         vote_and_filter(fasta, extracted, model_output, selected_features, scaler, prediction_threshold,
                         res_dir, number_similar_samples)
 
-    if __name__ == "__main__":
-        # Run this if this file is executed from command line but not if is imported as API
-        main()
+if __name__ == "__main__":
+    # Run this if this file is executed from command line but not if is imported as API
+    main()
