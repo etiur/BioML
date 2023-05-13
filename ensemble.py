@@ -390,7 +390,7 @@ def main():
             outliers = tuple(x.strip() for x in out.readlines())
     if sheets[0].isdigit():
         sheets = [int(x) for x in sheets]
-    ensemble = EnsembleClassification(selected_features, label,  ensemble_output, hyperparameter_path, sheets, outliers,
+    ensemble = EnsembleClassification(label, sheets, selected_features, ensemble_output, hyperparameter_path,  outliers,
                  scaler,  num_split, test_size, prediction_threshold, precision_weight, recall_weight, report_weight,
                  difference_weight, class0_weight, num_thread)
     ensemble.run()
