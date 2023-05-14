@@ -53,12 +53,15 @@ def arg_parse():
                         help="A list of outliers if any, the name should be the same as in the excel file with the "
                              "filtered features, you can also specify the path to a file in plain text format, each "
                              "record should be in a new line")
+    parser.add_argument("-r2w", "--r2_weight", required=False, default=1, type=float,
+                        help="How important is the r2 score with respect to MCC score")
 
     args = parser.parse_args()
 
     return [args.excel, args.label, args.scaler, args.ensemble_output, args.hyperparameter_path, args.sheets,
             args.prediction_threshold, args.kfold_parameters, args.outliers, args.precision_weight,
-            args.recall_weight, args.class0_weight, args.report_weight, args.difference_weight, args.num_thread]
+            args.recall_weight, args.class0_weight, args.report_weight, args.difference_weight, args.num_thread,
+            args.r2_weight]
 
 
 class EnsembleClassification:
@@ -68,7 +71,7 @@ class EnsembleClassification:
                  hyperparameter_path: str | Path = "training_features/hyperparameters.xlsx",  outliers: list[str] = (),
                  scaler: str = "robust",  num_splits: int = 5, test_size: float = 0.2,
                  prediction_threshold: float = 1.0, precision_weight=1, recall_weight=1, report_weight=0.4,
-                 difference_weight=0.8, class0_weight=0.5, num_threads=10):
+                 difference_weight=0.8, class0_weight=0.5, num_threads=10, r2_weight=1):
 
         self.features = Path(selected_features)
         self.output_path = Path(ensemble_output)
@@ -91,6 +94,7 @@ class EnsembleClassification:
         self.class0_weight = class0_weight
         self.num_threads = num_threads
         self.with_split = True
+        self.r2_weight = r2_weight
 
     def vote(self, *args):
         """
@@ -208,7 +212,7 @@ class EnsembleClassification:
                 pred = self.predict(models[sheet][split_ind], feat[0], feat[1])
                 if sheet not in results[split_ind]:
                     results[split_ind][sheet] = {}
-                results[split_ind][sheet][f"sheet:{sheet}:{name}:kfold:{split_ind}"] = pred
+                results[split_ind][sheet][f"sh:{sheet}:{name}:kf:{split_ind}"] = pred
 
         return results
 
@@ -231,7 +235,7 @@ class EnsembleClassification:
                     transformed_x, test_x, Y_test, Y_train = self._scale(feature, train_index, test_index, ind)
                     # for each model I have the predictions for all the possible kfolds
                     pred = self.predict(models[sheet][ind], transformed_x, test_x)
-                    results[kfold][sheet][f"sheet:{sheet}:{name}:kfold:{ind}"] = pred
+                    results[kfold][sheet][f"sh:{sheet}:{name}:kf:{ind}"] = pred
 
         return results
 
@@ -256,7 +260,8 @@ class EnsembleClassification:
         return dataframe, report
 
     def ensemble_voting(self, results, label_dict):
-        ensemble_results = defaultdict(list)
+        ensemble_results_within_sheet = defaultdict(dict)
+        ensemble_results_between_sheet = {}
         # first I get the results from the ensembling of different sheets
         different_sheet_same_index = self._transform_results(results)
         # return the results from the original model to see if they are the same and then ensemble if there are more
@@ -264,30 +269,34 @@ class EnsembleClassification:
         for kfold, sheet_dict in results.items():
             label = label_dict[kfold]
             for sheet, pred_dict in sheet_dict.items():
-                # This is an ensembling of predictions for the same kfold split of the dataset with models trained from
-                # the same feature sheet but with the optimal hyperparameters for different kfolds.
+                if kfold not in ensemble_results_within_sheet[sheet]:
+                    ensemble_results_within_sheet[sheet][kfold] = []
+                # This is an ensembling of predictions for the different kfold split of the dataset with models trained
+                # with the same feature sheet. although with optimal parameters for different kfolds
                 model_names = pred_dict.keys()
-                for n in range(2, len(model_names)+1):
-                    for comb in combinations(model_names, n):
+                for n in range(1, len(model_names)+1):
+                    for comb in combinations(sorted(model_names), n):
                         sub_pred = [pred_dict[x] for x in comb]
-                        ensemble_results[kfold].append(self.analyse_vote(sub_pred, label, "#".join(comb)))
-
-            pred_dict = different_sheet_same_index[kfold]
-            model_names, predictions = pred_dict.keys(), pred_dict.values()
+                        ensemble_results_within_sheet[sheet][kfold].append(self.analyse_vote(sub_pred, label,
+                                                                                             "#".join(comb)))
             if not self.single_feature:
+                pred_dict = different_sheet_same_index[kfold]
+                model_names, predictions = pred_dict.keys(), pred_dict.values()
                 # if there are more than 1 selected sheets means that I will have for each kfold more than 1 prediction
-                # in the different_shee_same_index dict. So I ensemble those predictions
-                ensemble_results[kfold].append(self.analyse_vote(predictions, label, "#".join(model_names)))
-            # Here I get the predictions of the models that was trained on the kfold and with optimal hp of that kfold
-            # as a control since I should get the same scores
-            for i, (model_name, prediction) in enumerate(zip(model_names, predictions)):
-                ensemble_results[kfold].append(self.analyse_vote((prediction,), label, model_name))
+                # in the different_sheet_same_index dict. So I ensemble those predictions
+                ensemble_results_between_sheet[kfold] = self.analyse_vote(predictions, label,
+                                                                          "#".join(sorted(model_names)))
 
         # save the dataframe and the reports
-        ensemble_results = {kfold: tuple(zip(*sorted(value, key=self.rank_results, reverse=True)))
-                            for kfold, value in ensemble_results.items()}
+        for sheet, pred_dict in ensemble_results_within_sheet.items():
+            for kfold, pred in pred_dict.items():
+                sort = sorted(pred, key=self.rank_results, reverse=True)
+                ensemble_results_within_sheet[sheet][kfold] = list(zip(*sort))
+        data_between = pd.concat({key: value[0] for key, value in ensemble_results_between_sheet.items()})
+        report_between = pd.concat({key: pd.concat({value[1].index.name: value[1]}) for key, value in
+                                    ensemble_results_between_sheet.items()})
 
-        return ensemble_results
+        return ensemble_results_within_sheet, data_between, report_between
 
     def run(self):
         """
@@ -298,15 +307,31 @@ class EnsembleClassification:
         feature_scaled, feature_indices, label_dict = self.get_features(features)
         results = self.refit(feature_scaled, models, label_dict)
         results = self.predict_all_split_sets(features,  feature_indices, models, results)
-        ensemble_results = self.ensemble_voting(results, label_dict)
+        ensemble_results_within_sheet, data_between, report_between = self.ensemble_voting(results, label_dict)
+
         # save the results
         with (pd.ExcelWriter(self.output_path / "ensemble_report.xlsx", mode="w", engine="openpyxl") as writer1,
               pd.ExcelWriter(self.output_path / "ensemble_results.xlsx", mode="w", engine="openpyxl") as writer2):
-            for kfold, res in ensemble_results.items():
-                dataframe = pd.concat(res[0])
-                report = pd.concat({x.index.name: x for x in res[1]})
-                write_excel(writer1, report, f"split_{kfold}")
-                write_excel(writer2, dataframe, f"split_{kfold}")
+            # the within sheet results
+            for sheet, kfold_dict in ensemble_results_within_sheet.items():
+                mean_dataframe = []
+                mean_report = []
+                for kfold, data in kfold_dict.items():
+                    dataframe = pd.concat(data[0])
+                    report = pd.concat({x.index.name: x for x in data[1]})
+                    write_excel(writer1, report, f"sh_{sheet}_kf_{kfold}")
+                    write_excel(writer2, dataframe, f"sh_{sheet}_kf_{kfold}")
+                    mean_dataframe.append(dataframe)
+                    mean_report.append(report)
+                mean_dataframe = pd.concat(mean_dataframe, axis=0)
+                mean_report = pd.concat(mean_report, axis=0)
+                write_excel(writer1, mean_report.groupby(level=[0,1]).mean(), f"sh_{sheet}_kf_{kfold}_mean")
+                write_excel(writer2, mean_dataframe.groupby(level=0).mean(), f"sh_{sheet}_kf_{kfold}_mean")
+                write_excel(writer1, mean_report.groupby(level=[0,1]).std(), f"sh_{sheet}_kf_{kfold}_std")
+                write_excel(writer2, mean_dataframe.groupby(level=0).std(), f"sh_{sheet}_kf_{kfold}_std")
+            # the between sheet results
+            write_excel(writer1, data_between, f"results_between_sheets")
+            write_excel(writer2, report_between, f"report_between_sheets")
 
     @staticmethod
     def get_score(pred_train_y, pred_test_y, Y_train, Y_test):
@@ -365,9 +390,10 @@ class EnsembleClassification:
         return dataframe, report
 
     def _calculate_score_dataframe(self, dataframe):
-        return ((dataframe["train_MCC"] + dataframe["test_MCC"] + dataframe["train_R2"] + dataframe["test_R2"])
-                - self.difference_weight * (abs(dataframe["test_MCC"] - dataframe["train_MCC"]) +
-                                            abs(dataframe["test_R2"] - dataframe["train_R2"]))).sum()
+        return ((dataframe["train_MCC"] + dataframe["test_MCC"] + self.r2_weight * (dataframe["train_R2"] +
+                                                                                    dataframe["test_R2"]))
+                - self.difference_weight * (abs(dataframe["test_MCC"] - dataframe["train_MCC"]) + self.r2_weight *
+                                            (abs(dataframe["test_R2"] - dataframe["train_R2"]))))
 
     def _calculate_score_report(self, report, class_label):
         class_level = report.loc[report.index.get_level_values(0) == class_label,
@@ -398,7 +424,7 @@ class EnsembleClassification:
 def main():
     selected_features, label, scaler, ensemble_output, hyperparameter_path, sheets, prediction_threshold, \
     kfold_parameters, outliers, precision_weight, recall_weight, class0_weight, report_weight, \
-    difference_weight, num_thread = arg_parse()
+    difference_weight, num_thread, r2_weight = arg_parse()
     num_split, test_size = int(kfold_parameters.split(":")[0]), float(kfold_parameters.split(":")[1])
     if Path(outliers[0]).exists():
         with open(outliers) as out:
@@ -407,7 +433,7 @@ def main():
         sheets = [int(x) for x in sheets]
     ensemble = EnsembleClassification(label, sheets, selected_features, ensemble_output, hyperparameter_path,  outliers,
                  scaler,  num_split, test_size, prediction_threshold, precision_weight, recall_weight, report_weight,
-                                     difference_weight, class0_weight, num_thread)
+                                     difference_weight, class0_weight, num_thread, r2_weight)
     ensemble.run()
 
 
