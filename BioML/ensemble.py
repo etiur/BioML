@@ -89,6 +89,7 @@ class EnsembleClassification:
         self.difference_weight = difference_weight
         self.class0_weight = class0_weight
         self.num_threads = num_threads
+        self.with_split = True
 
 
     def vote(self, *args):
@@ -115,10 +116,10 @@ class EnsembleClassification:
 
         return vote_, index
 
-    def _scale(self, features, with_split, train_index, test_index, split_index):
+    def _scale(self, features, train_index, test_index, split_index):
         # split and filter
 
-        if with_split:
+        if self.with_split:
             feat_subset = features.loc[:, f"split_{split_index}"]
         else:
             feat_subset = features
@@ -155,16 +156,20 @@ class EnsembleClassification:
         return models
 
     def _check_features(self):
-        with_split = True
-        features = pd.read_excel(self.features, index_col=0, sheet_name=self.selected_sheets, header=[0, 1],
-                                 engine='openpyxl')
-        if f"split_{0}" not in list(features.values())[0].columns.unique(0):
-            with_split = False
+
+        features = pd.read_excel(self.features, index_col=0, header=[0, 1], engine='openpyxl')
+        if f"split_{0}" not in features.columns.unique(0):
+            self.with_split = False
+
+        if self.with_split:
+            features = pd.read_excel(self.features, index_col=0, sheet_name=self.selected_sheets, header=[0, 1],
+                                     engine='openpyxl')
+        else:
             features = pd.read_excel(self.features, index_col=0, sheet_name=self.selected_sheets, header=0,
                                      engine='openpyxl')
-        return features, with_split
+        return features
 
-    def get_features(self, features, with_split):
+    def get_features(self, features):
         feature_indices = {}
         feature_dict = defaultdict(dict)
         label_dict = {}
@@ -172,7 +177,7 @@ class EnsembleClassification:
             skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=20)
             for ind, (train_index, test_index) in enumerate(skf.split(feature, self.labels)):
                 feature_indices[ind] = (train_index, test_index)
-                transformed_x, test_x, Y_test, Y_train = self._scale(feature, with_split, train_index, test_index, ind)
+                transformed_x, test_x, Y_test, Y_train = self._scale(feature, train_index, test_index, ind)
                 feature_dict[sheet][ind] = (transformed_x, test_x)
                 if ind not in label_dict:
                     label_dict[ind] = (Y_train, Y_test)
@@ -207,7 +212,7 @@ class EnsembleClassification:
 
         return results
 
-    def predict_all_split_sets(self, features, with_split, feature_indices, models, results):
+    def predict_all_split_sets(self, features, feature_indices, models, results):
         """
         Use the model trained with its corresponding split set to predict on all split sets and see the result
         of the individual models as well as the ensemble.
@@ -221,8 +226,7 @@ class EnsembleClassification:
                 # for the same ind I want to split each dataset within the same sheet set 5 times (25 times/ sheet)
                 name = models[sheet][ind].__class__.__name__
                 for kfold, (train_index, test_index) in enumerate(feature_indices.values()):
-                    transformed_x, test_x, Y_test, Y_train = self._scale(feature, with_split, train_index,
-                                                                         test_index, ind)
+                    transformed_x, test_x, Y_test, Y_train = self._scale(feature, train_index, test_index, ind)
                     if ind == kfold: continue
                     # for each model I have the predictions for all the possible kfolds
                     pred = self.predict(models[sheet][ind], transformed_x, test_x)
@@ -280,11 +284,11 @@ class EnsembleClassification:
         """
         Each split index will be an Excel sheet, I will ensemble the results per sheet and save the results
         """
-        features, with_split = self._check_features()
+        features= self._check_features()
         models = self.get_hyperparameter()
-        feature_scaled, feature_indices, label_dict = self.get_features(features, with_split)
+        feature_scaled, feature_indices, label_dict = self.get_features(features)
         results = self.refit(feature_scaled, models, label_dict)
-        results = self.predict_all_split_sets(features, with_split, feature_indices, models, results)
+        results = self.predict_all_split_sets(features,  feature_indices, models, results)
         ensemble_results = self.ensemble_voting(results, label_dict)
         # save the results
         with (pd.ExcelWriter(self.output_path / "ensemble_report.xlsx", mode="w", engine="openpyxl") as writer1,
@@ -347,8 +351,9 @@ class EnsembleClassification:
         te_report = pd.DataFrame(param_scores.te_report)
         tr_report = pd.DataFrame(param_scores.tr_report)
         report = pd.concat({"train": tr_report, "test": te_report})
+        report = report.T
         report.index.name = name
-        return dataframe, report.T
+        return dataframe, report
 
     def _calculate_score_dataframe(self, dataframe):
         return ((dataframe["train_MCC"] + dataframe["test_MCC"] + dataframe["train_R2"] + dataframe["test_R2"])
