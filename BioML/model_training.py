@@ -88,7 +88,7 @@ def interesting_classifiers(name, small=True):
         ridge_classifier(name + ".ridge", random_state=20),
         passive_aggressive_classifier(name + ".passive_aggressive"),
         mlp_classifier(name + ".mlp"),
-        svc(name + ".svc", C=hp.choice(_name_svc('C'), np.arange(0.05, 1.0,0.01))),
+        svc(name + ".svc", C=hp.choice(_name_svc('C'), np.arange(0.05, 5.0,0.01))),
         k_neighbors_classifier(name + ".knn", algorithm="auto",
                                n_neighbors=scope.int(hp.uniform(_name("n_neighbors"), 2, 10)))
     ]
