@@ -84,8 +84,8 @@ def interesting_classifiers(name, small=True):
     classifiers = [
         random_forest_classifier(name + ".random_forest"),
         extra_trees_classifier(name + ".extra_trees"),
-        sgd_classifier(name + ".sgd", random_state=1),
-        ridge_classifier(name + ".ridge", random_state=0),
+        sgd_classifier(name + ".sgd", random_state=10),
+        ridge_classifier(name + ".ridge", random_state=20),
         passive_aggressive_classifier(name + ".passive_aggressive"),
         mlp_classifier(name + ".mlp"),
         svc(name + ".svc", C=hp.choice(_name_svc('C'), np.arange(0.05, 1.0,0.01))),
