@@ -13,6 +13,7 @@ from hpsklearn import sgd_classifier, ridge_classifier, passive_aggressive_class
 from hpsklearn import mlp_classifier, k_neighbors_classifier, xgboost_classification, lightgbm_classification
 from hpsklearn import svc
 import argparse
+import numpy as np
 from hyperopt.pyll import scope
 
 
@@ -60,12 +61,14 @@ def arg_parse():
     parser.add_argument("-sm", "--small", required=False, action="store_false",
                         help="Default to true, if the number of samples is < 300 or if you machine is slow. "
                              "The hyperparameters tuning will fail if you set trial time short and your machine is slow")
+    parser.add_argument("-r2w", "--r2_weight", required=False, default=1, type=float,
+                        help="How important is the r2 score with respect to MCC score")
 
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.hyperparameter_tuning, args.num_thread, args.scaler,
             args.excel, args.kfold_parameters, args.outliers, args.precision_weight, args.recall_weight,
-            args.class0_weight, args.report_weight, args.difference_weight, args.small]
+            args.class0_weight, args.report_weight, args.difference_weight, args.small, args.r2_weight]
 
 
 def interesting_classifiers(name, small=True):
@@ -75,36 +78,19 @@ def interesting_classifiers(name, small=True):
     def _name(msg):
         return f"{name}.k_neighbors_classifier_{msg}"
 
-    def _neighbors_metric(name: str):
-        """
-        Declaration search space 'metric' parameter
-        """
-        return hp.choice(name, ["minkowski", "euclidean", "manhattan"])
-
-    def _neighbors_leaf_size(name: str):
-        """
-        Declaration search space 'leaf_size' parameter
-        """
-        return scope.int(hp.uniform(name, 20, 30))
-
-    def _neighbors_p(name: str):
-        """
-        Declaration search space 'p' parameter
-        """
-        return scope.int(hp.uniform(name, 1, 5))
+    def _name_svc(msg):
+        return f"{name}.svc_{msg}"
 
     classifiers = [
         random_forest_classifier(name + ".random_forest"),
         extra_trees_classifier(name + ".extra_trees"),
-        sgd_classifier(name + ".sgd"),
+        sgd_classifier(name + ".sgd", random_state=1),
         ridge_classifier(name + ".ridge", random_state=0),
         passive_aggressive_classifier(name + ".passive_aggressive"),
         mlp_classifier(name + ".mlp"),
-        svc(name + ".svc"),
-        k_neighbors_classifier(name + ".knn", algorithm="auto", leaf_size=_neighbors_leaf_size(_name("leaf_size")),
-                               n_neighbors=scope.int(hp.uniform(_name("n_neighbors"), 1, 10)),
-                               metric=_neighbors_metric(_name("metric")),
-                               p=_neighbors_p(_name("p")))
+        svc(name + ".svc", C=hp.choice(_name_svc('C'), np.arange(0.05, 1.0,0.01))),
+        k_neighbors_classifier(name + ".knn", algorithm="auto",
+                               n_neighbors=scope.int(hp.uniform(_name("n_neighbors"), 2, 10)))
     ]
     if not small:
         classifiers.append(lightgbm_classification(name + ".lightgbm"))
@@ -114,10 +100,12 @@ def interesting_classifiers(name, small=True):
     return hp.choice(name, classifiers)
 
 
+
 class Classifier:
     def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
                  outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, precision_weight=1,
-                 recall_weight=1, report_weight=0.4, difference_weight=0.8, class0_weight=0.5, small=True):
+                 recall_weight=1, report_weight=0.4, difference_weight=0.8, class0_weight=0.5, small=True,
+                 r2_weight=1):
         self.outliers = outliers
         self.num_splits = num_splits
         self.test_size = test_size
@@ -136,6 +124,7 @@ class Classifier:
         self.class0_weight = class0_weight
         self.with_split = True
         self.small = small
+        self.r2_weight = r2_weight
 
     def train(self, X_train, Y_train, X_test):
         estimator = HyperoptEstimator(classifier=interesting_classifiers("automl", self.small), preprocessing=[],
@@ -271,9 +260,10 @@ class Classifier:
         return dataframe, report.T, params
 
     def _calculate_score_dataframe(self, dataframe):
-        return ((dataframe["train_MCC"] + dataframe["test_MCC"] + dataframe["train_R2"] + dataframe["test_R2"])
-                - self.difference_weight * (abs(dataframe["test_MCC"] - dataframe["train_MCC"]) +
-                                            abs(dataframe["test_R2"] - dataframe["train_R2"]))).sum()
+        return ((dataframe["train_MCC"] + dataframe["test_MCC"] + self.r2_weight * (dataframe["train_R2"] +
+                                                                                    dataframe["test_R2"]))
+                - self.difference_weight * (abs(dataframe["test_MCC"] - dataframe["train_MCC"]) + self.r2_weight *
+                                            (abs(dataframe["test_R2"] - dataframe["train_R2"])))).sum()
 
     def _calculate_score_report(self, report, class_label):
         class_level = report.loc[report.index.get_level_values(1) == class_label,
@@ -326,7 +316,7 @@ class Classifier:
 
 def main():
     label, training_output, hyperparameter_tuning, num_thread, scaler, excel, kfold, outliers, \
-        precision_weight, recall_weight, class0_weight, report_weight, difference_weight, small = arg_parse()
+        precision_weight, recall_weight, class0_weight, report_weight, difference_weight, small, r2_weight = arg_parse()
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     max_evals, trial_time = int(hyperparameter_tuning.split(":")[0]), hyperparameter_tuning.split(":")[1]
     if trial_time.isdigit():
@@ -338,7 +328,7 @@ def main():
             outliers = [x.strip() for x in out.readlines()]
     training = Classifier(excel, label, training_output, num_split, test_size, outliers, scaler, max_evals,
                           trial_time, num_thread, precision_weight, recall_weight, report_weight, difference_weight,
-                          class0_weight, small)
+                          class0_weight, small, r2_weight)
     training.run()
 
 
