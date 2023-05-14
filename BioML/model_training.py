@@ -300,7 +300,7 @@ class Classifier:
 
 
 def main():
-    label, training_output, hyperparameter_tuning, num_thread, scaler, excel, kfold, outliers, \
+    label, training_output, num_thread, scaler, excel, kfold, outliers, \
         precision_weight, recall_weight, class0_weight, report_weight, difference_weight, small, r2_weight = arg_parse()
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     if Path(outliers[0]).exists():
