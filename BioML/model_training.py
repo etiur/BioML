@@ -4,16 +4,14 @@ from sklearn.metrics import matthews_corrcoef, confusion_matrix, r2_score
 from sklearn.metrics import classification_report as class_re
 from collections import namedtuple
 from openpyxl import load_workbook
-from hpsklearn import HyperoptEstimator
 from BioML.utilities import scale, write_excel
-from hyperopt import hp, tpe
+from sklearn.linear_model import RidgeClassifier as ridge
+from sklearn.svm import SVC
 from pathlib import Path
-from hpsklearn import random_forest_classifier, extra_trees_classifier
-from hpsklearn import sgd_classifier, ridge_classifier, passive_aggressive_classifier
-from hpsklearn import mlp_classifier, k_neighbors_classifier, xgboost_classification, lightgbm_classification
-from hpsklearn import svc
+from sklearn.neighbors import KNeighborsClassifier as KNN
 import argparse
-from hyperopt.pyll import scope
+from sklearn.model_selection import GridSearchCV
+import numpy as np
 
 
 def arg_parse():
@@ -68,52 +66,6 @@ def arg_parse():
             args.class0_weight, args.report_weight, args.difference_weight, args.small]
 
 
-def interesting_classifiers(name, small=True):
-    """
-    All classifiers
-    """
-    def _name(msg):
-        return f"{name}.k_neighbors_classifier_{msg}"
-
-    def _neighbors_metric(name: str):
-        """
-        Declaration search space 'metric' parameter
-        """
-        return hp.choice(name, ["minkowski", "euclidean", "manhattan"])
-
-    def _neighbors_leaf_size(name: str):
-        """
-        Declaration search space 'leaf_size' parameter
-        """
-        return scope.int(hp.uniform(name, 20, 30))
-
-    def _neighbors_p(name: str):
-        """
-        Declaration search space 'p' parameter
-        """
-        return scope.int(hp.uniform(name, 1, 5))
-
-    classifiers = [
-        random_forest_classifier(name + ".random_forest"),
-        extra_trees_classifier(name + ".extra_trees"),
-        sgd_classifier(name + ".sgd"),
-        ridge_classifier(name + ".ridge", random_state=0),
-        passive_aggressive_classifier(name + ".passive_aggressive"),
-        mlp_classifier(name + ".mlp"),
-        svc(name + ".svc"),
-        k_neighbors_classifier(name + ".knn", algorithm="auto", leaf_size=_neighbors_leaf_size(_name("leaf_size")),
-                               n_neighbors=scope.int(hp.uniform(_name("n_neighbors"), 1, 10)),
-                               metric=_neighbors_metric(_name("metric")),
-                               p=_neighbors_p(_name("p")))
-    ]
-    if not small:
-        classifiers.append(lightgbm_classification(name + ".lightgbm"))
-        classifiers.append(xgboost_classification(name + ".xgboost"))
-
-
-    return hp.choice(name, classifiers)
-
-
 class Classifier:
     def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
                  outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, precision_weight=1,
@@ -138,16 +90,40 @@ class Classifier:
         self.small = small
 
     def train(self, X_train, Y_train, X_test):
-        estimator = HyperoptEstimator(classifier=interesting_classifiers("automl", self.small), preprocessing=[],
-                                      algo=tpe.suggest, max_evals=self.max_evals, trial_timeout=self.trial_time_out,
-                                      n_jobs=self.num_threads, verbose=True)
-        estimator.fit(X_train, Y_train)
+        model_list = []
+        scoring = {"f1": "f1_weighted"}
+        param_knn = {"n_neighbors": range(1, 11), "p": range(1, 6), "metric": ["minkowski", "manhattan", "l2"]}
+
+        param_svc = [{"kernel": ["linear"], "C": np.arange(0.01, 1.1, 0.3)},
+                       {"kernel": ["linear"], "C": range(1, 10, 2)},
+                       {"kernel": ["rbf"], "C": np.arange(0.01, 1.1, 0.3), "gamma": np.arange(0.01, 1.1, 0.3)},
+                       {"kernel": ["rbf"], "C": np.arange(1, 10, 2), "gamma": np.arange(1, 10, 2)},
+                       {"kernel": ["rbf"], "C": np.arange(1, 10, 2), "gamma": np.arange(0.01, 1.1, 0.3)},
+                       {"kernel": ["rbf"], "C": np.arange(0.01, 1.1, 0.3), "gamma": range(1, 10, 2)}]
+        param_ridge = [{"alpha": np.arange(0.01, 0.1, 0.01)}, {"alpha": np.arange(0.1, 1, 0.01)},
+                       {"alpha": np.arange(0.001, 0.01, 0.001)},
+                       {"alpha": range(1, 25, 1)}, {"alpha": range(25, 50, 1)}]
+
+        # Model setting
+        model_list.append(GridSearchCV(KNN(n_jobs=-1), param_knn, scoring=scoring, refit="f1", cv=5))
+        model_list.append(GridSearchCV(SVC(class_weight="balanced", probability=True), param_svc, scoring=scoring,
+                                refit="f1", cv=5))
+        model_list.append(GridSearchCV(ridge(random_state=0), param_ridge, scoring=scoring, refit="f1", cv=5))
+        trained_list = []
+        scores = []
+        for estimator in model_list:
+            # Model training
+            estimator.fit(X_train, Y_train)
+            scores.append(estimator.best_score_)
+            trained_list.append(estimator)
+
+        best = trained_list[scores.index(max(scores))]
         # Model predictions
-        pred_test_y = estimator.predict(X_test)
+        pred_test_y = best.best_estimator_.predict(X_test)
         # training data prediction
-        pred_train_y = estimator.predict(X_train)
+        pred_train_y = best.best_estimator_.predict(X_train)
         pred = namedtuple("prediction", ["fitted", "pred_test_y", "pred_train_y"])
-        return pred(*[estimator, pred_test_y, pred_train_y])
+        return pred(*[best, pred_test_y, pred_train_y])
 
     @staticmethod
     def get_score(pred, Y_train, Y_test):
@@ -158,8 +134,8 @@ class Classifier:
         parameter_record = namedtuple("parameters", ["params", "test_confusion", "tr_report", "te_report",
                                                      "train_confusion", "model_name"])
         # Model comparison
-        cv_score = 1 - pred.fitted._best_loss
-        model_params = pred.fitted.best_model()["learner"].get_params()
+        cv_score = pred.fitted.best_score_
+        model_params = pred.fitted.best_params_
         model_params = {key: value for key, value in model_params.items() if key not in ["warm_start", "verbose",
                                                                                          "oob_score"]}
         model_params = pd.Series(model_params)
@@ -176,7 +152,7 @@ class Classifier:
         # save the results in namedtuples
         scalar_scores = scalar_record(*[cv_score, train_mat, test_matthews, train_r2, test_r2])
         param_scores = parameter_record(*[model_params, test_confusion, tr_report, te_report, train_confusion,
-                                          pred.fitted.best_model()["learner"].__class__.__name__])
+                                          pred.fitted.best_estimator_.__class__.__name__])
 
         return scalar_scores, param_scores
 
