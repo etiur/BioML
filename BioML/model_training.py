@@ -55,6 +55,8 @@ def arg_parse():
                              "the performance of a model")
     parser.add_argument("-dw", "--difference_weight", required=False, default=0.8, type=float,
                         help="How important is to have similar training and test metrics")
+    parser.add_argument("-r2w", "--r2_weight", required=False, default=1, type=float,
+                        help="How important is the r2 score with respect to MCC score")
     parser.add_argument("-sm", "--small", required=False, action="store_false",
                         help="Default to true, if the number of samples is < 300 or if you machine is slow. "
                              "The hyperparameters tuning will fail if you set trial time short and your machine is slow")
@@ -63,13 +65,13 @@ def arg_parse():
 
     return [args.label, args.training_output, args.hyperparameter_tuning, args.num_thread, args.scaler,
             args.excel, args.kfold_parameters, args.outliers, args.precision_weight, args.recall_weight,
-            args.class0_weight, args.report_weight, args.difference_weight, args.small]
+            args.class0_weight, args.report_weight, args.difference_weight, args.small, args.r2_weight]
 
 
 class Classifier:
     def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
                  outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, precision_weight=1,
-                 recall_weight=1, report_weight=0.4, difference_weight=0.8, class0_weight=0.5, small=True):
+                 recall_weight=1, report_weight=0.4, difference_weight=0.8, class0_weight=0.5, small=True, r2_weight=1):
         self.outliers = outliers
         self.num_splits = num_splits
         self.test_size = test_size
@@ -88,6 +90,7 @@ class Classifier:
         self.class0_weight = class0_weight
         self.with_split = True
         self.small = small
+        self.r2_weight = r2_weight
 
     def train(self, X_train, Y_train, X_test):
         model_list = []
@@ -247,9 +250,10 @@ class Classifier:
         return dataframe, report.T, params
 
     def _calculate_score_dataframe(self, dataframe):
-        return ((dataframe["train_MCC"] + dataframe["test_MCC"] + dataframe["train_R2"] + dataframe["test_R2"])
-                - self.difference_weight * (abs(dataframe["test_MCC"] - dataframe["train_MCC"]) +
-                                            abs(dataframe["test_R2"] - dataframe["train_R2"]))).sum()
+        return ((dataframe["train_MCC"] + dataframe["test_MCC"] + self.r2_weight * (dataframe["train_R2"] +
+                                                                                    dataframe["test_R2"]))
+                - self.difference_weight * (abs(dataframe["test_MCC"] - dataframe["train_MCC"]) + self.r2_weight *
+                                            (abs(dataframe["test_R2"] - dataframe["train_R2"])))).sum()
 
     def _calculate_score_report(self, report, class_label):
         class_level = report.loc[report.index.get_level_values(1) == class_label,
@@ -302,7 +306,7 @@ class Classifier:
 
 def main():
     label, training_output, hyperparameter_tuning, num_thread, scaler, excel, kfold, outliers, \
-        precision_weight, recall_weight, class0_weight, report_weight, difference_weight, small = arg_parse()
+        precision_weight, recall_weight, class0_weight, report_weight, difference_weight, small, r2_weight = arg_parse()
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     max_evals, trial_time = int(hyperparameter_tuning.split(":")[0]), hyperparameter_tuning.split(":")[1]
     if trial_time.isdigit():
@@ -314,7 +318,7 @@ def main():
             outliers = [x.strip() for x in out.readlines()]
     training = Classifier(excel, label, training_output, num_split, test_size, outliers, scaler, max_evals,
                           trial_time, num_thread, precision_weight, recall_weight, report_weight, difference_weight,
-                          class0_weight, small)
+                          class0_weight, small, r2_weight)
     training.run()
 
 
