@@ -108,10 +108,12 @@ class Classifier:
                        {"alpha": range(1, 25, 1)}, {"alpha": range(25, 50, 1)}]
 
         # Model setting
-        model_list.append(GridSearchCV(KNN(n_jobs=-1), param_knn, scoring=scoring, refit="f1", cv=5))
+        model_list.append(GridSearchCV(KNN(n_jobs=self.num_threads), param_knn, scoring=scoring, refit="f1", cv=5,
+                                       n_jobs=self.num_threads))
         model_list.append(GridSearchCV(SVC(class_weight="balanced", probability=True), param_svc, scoring=scoring,
-                                refit="f1", cv=5))
-        model_list.append(GridSearchCV(ridge(random_state=0), param_ridge, scoring=scoring, refit="f1", cv=5))
+                                refit="f1", cv=5, n_jobs=self.num_threads))
+        model_list.append(GridSearchCV(ridge(random_state=0), param_ridge, scoring=scoring, refit="f1", cv=5,
+                                       n_jobs=self.num_threads))
         trained_list = []
         scores = []
         for estimator in model_list:
