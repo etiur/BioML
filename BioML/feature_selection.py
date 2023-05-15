@@ -3,7 +3,7 @@ import pandas as pd
 from BioML.utilities import scale, analyse_composition, write_excel
 from pathlib import Path
 from ITMO_FS.filters.univariate import select_k_best, UnivariateFilter
-from ITMO_FS.filters.unsupervised import MCFS, TraceRatioLaplacian
+from ITMO_FS.filters.unsupervised import TraceRatioLaplacian
 # Multiprocess instead of Multiprocessing solves the pickle problem in Windows (might be different in linux)
 # but it has its own errors. Use multiprocessing.get_context('fork') seems to solve the problem but only available
 # in Unix. Altough now it seems that with fork the programme can hang indefinitely so use spaw instead
@@ -132,9 +132,7 @@ class FeatureSelection:
         if "Trace" in filter_name:
             ufilter = TraceRatioLaplacian(num_features).fit(X_train)
             scores = {x: v for x, v in zip(feature_names, ufilter.score_)}
-        else:
-            ufilter = MCFS(num_features).fit(X_train)
-            scores = {x: v for x, v in zip(feature_names, ufilter.selected_features_)}
+
         scores = pd.Series(dict(sorted(scores.items(), key=lambda items: items[1], reverse=True)))
 
         return scores
