@@ -115,7 +115,7 @@ class OutlierDetection:
             transformed_x, scaler_dict = scale(self.scaler, x)
             scaled_data.append(transformed_x)
         # parallelized
-        scaled_data = random.sample(scaled_data, min(40, len(scaled_data)))
+        scaled_data = random.sample(scaled_data, min(25, len(scaled_data)))
         with Pool(self.num_threads) as pool:
             for num, res in enumerate(pool.map(self.outlier, scaled_data)):
                 print(f"using {book[num]} for outlier calculations")
