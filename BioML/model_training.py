@@ -6,7 +6,7 @@ from collections import namedtuple
 from openpyxl import load_workbook
 from hpsklearn import HyperoptEstimator
 from BioML.utilities import scale, write_excel
-from hyperopt import hp, tpe
+from hyperopt import hp, anneal, tpe, mix, rand
 from pathlib import Path
 from hpsklearn import random_forest_classifier, extra_trees_classifier
 from hpsklearn import sgd_classifier, ridge_classifier, passive_aggressive_classifier
@@ -15,6 +15,7 @@ from hpsklearn import svc
 import argparse
 import numpy as np
 from hyperopt.pyll import scope
+from functools import partial
 
 
 def arg_parse():
@@ -81,6 +82,13 @@ def interesting_classifiers(name, small=True):
     def _name_svc(msg):
         return f"{name}.svc_{msg}"
 
+    def _neighbors_p(name: str):
+        """
+        Declaration search space 'p' parameter
+        """
+        return scope.int(hp.uniform(name, 1, 5))
+
+
     classifiers = [
         random_forest_classifier(name + ".random_forest"),
         extra_trees_classifier(name + ".extra_trees"),
@@ -89,7 +97,7 @@ def interesting_classifiers(name, small=True):
         passive_aggressive_classifier(name + ".passive_aggressive"),
         mlp_classifier(name + ".mlp"),
         svc(name + ".svc", C=hp.choice(_name_svc('C'), np.arange(0.05, 5.0,0.01))),
-        k_neighbors_classifier(name + ".knn", algorithm="auto",
+        k_neighbors_classifier(name + ".knn", algorithm="auto", p=_neighbors_p(_name("p")),
                                n_neighbors=scope.int(hp.uniform(_name("n_neighbors"), 2, 10)))
     ]
     if not small:
@@ -127,8 +135,10 @@ class Classifier:
         self.r2_weight = r2_weight
 
     def train(self, X_train, Y_train, X_test):
+
         estimator = HyperoptEstimator(classifier=interesting_classifiers("automl", self.small), preprocessing=[],
-                                      algo=tpe.suggest, max_evals=self.max_evals, trial_timeout=self.trial_time_out,
+                                      algo=partial(mix.suggest,p_suggest=[(.4, rand.suggest), (.3, anneal.suggest),
+                                      (.3, tpe.suggest)]), max_evals=self.max_evals, trial_timeout=self.trial_time_out,
                                       n_jobs=self.num_threads, verbose=True)
         estimator.fit(X_train, Y_train)
         # Model predictions
