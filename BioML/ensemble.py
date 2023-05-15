@@ -11,7 +11,8 @@ from itertools import combinations
 
 
 def arg_parse():
-    parser = argparse.ArgumentParser(description="Detect outliers from the selected features")
+    parser = argparse.ArgumentParser(description="Generate ensemble of models from the user specified sheets in order"
+                                                 "to select the best combination of sheets and kfolds")
 
     parser.add_argument("-e", "--excel", required=False,
                         help="The file to where the selected features are saved in excel format",
