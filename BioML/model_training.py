@@ -1,6 +1,6 @@
 from sklearn.model_selection import StratifiedShuffleSplit
 import pandas as pd
-from sklearn.metrics import matthews_corrcoef, confusion_matrix, r2_score
+from sklearn.metrics import matthews_corrcoef, confusion_matrix
 from sklearn.metrics import classification_report as class_re
 from collections import namedtuple
 from openpyxl import load_workbook
@@ -54,21 +54,19 @@ def arg_parse():
                              "or the positive class")
     parser.add_argument("-rpw", "--report_weight", required=False, default=0.25, type=float,
                         help="Weights to specify how relevant is the f1, precision and recall for the ranking of the "
-                             "different features with respect to MCC and the R2 which are more general measures of "
+                             "different features with respect to MCC which is a more general measures of "
                              "the performance of a model")
     parser.add_argument("-dw", "--difference_weight", required=False, default=0.8, type=float,
                         help="How important is to have similar training and test metrics")
     parser.add_argument("-sm", "--small", required=False, action="store_false",
                         help="Default to true, if the number of samples is < 300 or if you machine is slow. "
                              "The hyperparameters tuning will fail if you set trial time short and your machine is slow")
-    parser.add_argument("-r2w", "--r2_weight", required=False, default=1, type=float,
-                        help="How important is the r2 score with respect to MCC score")
 
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.hyperparameter_tuning, args.num_thread, args.scaler,
             args.excel, args.kfold_parameters, args.outliers, args.precision_weight, args.recall_weight,
-            args.class0_weight, args.report_weight, args.difference_weight, args.small, args.r2_weight]
+            args.class0_weight, args.report_weight, args.difference_weight, args.small]
 
 
 def interesting_classifiers(name, small=True):
@@ -111,8 +109,7 @@ def interesting_classifiers(name, small=True):
 class Classifier:
     def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
                  outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, precision_weight=1,
-                 recall_weight=1, report_weight=0.4, difference_weight=0.8, class0_weight=0.5, small=True,
-                 r2_weight=1):
+                 recall_weight=1, report_weight=0.4, difference_weight=0.8, class0_weight=0.5, small=True):
         self.outliers = outliers
         self.num_splits = num_splits
         self.test_size = test_size
@@ -131,7 +128,6 @@ class Classifier:
         self.class0_weight = class0_weight
         self.with_split = True
         self.small = small
-        self.r2_weight = r2_weight
 
     def train(self, X_train, Y_train, X_test):
 
@@ -151,7 +147,7 @@ class Classifier:
         """ The function prints the scores of the models and the prediction performance """
         target_names = ["class 0", "class 1"]
 
-        scalar_record = namedtuple("scores", ["cv_score", "train_mat", "test_matthews", "r2_train", "r2_test"])
+        scalar_record = namedtuple("scores", ["cv_score", "train_mat", "test_matthews"])
         parameter_record = namedtuple("parameters", ["params", "test_confusion", "tr_report", "te_report",
                                                      "train_confusion", "model_name"])
         # Model comparison
@@ -164,14 +160,12 @@ class Classifier:
         train_confusion = confusion_matrix(Y_train, pred.pred_train_y)
         tr_report = class_re(Y_train, pred.pred_train_y, target_names=target_names, output_dict=True)
         train_mat = matthews_corrcoef(Y_train, pred.pred_train_y)
-        train_r2 = r2_score(Y_train, pred.pred_train_y)
         # Test metrics grid
         test_confusion = confusion_matrix(Y_test, pred.pred_test_y)
         test_matthews = matthews_corrcoef(Y_test, pred.pred_test_y)
         te_report = class_re(Y_test, pred.pred_test_y, target_names=target_names, output_dict=True)
-        test_r2 = r2_score(Y_test, pred.pred_test_y)
         # save the results in namedtuples
-        scalar_scores = scalar_record(*[cv_score, train_mat, test_matthews, train_r2, test_r2])
+        scalar_scores = scalar_record(*[cv_score, train_mat, test_matthews])
         param_scores = parameter_record(*[model_params, test_confusion, tr_report, te_report, train_confusion,
                                           pred.fitted.best_model()["learner"].__class__.__name__])
 
@@ -228,9 +222,7 @@ class Classifier:
         # performance scores
         test_mathew = [x.test_matthews for x in metric_scalar]
         cv_score = [x.cv_score for x in metric_scalar]
-        test_r2 = [x.r2_test for x in metric_scalar]
         train_mathew = [x.train_mat for x in metric_scalar]
-        train_r2 = [x.r2_train for x in metric_scalar]
         # model parameters
         model_name = [x.model_name for x in parameter_list]
         params = pd.concat({i: pd.concat({x.model_name: x.params}) for i, x in zip(split_index, parameter_list)})
@@ -257,21 +249,18 @@ class Classifier:
 
         dataframe = pd.DataFrame([split_index, test_true_n, test_true_p, test_false_p, test_false_n, training_true_n,
                                   training_true_p, training_false_p, training_false_n, cv_score,
-                                  train_mathew, test_mathew, train_r2, test_r2, model_name])
+                                  train_mathew, test_mathew, model_name])
 
         dataframe = dataframe.transpose()
         dataframe.columns = ["split_index", "test_tn", "test_tp", "test_fp", "test_fn", "train_tn", "train_tp",
-                             "train_fp", "train_fn", "CV_MCC", "train_MCC", "test_MCC", "train_R2", "test_R2",
-                             "model_name"]
+                             "train_fp", "train_fn", "CV_MCC", "train_MCC", "test_MCC", "model_name"]
         dataframe.set_index("split_index", inplace=True)
 
         return dataframe, report.T, params
 
     def _calculate_score_dataframe(self, dataframe):
-        return ((dataframe["train_MCC"] + dataframe["test_MCC"] + self.r2_weight * (dataframe["train_R2"] +
-                                                                                    dataframe["test_R2"]))
-                - self.difference_weight * (abs(dataframe["test_MCC"] - dataframe["train_MCC"]) + self.r2_weight *
-                                            (abs(dataframe["test_R2"] - dataframe["train_R2"])))).sum()
+        return ((dataframe["train_MCC"] + dataframe["test_MCC"])
+                - self.difference_weight * (abs(dataframe["test_MCC"] - dataframe["train_MCC"]))).sum()
 
     def _calculate_score_report(self, report, class_label):
         class_level = report.loc[report.index.get_level_values(1) == class_label,
@@ -324,7 +313,7 @@ class Classifier:
 
 def main():
     label, training_output, hyperparameter_tuning, num_thread, scaler, excel, kfold, outliers, \
-        precision_weight, recall_weight, class0_weight, report_weight, difference_weight, small, r2_weight = arg_parse()
+        precision_weight, recall_weight, class0_weight, report_weight, difference_weight, small = arg_parse()
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     max_evals, trial_time = int(hyperparameter_tuning.split(":")[0]), hyperparameter_tuning.split(":")[1]
     if trial_time.isdigit():
@@ -336,7 +325,7 @@ def main():
             outliers = [x.strip() for x in out.readlines()]
     training = Classifier(excel, label, training_output, num_split, test_size, outliers, scaler, max_evals,
                           trial_time, num_thread, precision_weight, recall_weight, report_weight, difference_weight,
-                          class0_weight, small, r2_weight)
+                          class0_weight, small)
     training.run()
 
 

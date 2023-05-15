@@ -4,7 +4,7 @@ import argparse
 from collections import defaultdict, namedtuple
 from sklearn.model_selection import StratifiedShuffleSplit
 import pandas as pd
-from sklearn.metrics import matthews_corrcoef, confusion_matrix, r2_score
+from sklearn.metrics import matthews_corrcoef, confusion_matrix
 from sklearn.metrics import classification_report as class_re
 from BioML.utilities import scale, write_excel, interesting_classifiers, modify_param
 from itertools import combinations
@@ -40,7 +40,7 @@ def arg_parse():
                              "the positive class")
     parser.add_argument("-rpw", "--report_weight", required=False, default=0.25, type=float,
                         help="Weights to specify how relevant is the f1, precision and recall for the ranking of the "
-                             "different features with respect to MCC and the R2 which are more general measures of "
+                             "different features with respect to MCC which is a more general measures of "
                              "the performance of a model")
     parser.add_argument("-dw", "--difference_weight", required=False, default=0.8, type=float,
                         help="How important is to have similar training and test metrics")
@@ -54,15 +54,12 @@ def arg_parse():
                         help="A list of outliers if any, the name should be the same as in the excel file with the "
                              "filtered features, you can also specify the path to a file in plain text format, each "
                              "record should be in a new line")
-    parser.add_argument("-r2w", "--r2_weight", required=False, default=1, type=float,
-                        help="How important is the r2 score with respect to MCC score")
 
     args = parser.parse_args()
 
     return [args.excel, args.label, args.scaler, args.ensemble_output, args.hyperparameter_path, args.sheets,
             args.prediction_threshold, args.kfold_parameters, args.outliers, args.precision_weight,
-            args.recall_weight, args.class0_weight, args.report_weight, args.difference_weight, args.num_thread,
-            args.r2_weight]
+            args.recall_weight, args.class0_weight, args.report_weight, args.difference_weight, args.num_thread]
 
 
 class EnsembleClassification:
@@ -72,7 +69,7 @@ class EnsembleClassification:
                  hyperparameter_path: str | Path = "training_features/hyperparameters.xlsx",  outliers: list[str] = (),
                  scaler: str = "robust",  num_splits: int = 5, test_size: float = 0.2,
                  prediction_threshold: float = 1.0, precision_weight=1, recall_weight=1, report_weight=0.4,
-                 difference_weight=0.8, class0_weight=0.5, num_threads=10, r2_weight=1):
+                 difference_weight=0.8, class0_weight=0.5, num_threads=10):
 
         self.features = Path(selected_features)
         self.output_path = Path(ensemble_output)
@@ -95,7 +92,6 @@ class EnsembleClassification:
         self.class0_weight = class0_weight
         self.num_threads = num_threads
         self.with_split = True
-        self.r2_weight = r2_weight
 
     def vote(self, *args):
         """
@@ -338,7 +334,7 @@ class EnsembleClassification:
         """ The function prints the scores of the models and the prediction performance """
         target_names = ["class 0", "class 1"]
 
-        scalar_record = namedtuple("scores", ["train_mat", "test_matthews", "r2_train", "r2_test"])
+        scalar_record = namedtuple("scores", ["train_mat", "test_matthews"])
         parameter_record = namedtuple("parameters", ["test_confusion", "tr_report", "te_report",
                                                      "train_confusion"])
         # Model comparison
@@ -346,14 +342,12 @@ class EnsembleClassification:
         train_confusion = confusion_matrix(Y_train, pred_train_y)
         tr_report = class_re(Y_train, pred_train_y, target_names=target_names, output_dict=True)
         train_mat = matthews_corrcoef(Y_train, pred_train_y)
-        train_r2 = r2_score(Y_train, pred_train_y)
         # Test metrics grid
         test_confusion = confusion_matrix(Y_test, pred_test_y)
         test_matthews = matthews_corrcoef(Y_test, pred_test_y)
         te_report = class_re(Y_test, pred_test_y, target_names=target_names, output_dict=True)
-        test_r2 = r2_score(Y_test, pred_test_y)
         # save the results in namedtuples
-        scalar_scores = scalar_record(*[train_mat, test_matthews, train_r2, test_r2])
+        scalar_scores = scalar_record(*[train_mat, test_matthews])
         param_scores = parameter_record(*[test_confusion, tr_report, te_report, train_confusion])
 
         return scalar_scores, param_scores
@@ -377,10 +371,10 @@ class EnsembleClassification:
         # coonstructing the dataframe
         dataframe = pd.DataFrame([test_true_n, test_true_p, test_false_p, test_false_n, training_true_n,
                                   training_true_p, training_false_p, training_false_n, scalar_scores.train_mat,
-                                  scalar_scores.test_matthews, scalar_scores.r2_train, scalar_scores.r2_test])
+                                  scalar_scores.test_matthews])
         dataframe = dataframe.transpose()
         dataframe.columns = ["test_tn", "test_tp", "test_fp", "test_fn", "train_tn", "train_tp",
-                             "train_fp", "train_fn", "train_MCC", "test_MCC", "train_R2", "test_R2"]
+                             "train_fp", "train_fn", "train_MCC", "test_MCC"]
         dataframe.index = [name]
         te_report = pd.DataFrame(param_scores.te_report)
         tr_report = pd.DataFrame(param_scores.tr_report)
@@ -390,10 +384,8 @@ class EnsembleClassification:
         return dataframe, report
 
     def _calculate_score_dataframe(self, dataframe):
-        return ((dataframe["train_MCC"] + dataframe["test_MCC"] + self.r2_weight * (dataframe["train_R2"] +
-                                                                                    dataframe["test_R2"]))
-                - self.difference_weight * (abs(dataframe["test_MCC"] - dataframe["train_MCC"]) + self.r2_weight *
-                                            (abs(dataframe["test_R2"] - dataframe["train_R2"]))))
+        return ((dataframe["train_MCC"] + dataframe["test_MCC"])
+                - self.difference_weight * (abs(dataframe["test_MCC"] - dataframe["train_MCC"])))
 
     def _calculate_score_report(self, report, class_label):
         class_level = report.loc[report.index.get_level_values(0) == class_label,
@@ -424,7 +416,7 @@ class EnsembleClassification:
 def main():
     selected_features, label, scaler, ensemble_output, hyperparameter_path, sheets, prediction_threshold, \
     kfold_parameters, outliers, precision_weight, recall_weight, class0_weight, report_weight, \
-    difference_weight, num_thread, r2_weight = arg_parse()
+    difference_weight, num_thread = arg_parse()
     num_split, test_size = int(kfold_parameters.split(":")[0]), float(kfold_parameters.split(":")[1])
     if Path(outliers[0]).exists():
         with open(outliers) as out:
@@ -433,7 +425,7 @@ def main():
         sheets = [int(x) for x in sheets]
     ensemble = EnsembleClassification(label, sheets, selected_features, ensemble_output, hyperparameter_path,  outliers,
                  scaler,  num_split, test_size, prediction_threshold, precision_weight, recall_weight, report_weight,
-                                     difference_weight, class0_weight, num_thread, r2_weight)
+                                     difference_weight, class0_weight, num_thread)
     ensemble.run()
 
 
