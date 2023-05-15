@@ -42,7 +42,7 @@ def arg_parse():
                         help="Weights to specify how relevant is the f1, precision and recall for the ranking of the "
                              "different features with respect to MCC which is a more general measures of "
                              "the performance of a model")
-    parser.add_argument("-dw", "--difference_weight", required=False, default=0.8, type=float,
+    parser.add_argument("-dw", "--difference_weight", required=False, default=1.1, type=float,
                         help="How important is to have similar training and test metrics")
     parser.add_argument("-k", "--kfold_parameters", required=False,
                         help="The parameters for the kfold in num_split:test_size format", default="5:0.2")
@@ -69,7 +69,7 @@ class EnsembleClassification:
                  hyperparameter_path: str | Path = "training_features/hyperparameters.xlsx",  outliers: list[str] = (),
                  scaler: str = "robust",  num_splits: int = 5, test_size: float = 0.2,
                  prediction_threshold: float = 1.0, precision_weight=1, recall_weight=1, report_weight=0.4,
-                 difference_weight=0.8, class0_weight=0.5, num_threads=10):
+                 difference_weight=1.1, class0_weight=0.5, num_threads=10):
 
         self.features = Path(selected_features)
         self.output_path = Path(ensemble_output)
