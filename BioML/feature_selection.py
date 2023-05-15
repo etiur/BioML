@@ -177,10 +177,10 @@ class FeatureSelection:
         random.seed(self.seed)
         results = {}
         filter_names = ("FRatio", "SymmetricUncertainty", "SpearmanCorr", "PearsonCorr", "Chi2", "Anova",
-                        "LaplacianScore", "InformationGain",)
+                        "LaplacianScore", "InformationGain")
         filter_names = random.sample(filter_names, 6)
         multivariate = ("STIR", "TraceRatioFisher")
-        filter_unsupervised = ("TraceRatioLaplacian", "MCFS")
+        filter_unsupervised = ("TraceRatioLaplacian")
 
         arg_univariate = [(X_train, Y_train, num_features, feature_names, x) for x in filter_names]
         arg_multivariate = [(X_train, Y_train, num_features, feature_names, x) for x in multivariate]
