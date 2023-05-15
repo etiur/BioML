@@ -56,7 +56,7 @@ def arg_parse():
                         help="Weights to specify how relevant is the f1, precision and recall for the ranking of the "
                              "different features with respect to MCC which is a more general measures of "
                              "the performance of a model")
-    parser.add_argument("-dw", "--difference_weight", required=False, default=0.8, type=float,
+    parser.add_argument("-dw", "--difference_weight", required=False, default=1.1, type=float,
                         help="How important is to have similar training and test metrics")
     parser.add_argument("-sm", "--small", required=False, action="store_false",
                         help="Default to true, if the number of samples is < 300 or if you machine is slow. "
@@ -109,7 +109,7 @@ def interesting_classifiers(name, small=True):
 class Classifier:
     def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
                  outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, precision_weight=1,
-                 recall_weight=1, report_weight=0.4, difference_weight=0.8, class0_weight=0.5, small=True):
+                 recall_weight=1, report_weight=0.4, difference_weight=1.1, class0_weight=0.5, small=True):
         self.outliers = outliers
         self.num_splits = num_splits
         self.test_size = test_size
