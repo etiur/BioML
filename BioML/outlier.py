@@ -118,6 +118,7 @@ class OutlierDetection:
         scaled_data = random.sample(scaled_data, min(40, len(scaled_data)))
         with Pool(self.num_threads) as pool:
             for num, res in enumerate(pool.map(self.outlier, scaled_data)):
+                print(f"using {book[num]} for outlier calculations")
                 results[book[num]] = res
 
         summed = self.counting(results, x.index)
