@@ -15,7 +15,6 @@ from hpsklearn import svc
 import argparse
 import numpy as np
 from hyperopt.pyll import scope
-from functools import partial
 
 
 def arg_parse():
@@ -137,8 +136,7 @@ class Classifier:
     def train(self, X_train, Y_train, X_test):
 
         estimator = HyperoptEstimator(classifier=interesting_classifiers("automl", self.small), preprocessing=[],
-                                      algo=partial(mix.suggest,p_suggest=[(.4, rand.suggest), (.3, anneal.suggest),
-                                      (.3, tpe.suggest)]), max_evals=self.max_evals, trial_timeout=self.trial_time_out,
+                                      algo=tpe.suggest, max_evals=self.max_evals, trial_timeout=self.trial_time_out,
                                       n_jobs=self.num_threads, verbose=True)
         estimator.fit(X_train, Y_train)
         # Model predictions
