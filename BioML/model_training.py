@@ -320,7 +320,7 @@ def main():
         trial_time = int(trial_time)
     else:
         trial_time = None
-    if Path(outliers[0]).exists():
+    if len(outliers) > 0 and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = [x.strip() for x in out.readlines()]
     training = Classifier(excel, label, training_output, num_split, test_size, outliers, scaler, max_evals,
