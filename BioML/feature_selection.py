@@ -254,7 +254,7 @@ class FeatureSelection:
 
 def main():
     features, label, variance_threshold, feature_range, num_thread, scaler, excel_file, kfold, rfe_steps, plot, \
-        plot_num_features = arg_parse()
+        plot_num_features, num_filters = arg_parse()
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     feature_range = feature_range.split(":")
     if len(feature_range) > 1:
@@ -270,7 +270,7 @@ def main():
         step = None
         num_features_max = None
     selection = FeatureSelection(label, excel_file, features, variance_threshold, num_thread, scaler,
-                                 num_split, test_size)
+                                 num_split, test_size, num_filters)
     selection.construct_feature_set(num_features_min, num_features_max, step, rfe_steps, plot, plot_num_features)
 
 
