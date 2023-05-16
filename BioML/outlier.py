@@ -11,11 +11,9 @@ from pyod.models.ecod import ECOD
 from openpyxl import load_workbook
 import pandas as pd
 from BioML.utilities import scale
-from concurrent.futures import ProcessPoolExecutor as Pool
 from pathlib import Path
 import random
 import argparse
-from multiprocessing import get_context
 
 
 def arg_parse():
