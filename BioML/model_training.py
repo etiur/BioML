@@ -291,7 +291,7 @@ class Classifier:
     def run(self):
         """A function that runs nested_cv several times, as many as the sheets in the Excel"""
         # reading the data
-        sheet_names = load_workbook(self.features).sheetnames
+        sheet_names = load_workbook(self.features, read_only=True).sheetnames
         excel_data = self._check_features(sheet_names)
         result_list = []
         for num, feature in enumerate(excel_data.values()):
