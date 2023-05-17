@@ -131,8 +131,8 @@ class OutlierDetection:
 
 
 def main():
-    excel, outlier, scaler, contamination, num_thread = arg_parse()
-    detection = OutlierDetection(excel, outlier, scaler, contamination, num_thread)
+    excel, outlier, scaler, contamination, num_thread, num_features = arg_parse()
+    detection = OutlierDetection(excel, outlier, scaler, contamination, num_thread, num_features)
     detection.run()
 
 
