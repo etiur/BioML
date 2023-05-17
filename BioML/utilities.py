@@ -68,9 +68,16 @@ def interesting_classifiers(name, params):
 
     return classifiers[name](**params)
 
-def modify_param( param, name, num_threads=-1):
+
+def modify_param(param, name, num_threads=-1):
     if "n_jobs" in param:
         param["n_jobs"] = num_threads
+    if "shuffle" in param:
+        del param["shuffle"]
+    if "random_state" in param and param["random_state"] == True:
+        param["random_state"] = 1
+    if "fit_intercept" in param:
+        del param["fit_intercept"]
     if "MLPClassifier" in name:
         param['hidden_layer_sizes'] = ast.literal_eval(param['hidden_layer_sizes'])
     if "XGBClassifier" in name:
@@ -93,6 +100,16 @@ def modify_param( param, name, num_threads=-1):
             param["subsample_freq"] = 1
         if param["max_delta_step"] == False:
             param["max_delta_step"] = None
+    if "RidgeClassifier" in name:
+        del param["normalize"]
+    if "MLPClassifier" in name:
+        if param['nesterovs_momentum'] == 1:
+            param['nesterovs_momentum'] = True
+    if "SVC" in name:
+        if param["shrinking"] == 1:
+            param["shrinking"] = True
+        if param["shrinking"] == 0:
+            param["shrinking"] = False
     return param
 
 
