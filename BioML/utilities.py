@@ -9,6 +9,7 @@ from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
 from lightgbm import LGBMClassifier
 from sklearn.neural_network import MLPClassifier
 import ast
+import numpy as np
 
 
 def scale(scaler, X_train, X_test=None):
@@ -93,3 +94,20 @@ def modify_param( param, name, num_threads=-1):
         if param["max_delta_step"] == False:
             param["max_delta_step"] = None
     return param
+
+
+def rewrite_possum(possum_stand_alone_path):
+    possum_path = Path(possum_stand_alone_path)
+    with possum_path.open() as possum:
+        possum = possum.readlines()
+        new_possum = []
+        for line in possum:
+            if "python" in line:
+                new_line = line.split(" ")
+                new_line[2] = f"{possum_path.parent}/src/possum.py"
+                line = " ".join(new_line)
+                new_possum.append(line)
+            else:
+                new_possum.append(line)
+    with open(possum_path, "w") as possum_out:
+        possum_out.writelines(new_possum)
