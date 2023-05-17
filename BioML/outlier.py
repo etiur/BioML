@@ -11,7 +11,6 @@ from pyod.models.ecod import ECOD
 from openpyxl import load_workbook
 import pandas as pd
 from BioML.utilities import scale
-from concurrent.futures import ProcessPoolExecutor as Pool
 from pathlib import Path
 import random
 import argparse
@@ -45,7 +44,7 @@ class OutlierDetection:
         self.contamination = contamination
         self.feature_file = feature_file
         self.num_threads = num_thread
-        self.book = load_workbook(feature_file)
+        self.book = load_workbook(feature_file, read_only=True)
         self.output = Path(output)
         self.output.parent.mkdir(parents=True, exist_ok=True)
         if not str(self.output).endswith(".csv"):
@@ -55,15 +54,16 @@ class OutlierDetection:
     def outlier(self, transformed_x):
         """Given a model it will return all its scores for each of the worksheets"""
 
-        iforest = IForest(n_estimators=200, random_state=0, max_features=0.8, contamination=self.contamination)
-        knn = KNN(method="mean", contamination=self.contamination)
-        bagging = FeatureBagging(LOF(), random_state=20, contamination=self.contamination)
+        iforest = IForest(n_estimators=200, random_state=0, max_features=0.8, contamination=self.contamination,
+                          n_jobs=self.num_threads)
+        knn = KNN(method="mean", contamination=self.contamination, n_jobs=self.num_threads)
+        bagging = FeatureBagging(LOF(), random_state=20, contamination=self.contamination, n_jobs=self.num_threads)
         # cblof = CBLOF(random_state=10)
         hbos = HBOS(contamination=self.contamination)
         abod = ABOD(contamination=self.contamination)
         pca = PCA(contamination=self.contamination)
         ocsvm = OCSVM(contamination=self.contamination)
-        ecod = ECOD(contamination=self.contamination)
+        ecod = ECOD(contamination=self.contamination, n_jobs=self.num_threads)
         classifiers = {"iforest": iforest, "knn": knn, "bagging": bagging, "hbos": hbos, "abod": abod,
                        "pca": pca, "ocsvm": ocsvm, "ecod": ecod}
 
@@ -111,14 +111,15 @@ class OutlierDetection:
         excel_data = self._check_features(book)
         excel_data = {key: x.sample(frac=1, random_state=0) for key, x in excel_data.items()}
         scaled_data = []
-        for x in excel_data.values():
+        for key, x in excel_data.items():
             transformed_x, scaler_dict = scale(self.scaler, x)
-            scaled_data.append(transformed_x)
+            scaled_data.append((key, transformed_x))
         # parallelized
         scaled_data = random.sample(scaled_data, min(40, len(scaled_data)))
-        with Pool(self.num_threads) as pool:
-            for num, res in enumerate(pool.map(self.outlier, scaled_data)):
-                results[book[num]] = res
+        for key, scaled in scaled_data:
+            print(f"using {key} for outlier calculations")
+            res = self.outlier(scaled)
+            results[key] = res
 
         summed = self.counting(results, x.index)
         print("saving the outlier file")

@@ -2,8 +2,8 @@ import argparse
 import pandas as pd
 from BioML.utilities import scale, analyse_composition, write_excel
 from pathlib import Path
-from ITMO_FS.filters.univariate import select_k_best, UnivariateFilter, SPEC
-from ITMO_FS.filters.unsupervised import MCFS, TraceRatioLaplacian
+from ITMO_FS.filters.univariate import select_k_best, UnivariateFilter
+from ITMO_FS.filters.unsupervised import TraceRatioLaplacian
 # Multiprocess instead of Multiprocessing solves the pickle problem in Windows (might be different in linux)
 # but it has its own errors. Use multiprocessing.get_context('fork') seems to solve the problem but only available
 # in Unix. Altough now it seems that with fork the programme can hang indefinitely so use spaw instead
@@ -18,8 +18,9 @@ import shap
 import numpy as np
 import matplotlib.pyplot as plt
 import random
-from multiprocessing import get_context # https://pythonspeed.com/articles/python-multiprocessing/
+from multiprocessing import get_context  # https://pythonspeed.com/articles/python-multiprocessing/
 import time
+from sklearn.ensemble import RandomForestClassifier as rfc
 
 
 def arg_parse():
@@ -52,16 +53,18 @@ def arg_parse():
                         help="Default to true, plot the feature importance using shap")
     parser.add_argument("-pk", "--plot_num_features", required=False, default=20, type=int,
                         help="How many features to include in the plot")
+    parser.add_argument("-nf", "--num_filters", required=False, type=int,
+                        help="The number univariate filters to use maximum 10", default=10)
 
     args = parser.parse_args()
 
     return [args.features, args.label, args.variance_threshold, args.feature_range, args.num_thread, args.scaler,
-            args.excel, args.kfold_parameters, args.rfe_steps, args.plot, args.plot_num_features]
+            args.excel, args.kfold_parameters, args.rfe_steps, args.plot, args.plot_num_features, args.num_filters]
 
 
 class FeatureSelection:
     def __init__(self, label, excel_file, features="training_features/every_features.csv", variance_thres=7,
-                 num_thread=10, scaler="robust", num_split=5, test_size=0.2):
+                 num_thread=10, scaler="robust", num_split=5, test_size=0.2, num_filters=10):
         print("Reading the features")
         self.features = pd.read_csv(f"{features}", index_col=0)
         analyse_composition(self.features)
@@ -77,6 +80,7 @@ class FeatureSelection:
         self.num_splits = num_split
         self.test_size = test_size
         self.excel_file = Path(excel_file)
+        self.num_filters = num_filters
         if not str(self.excel_file).endswith(".xlsx"):
             self.excel_file = self.excel_file.with_suffix(".xlsx")
         self.excel_file.parent.mkdir(parents=True, exist_ok=True)
@@ -98,7 +102,7 @@ class FeatureSelection:
         Eliminate low variance features
         """
         nunique = self.features.apply(pd.Series.nunique)
-        cols_to_drop = nunique[nunique < len(self.features)-self.variance_thres].index
+        cols_to_drop = nunique[nunique < len(self.features) - self.variance_thres].index
         features = self.features.drop(cols_to_drop, axis=1)
         analyse_composition(features)
         return features
@@ -106,12 +110,8 @@ class FeatureSelection:
     @staticmethod
     def univariate(X_train, Y_train, num_features, feature_names, filter_name):
         """Features are considered one at the time and we are using statistical filters"""
-        if filter_name != "SPEC":
-            ufilter = UnivariateFilter(filter_name, select_k_best(num_features))
-            ufilter.fit(X_train, Y_train)
-        else:
-            ufilter = SPEC(num_features)
-            ufilter.fit(X_train, Y_train)
+        ufilter = UnivariateFilter(filter_name, select_k_best(num_features))
+        ufilter.fit(X_train, Y_train)
         scores = {x: v for x, v in zip(feature_names, ufilter.feature_scores_)}
         # sorting the features
         if filter_name != "LaplacianScore":
@@ -136,12 +136,19 @@ class FeatureSelection:
         if "Trace" in filter_name:
             ufilter = TraceRatioLaplacian(num_features).fit(X_train)
             scores = {x: v for x, v in zip(feature_names, ufilter.score_)}
-        else:
-            ufilter = MCFS(num_features).fit(X_train)
-            scores = {x: v for x, v in zip(feature_names, ufilter.selected_features_)}
+
         scores = pd.Series(dict(sorted(scores.items(), key=lambda items: items[1], reverse=True)))
 
         return scores
+
+    def random_classification(self, X_train, Y_train, feature_names):
+        rfc_classi = rfc(class_weight="balanced_subsample", random_state=27, max_features=0.5, max_samples=0.8,
+                         min_samples_leaf=5, n_estimators=200, n_jobs=self.num_thread)
+        rfc_classi.fit(X_train, Y_train)
+        gini_importance = pd.Series(rfc_classi.feature_importances_, index=feature_names)
+        gini_importance.sort_values(ascending=False, inplace=True)
+
+        return gini_importance
 
     def xgbtree(self, X_train, Y_train, feature_names, split_ind, plot=True, plot_num_features=20):
         """computes the feature importance"""
@@ -177,14 +184,15 @@ class FeatureSelection:
         features = rfe.get_feature_names_out(feature_names)
         return features
 
-    def parallel_filtering(self, X_train, Y_train, num_features, feature_names, split_ind, plot=True, plot_num_features=20):
+    def parallel_filtering(self, X_train, Y_train, num_features, feature_names, split_ind, plot=True,
+                           plot_num_features=20):
         random.seed(self.seed)
         results = {}
         filter_names = ("FRatio", "SymmetricUncertainty", "SpearmanCorr", "PearsonCorr", "Chi2", "Anova",
-                        "LaplacianScore", "InformationGain",)
-        filter_names = random.sample(filter_names, 6)
+                        "LaplacianScore", "InformationGain", "KendallCorr", "FechnerCorr")
+        filter_names = random.sample(filter_names, self.num_filters)
         multivariate = ("STIR", "TraceRatioFisher")
-        filter_unsupervised = ("TraceRatioLaplacian", "MCFS")
+        filter_unsupervised = ("TraceRatioLaplacian",)
 
         arg_univariate = [(X_train, Y_train, num_features, feature_names, x) for x in filter_names]
         arg_multivariate = [(X_train, Y_train, num_features, feature_names, x) for x in multivariate]
@@ -203,6 +211,7 @@ class FeatureSelection:
                 results[filter_unsupervised[num]] = res
 
         results["xgbtree"] = self.xgbtree(X_train, Y_train, feature_names, split_ind, plot, plot_num_features)
+        results["random"] = self.random_classification(X_train, Y_train, feature_names)
 
         results = pd.concat(results)
         return results
@@ -237,7 +246,7 @@ class FeatureSelection:
                     feature_dict[f"{filters}_{num_features}"][f"split_{i}"] = features[feat.index[:num_features]]
                 rfe_results = self.rfe_linear(transformed, Y_train, num_features, X_train.columns, rfe_step)
                 feature_dict[f"rfe_{num_features}"][f"split_{i}"] = features[rfe_results]
-        
+
         final_dict = {key: pd.concat(value, axis=1) for key, value in feature_dict.items()}
         with pd.ExcelWriter(self.excel_file, mode="w", engine="openpyxl") as writer:
             for key in final_dict.keys():
@@ -246,7 +255,7 @@ class FeatureSelection:
 
 def main():
     features, label, variance_threshold, feature_range, num_thread, scaler, excel_file, kfold, rfe_steps, plot, \
-        plot_num_features = arg_parse()
+        plot_num_features, num_filters = arg_parse()
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     feature_range = feature_range.split(":")
     if len(feature_range) > 1:
@@ -262,7 +271,7 @@ def main():
         step = None
         num_features_max = None
     selection = FeatureSelection(label, excel_file, features, variance_threshold, num_thread, scaler,
-                                 num_split, test_size)
+                                 num_split, test_size, num_filters)
     selection.construct_feature_set(num_features_min, num_features_max, step, rfe_steps, plot, plot_num_features)
 
 

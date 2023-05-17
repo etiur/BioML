@@ -1,18 +1,19 @@
 from sklearn.model_selection import StratifiedShuffleSplit
 import pandas as pd
-from sklearn.metrics import matthews_corrcoef, confusion_matrix, r2_score
+from sklearn.metrics import matthews_corrcoef, confusion_matrix
 from sklearn.metrics import classification_report as class_re
 from collections import namedtuple
 from openpyxl import load_workbook
 from hpsklearn import HyperoptEstimator
 from BioML.utilities import scale, write_excel
-from hyperopt import hp, tpe
+from hyperopt import hp, anneal, tpe, mix, rand
 from pathlib import Path
 from hpsklearn import random_forest_classifier, extra_trees_classifier
 from hpsklearn import sgd_classifier, ridge_classifier, passive_aggressive_classifier
 from hpsklearn import mlp_classifier, k_neighbors_classifier, xgboost_classification, lightgbm_classification
 from hpsklearn import svc
 import argparse
+import numpy as np
 from hyperopt.pyll import scope
 
 
@@ -53,9 +54,9 @@ def arg_parse():
                              "or the positive class")
     parser.add_argument("-rpw", "--report_weight", required=False, default=0.25, type=float,
                         help="Weights to specify how relevant is the f1, precision and recall for the ranking of the "
-                             "different features with respect to MCC and the R2 which are more general measures of "
+                             "different features with respect to MCC which is a more general measures of "
                              "the performance of a model")
-    parser.add_argument("-dw", "--difference_weight", required=False, default=0.8, type=float,
+    parser.add_argument("-dw", "--difference_weight", required=False, default=1.1, type=float,
                         help="How important is to have similar training and test metrics")
     parser.add_argument("-sm", "--small", required=False, action="store_false",
                         help="Default to true, if the number of samples is < 300 or if you machine is slow. "
@@ -75,29 +76,26 @@ def interesting_classifiers(name, small=True):
     def _name(msg):
         return f"{name}.k_neighbors_classifier_{msg}"
 
-    def _neighbors_metric(name: str):
-        """
-        Declaration search space 'metric' parameter
-        """
-        return hp.choice(name, ["minkowski", "euclidean", "manhattan"])
+    def _name_svc(msg):
+        return f"{name}.svc_{msg}"
 
-    def _neighbors_leaf_size(name: str):
+    def _neighbors_p(name: str):
         """
-        Declaration search space 'leaf_size' parameter
+        Declaration search space 'p' parameter
         """
-        return scope.int(hp.uniform(name, 20, 30))
+        return scope.int(hp.uniform(name, 1, 5))
+
 
     classifiers = [
         random_forest_classifier(name + ".random_forest"),
         extra_trees_classifier(name + ".extra_trees"),
-        sgd_classifier(name + ".sgd"),
-        ridge_classifier(name + ".ridge", random_state=0),
+        sgd_classifier(name + ".sgd", random_state=10),
+        ridge_classifier(name + ".ridge", random_state=20),
         passive_aggressive_classifier(name + ".passive_aggressive"),
         mlp_classifier(name + ".mlp"),
-        svc(name + ".svc"),
-        k_neighbors_classifier(name + ".knn", algorithm="auto", leaf_size=_neighbors_leaf_size(_name("leaf_size")),
-                               n_neighbors=scope.int(hp.uniform(_name("n_neighbors"), 1, 10)),
-                               metric=_neighbors_metric(_name("metric")))
+        svc(name + ".svc", C=hp.choice(_name_svc('C'), np.arange(0.05, 5.0,0.01))),
+        k_neighbors_classifier(name + ".knn", algorithm="auto", p=_neighbors_p(_name("p")),
+                               n_neighbors=scope.int(hp.uniform(_name("n_neighbors"), 2, 10)))
     ]
     if not small:
         classifiers.append(lightgbm_classification(name + ".lightgbm"))
@@ -107,10 +105,11 @@ def interesting_classifiers(name, small=True):
     return hp.choice(name, classifiers)
 
 
+
 class Classifier:
     def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
                  outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, precision_weight=1,
-                 recall_weight=1, report_weight=0.4, difference_weight=0.8, class0_weight=0.5, small=True):
+                 recall_weight=1, report_weight=0.4, difference_weight=1.1, class0_weight=0.5, small=True):
         self.outliers = outliers
         self.num_splits = num_splits
         self.test_size = test_size
@@ -131,6 +130,7 @@ class Classifier:
         self.small = small
 
     def train(self, X_train, Y_train, X_test):
+
         estimator = HyperoptEstimator(classifier=interesting_classifiers("automl", self.small), preprocessing=[],
                                       algo=tpe.suggest, max_evals=self.max_evals, trial_timeout=self.trial_time_out,
                                       n_jobs=self.num_threads, verbose=True)
@@ -147,7 +147,7 @@ class Classifier:
         """ The function prints the scores of the models and the prediction performance """
         target_names = ["class 0", "class 1"]
 
-        scalar_record = namedtuple("scores", ["cv_score", "train_mat", "test_matthews", "r2_train", "r2_test"])
+        scalar_record = namedtuple("scores", ["cv_score", "train_mat", "test_matthews"])
         parameter_record = namedtuple("parameters", ["params", "test_confusion", "tr_report", "te_report",
                                                      "train_confusion", "model_name"])
         # Model comparison
@@ -160,14 +160,12 @@ class Classifier:
         train_confusion = confusion_matrix(Y_train, pred.pred_train_y)
         tr_report = class_re(Y_train, pred.pred_train_y, target_names=target_names, output_dict=True)
         train_mat = matthews_corrcoef(Y_train, pred.pred_train_y)
-        train_r2 = r2_score(Y_train, pred.pred_train_y)
         # Test metrics grid
         test_confusion = confusion_matrix(Y_test, pred.pred_test_y)
         test_matthews = matthews_corrcoef(Y_test, pred.pred_test_y)
         te_report = class_re(Y_test, pred.pred_test_y, target_names=target_names, output_dict=True)
-        test_r2 = r2_score(Y_test, pred.pred_test_y)
         # save the results in namedtuples
-        scalar_scores = scalar_record(*[cv_score, train_mat, test_matthews, train_r2, test_r2])
+        scalar_scores = scalar_record(*[cv_score, train_mat, test_matthews])
         param_scores = parameter_record(*[model_params, test_confusion, tr_report, te_report, train_confusion,
                                           pred.fitted.best_model()["learner"].__class__.__name__])
 
@@ -224,9 +222,7 @@ class Classifier:
         # performance scores
         test_mathew = [x.test_matthews for x in metric_scalar]
         cv_score = [x.cv_score for x in metric_scalar]
-        test_r2 = [x.r2_test for x in metric_scalar]
         train_mathew = [x.train_mat for x in metric_scalar]
-        train_r2 = [x.r2_train for x in metric_scalar]
         # model parameters
         model_name = [x.model_name for x in parameter_list]
         params = pd.concat({i: pd.concat({x.model_name: x.params}) for i, x in zip(split_index, parameter_list)})
@@ -253,20 +249,18 @@ class Classifier:
 
         dataframe = pd.DataFrame([split_index, test_true_n, test_true_p, test_false_p, test_false_n, training_true_n,
                                   training_true_p, training_false_p, training_false_n, cv_score,
-                                  train_mathew, test_mathew, train_r2, test_r2, model_name])
+                                  train_mathew, test_mathew, model_name])
 
         dataframe = dataframe.transpose()
         dataframe.columns = ["split_index", "test_tn", "test_tp", "test_fp", "test_fn", "train_tn", "train_tp",
-                             "train_fp", "train_fn", "CV_MCC", "train_MCC", "test_MCC", "train_R2", "test_R2",
-                             "model_name"]
+                             "train_fp", "train_fn", "CV_MCC", "train_MCC", "test_MCC", "model_name"]
         dataframe.set_index("split_index", inplace=True)
 
         return dataframe, report.T, params
 
     def _calculate_score_dataframe(self, dataframe):
-        return ((dataframe["train_MCC"] + dataframe["test_MCC"] + dataframe["train_R2"] + dataframe["test_R2"])
-                - self.difference_weight * (abs(dataframe["test_MCC"] - dataframe["train_MCC"]) +
-                                            abs(dataframe["test_R2"] - dataframe["train_R2"]))).sum()
+        return ((dataframe["train_MCC"] + dataframe["test_MCC"])
+                - self.difference_weight * (abs(dataframe["test_MCC"] - dataframe["train_MCC"]))).sum()
 
     def _calculate_score_report(self, report, class_label):
         class_level = report.loc[report.index.get_level_values(1) == class_label,
@@ -297,7 +291,7 @@ class Classifier:
     def run(self):
         """A function that runs nested_cv several times, as many as the sheets in the Excel"""
         # reading the data
-        sheet_names = load_workbook(self.features).sheetnames
+        sheet_names = load_workbook(self.features, read_only=True).sheetnames
         excel_data = self._check_features(sheet_names)
         result_list = []
         for num, feature in enumerate(excel_data.values()):
@@ -326,7 +320,7 @@ def main():
         trial_time = int(trial_time)
     else:
         trial_time = None
-    if Path(outliers[0]).exists():
+    if len(outliers) > 0 and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = [x.strip() for x in out.readlines()]
     training = Classifier(excel, label, training_output, num_split, test_size, outliers, scaler, max_evals,
