@@ -121,7 +121,10 @@ def rewrite_possum(possum_stand_alone_path):
         for line in possum:
             if "python" in line:
                 new_line = line.split(" ")
-                new_line[2] = f"{possum_path.parent}/src/possum.py"
+                if "possum.py" in line:
+                    new_line[2] = f"{possum_path.parent}/src/possum.py"
+                else:
+                    new_line[2] = f"{possum_path.parent}/src/headerHandler.py"
                 line = " ".join(new_line)
                 new_possum.append(line)
             else:
