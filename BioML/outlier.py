@@ -31,15 +31,17 @@ def arg_parse():
                         help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
     parser.add_argument("-c", "--contamination", required=False, default=0.06, type=float,
                         help="The expected % of outliers")
+    parser.add_argument("-nfe", "--num_features", required=False, type=float,
+                        help="The fraction of features to use, maximum 1 which is all the features", default=0.8)
 
     args = parser.parse_args()
 
-    return [args.excel, args.outlier, args.scaler, args.contamination, args.num_thread]
+    return [args.excel, args.outlier, args.scaler, args.contamination, args.num_thread, args.num_features]
 
 
 class OutlierDetection:
     def __init__(self, feature_file="training_features/selected_features.xlsx", output="training_results/outliers.csv",
-                 scaler="robust", contamination=0.06, num_thread=10):
+                 scaler="robust", contamination=0.06, num_thread=10, num_feature=1):
         self.scaler = scaler
         self.contamination = contamination
         self.feature_file = feature_file
@@ -47,6 +49,7 @@ class OutlierDetection:
         self.book = load_workbook(feature_file, read_only=True)
         self.output = Path(output)
         self.output.parent.mkdir(parents=True, exist_ok=True)
+        self.num_feature = num_feature
         if not str(self.output).endswith(".csv"):
             self.output.with_suffix(".csv")
         self.with_split = True
@@ -115,7 +118,7 @@ class OutlierDetection:
             transformed_x, scaler_dict = scale(self.scaler, x)
             scaled_data.append((key, transformed_x))
         # parallelized
-        scaled_data = random.sample(scaled_data, min(40, len(scaled_data)))
+        scaled_data = random.sample(scaled_data, int(len(scaled_data)*self.num_feature))
         for key, scaled in scaled_data:
             print(f"using {key} for outlier calculations")
             res = self.outlier(scaled)
@@ -128,11 +131,12 @@ class OutlierDetection:
 
 
 def main():
-    excel, outlier, scaler, contamination, num_thread = arg_parse()
-    detection = OutlierDetection(excel, outlier, scaler, contamination, num_thread)
+    excel, outlier, scaler, contamination, num_thread, num_features = arg_parse()
+    detection = OutlierDetection(excel, outlier, scaler, contamination, num_thread, num_features)
     detection.run()
 
 
 if __name__ == "__main__":
     # Run this if this file is executed from command line but not if is imported as API
     main()
+

@@ -6,6 +6,7 @@ from collections import defaultdict
 import joblib
 from BioML.utilities import scale, modify_param
 
+
 def arg_parse():
     parser = argparse.ArgumentParser(description="Generate the models from the ensemble")
 

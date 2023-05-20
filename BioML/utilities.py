@@ -68,6 +68,7 @@ def interesting_classifiers(name, params):
 
     return classifiers[name](**params)
 
+
 def modify_param(param, name, num_threads=-1):
     if "n_jobs" in param:
         param["n_jobs"] = num_threads
@@ -110,3 +111,23 @@ def modify_param(param, name, num_threads=-1):
         if param["shrinking"] == 0:
             param["shrinking"] = False
     return param
+
+
+def rewrite_possum(possum_stand_alone_path):
+    possum_path = Path(possum_stand_alone_path)
+    with possum_path.open() as possum:
+        possum = possum.readlines()
+        new_possum = []
+        for line in possum:
+            if "python" in line:
+                new_line = line.split(" ")
+                if "possum.py" in line:
+                    new_line[2] = f"{possum_path.parent}/src/possum.py"
+                else:
+                    new_line[2] = f"{possum_path.parent}/src/headerHandler.py"
+                line = " ".join(new_line)
+                new_possum.append(line)
+            else:
+                new_possum.append(line)
+    with open(possum_path, "w") as possum_out:
+        possum_out.writelines(new_possum)

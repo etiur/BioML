@@ -12,6 +12,7 @@ from Bio import SeqIO
 from Bio.SeqIO import FastaIO
 from subprocess import call
 import shlex
+from BioML.utilities import rewrite_possum
 
 
 def arg_parse():
@@ -75,6 +76,7 @@ class ExtractPssm:
             self.base = "."
         self.iter = iterations
         self.possum = possum_dir
+        rewrite_possum(self.possum)
 
     def makedata(self):
         """

@@ -6,7 +6,7 @@ import shlex
 from subprocess import Popen, PIPE
 import time
 import pandas as pd
-from BioML.utilities import write_excel
+from BioML.utilities import write_excel, rewrite_possum
 from os.path import basename
 from multiprocessing import get_context
 from pathlib import Path
@@ -97,6 +97,7 @@ class ExtractFeatures:
         self.pssm_dir = pssm_dir
         self.ifeature = f"{ifeature_dir}/iFeature.py"
         self.possum = f"{possum_dir}/possum_standalone.pl"
+        rewrite_possum(self.possum)
         self.ifeature_out = Path(ifeature_out)
         self.possum_out = Path(possum_out)
         self.thread = thread
