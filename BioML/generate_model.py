@@ -14,7 +14,7 @@ def arg_parse():
                         help="The file to where the selected features are saved in excel format",
                         default="training_features/selected_features.xlsx")
     parser.add_argument("-hp", "--hyperparameter_path", required=False, help="Path to the hyperparameter file",
-                        default="training_features/hyperparameters.xlsx")
+                        default="training_results/hyperparameters.xlsx")
     parser.add_argument("-n", "--num_thread", required=False, default=10, type=int,
                         help="The number of threads to use for the parallelization of outlier detection")
     parser.add_argument("-sc", "--scaler", default="robust", choices=("robust", "standard", "minmax"),

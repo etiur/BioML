@@ -85,7 +85,6 @@ def interesting_classifiers(name, small=True):
         """
         return scope.int(hp.uniform(name, 1, 5))
 
-
     classifiers = [
         random_forest_classifier(name + ".random_forest"),
         extra_trees_classifier(name + ".extra_trees"),
@@ -101,9 +100,7 @@ def interesting_classifiers(name, small=True):
         classifiers.append(lightgbm_classification(name + ".lightgbm"))
         classifiers.append(xgboost_classification(name + ".xgboost"))
 
-
     return hp.choice(name, classifiers)
-
 
 
 class Classifier:
