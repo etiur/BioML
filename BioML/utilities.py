@@ -101,7 +101,7 @@ def modify_param(param, name, num_threads=-1):
         if param["max_delta_step"] == False:
             param["max_delta_step"] = None
     if "RidgeClassifier" in name:
-        if "nrmalize" in param:
+        if "normalize" in param:
             del param["normalize"]
     if "MLPClassifier" in name:
         if param['nesterovs_momentum'] == 1:
