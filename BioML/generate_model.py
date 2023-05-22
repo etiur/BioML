@@ -138,7 +138,7 @@ class GenerateModel:
 
 def main():
     excel, label, scaler, hyperparameter_path, model_output, num_thread, outliers, sheets = arg_parse()
-    if Path(outliers[0]).exists():
+    if len(outliers) > 0 and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = [x.strip() for x in out.readlines()]
     generate = GenerateModel(excel, hyperparameter_path, label, sheets, scaler, num_thread, outliers,

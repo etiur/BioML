@@ -419,7 +419,7 @@ def main():
     kfold_parameters, outliers, precision_weight, recall_weight, class0_weight, report_weight, \
     difference_weight, num_thread = arg_parse()
     num_split, test_size = int(kfold_parameters.split(":")[0]), float(kfold_parameters.split(":")[1])
-    if Path(outliers[0]).exists():
+    if len(outliers) > 0 and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
     if sheets[0].isdigit():
