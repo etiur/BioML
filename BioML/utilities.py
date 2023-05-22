@@ -106,10 +106,11 @@ def modify_param(param, name, num_threads=-1):
         if param['nesterovs_momentum'] == 1:
             param['nesterovs_momentum'] = True
     if "SVC" in name:
-        if param["shrinking"] == 1:
-            param["shrinking"] = True
-        if param["shrinking"] == 0:
-            param["shrinking"] = False
+        if "shrinking" in param:
+            if param["shrinking"] == 1:
+                param["shrinking"] = True
+            if param["shrinking"] == 0:
+                param["shrinking"] = False
     return param
 
 
