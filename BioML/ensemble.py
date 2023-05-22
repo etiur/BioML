@@ -21,7 +21,7 @@ def arg_parse():
                         help="The path to the output for the ensemble results",
                         default="ensemble_results")
     parser.add_argument("-hp", "--hyperparameter_path", required=False, help="Path to the hyperparameter file",
-                        default="training_features/hyperparameters.xlsx")
+                        default="training_results/hyperparameters.xlsx")
     parser.add_argument("-s", "--sheets", required=True, nargs="+",
                         help="Names or index of the selected sheets for both features and hyperparameters")
     parser.add_argument("-va", "--prediction_threshold", required=False, default=1.0, type=float,
