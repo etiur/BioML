@@ -326,8 +326,8 @@ class EnsembleClassification:
                 write_excel(writer1, mean_report.groupby(level=[0,1]).std(), f"sh_{sheet}_kf_{kfold}_std")
                 write_excel(writer2, mean_dataframe.groupby(level=0).std(), f"sh_{sheet}_kf_{kfold}_std")
             # the between sheet results
-            write_excel(writer1, data_between, f"results_between_sheets")
-            write_excel(writer2, report_between, f"report_between_sheets")
+            write_excel(writer2, data_between, f"results_between_sheets")
+            write_excel(writer1, report_between, f"report_between_sheets")
 
     @staticmethod
     def get_score(pred_train_y, pred_test_y, Y_train, Y_test):
@@ -410,7 +410,7 @@ class EnsembleClassification:
         rank = score_dataframe + (self.report_weight * (self.class0_weight * score_report_class0 +
                                                         score_report_class1)/2)
 
-        return rank
+        return rank.values[0]
 
 
 def main():
