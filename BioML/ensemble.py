@@ -411,7 +411,7 @@ class EnsembleClassification:
         rank = score_dataframe + (self.report_weight * (self.class0_weight * score_report_class0 +
                                                         score_report_class1)/2)
 
-        return rank
+        return rank.values[0]
 
 
 def main():
