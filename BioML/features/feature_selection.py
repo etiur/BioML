@@ -24,7 +24,7 @@ from sklearn.ensemble import RandomForestClassifier as rfc
 
 
 def arg_parse():
-    parser = argparse.ArgumentParser(description="Preprocess and Select the best features")
+    parser = argparse.ArgumentParser(description="Preprocess and Select the best features, only use it if the feature came from possum or ifeatures")
 
     parser.add_argument("-f", "--features", required=False,
                         help="The path to the training features that contains both ifeature and possum in csv format",
@@ -32,9 +32,9 @@ def arg_parse():
     parser.add_argument("-l", "--label", required=True,
                         help="The path to the labels of the training set in a csv format if not in the features,"
                              "if present in the features csv use the flag to specify the label column name")
-    parser.add_argument("-r", "--feature_range", required=False, default="20:none:10",
+    parser.add_argument("-r", "--feature_range", required=False, default="none:none:none",
                         help="Specify the minimum and maximum of number of features in start:stop:step format or "
-                             "a single integer. Stop can be none then the default value will be num samples / 2")
+                             "a single integer. Start will default to num samples / 10, Stop will default to num samples / 2 and step will be (stop - step / 5)")
     parser.add_argument("-n", "--num_thread", required=False, default=10, type=int,
                         help="The number of threads to use for parallelizing the feature selection")
     parser.add_argument("-v", "--variance_threshold", required=False, default=7, type=float,
@@ -48,7 +48,7 @@ def arg_parse():
                         help="The parameters for the kfold in num_split:test_size format", default="5:0.2")
     parser.add_argument("-st", "--rfe_steps", required=False, type=int,
                         help="The number of steps for the RFE algorithm, the more step the more precise "
-                             "but also more time consuming", default=40)
+                             "but also more time consuming and might lead to overfitting", default=30)
     parser.add_argument("-p", "--plot", required=False, action="store_false",
                         help="Default to true, plot the feature importance using shap")
     parser.add_argument("-pk", "--plot_num_features", required=False, default=20, type=int,
@@ -65,15 +65,39 @@ def arg_parse():
 class FeatureSelection:
     def __init__(self, label, excel_file, features="training_features/every_features.csv", variance_thres=7,
                  num_thread=10, scaler="robust", num_split=5, test_size=0.2, num_filters=10):
-        print("Reading the features")
-        self.features = pd.read_csv(f"{features}", index_col=0)
+        """
+        _summary_
+
+        Parameters
+        ----------
+        label : str
+            Path to the label or the name of the column with the label if included in feature file
+        excel_file : _type_
+            _description_
+        features : str, optional
+            The features extracted for the training, by default "training_features/every_features.csv"
+        variance_thres : int, optional
+            The maximum number of repeated values for a column, if > the column will be eliminated, by default 7
+        num_thread : int, optional
+            Cpus for the parallelization of the selection, by default 10
+        scaler : str, optional
+            The name for the scaler. robust for RobustScaler, minmax for MinMaxScaler and standard for StadardScaler, by default "robust"
+        num_split : int, optional
+            Number of kfold splits, by default 5
+        test_size : float, optional
+            The size of the test set, by default 0.2
+        num_filters : int, optional
+            The number of feature selection algorithms to use, by default 10
+        """
+        print("Reading the features, use only when the feature came from feature_extraction.py")
+        self.features = pd.read_csv(f"{features}", index_col=0) # the first column shoudl contain the sample names
         analyse_composition(self.features)
         if Path(label).exists():
             self.label = pd.read_csv(label, index_col=0)
         else:
             self.label = self.features[label]
             self.features.drop(label, axis=1, inplace=True)
-        self._check_label(label)
+        self._check_label(label) 
         self.variance_thres = variance_thres
         self.num_thread = num_thread
         self.scaler = scaler
@@ -85,6 +109,7 @@ class FeatureSelection:
             self.excel_file = self.excel_file.with_suffix(".xlsx")
         self.excel_file.parent.mkdir(parents=True, exist_ok=True)
         self.seed = time.time()
+        print("seed:", self.seed)
 
     def _check_label(self, label):
         if len(self.label) != len(self.features):

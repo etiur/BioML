@@ -26,7 +26,7 @@ def arg_parse():
     parser.add_argument("-po", "--possum_out", required=False, help="The directory for the possum extractions",
                         default="possum_features")
     parser.add_argument("-eo", "--extracted_out", required=False,
-                        help="The directory for the extracted features from the new data or from the training data",
+                        help="The directory for the extracted features (concatenated from both programs)",
                         default="extracted_features")
     parser.add_argument("-e", "--excel", required=False,
                         help="The path to where the selected features from training are saved in excel format, it will"
@@ -38,7 +38,7 @@ def arg_parse():
     parser.add_argument("-lg", "--long", required=False, help="true when restarting from the long commands",
                         action="store_true")
     parser.add_argument("-r", "--run", required=False, choices=("possum", "ifeature", "both"), default="both",
-                        help="run possum or ifeature extraction")
+                        help="run possum or ifeature extraction, the choice will affect --type argument since only one of the programs would be extracted")
     parser.add_argument("-n", "--num_thread", required=False, default=100, type=int,
                         help="The number of threads to use for the generation of pssm profiles")
     parser.add_argument("-t", "--type", required=False, default="all", nargs="+", choices=("all", "APAAC", "PAAC",
@@ -48,11 +48,11 @@ def arg_parse():
                         "pssm_composition", "rpssm", "s_fpssm", "smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9",
                         "tpc", "tri_gram_pssm", "pse_pssm:1", "pse_pssm:2", "pse_pssm:3"),
                         help="A list of the features to extract")
-    parser.add_argument("-tf", "--type_file", required=False, help="the path to the file with the feature names")
+    parser.add_argument("-tf", "--type_file", required=False, help="the path to the file with the feature names, separated by spaces or newlines")
     parser.add_argument("-s", "--sheets", required=False, nargs="+",
-                        help="Names or index of the selected sheets from the features and the "
-                             "index of the models in this format-> sheet (name, index):index model1,index model2 "
-                             "without the spaces. If only index or name of the sheets, it is assumed that all kfold "
+                        help="Names of the selected sheets from the features and the "
+                             "index of the models in this format-> sheet name:index model1,index model2 "
+                             "without the spaces. If only name of the sheets, it is assumed that all kfold "
                              "models are selected. It is possible to have one sheet with kfold indices but in another "
                              "ones without")
 
@@ -134,11 +134,27 @@ class ExtractFeatures:
                     self.ifea_long.remove(f)
             print(f"Extracting iFeature features {self.ifea_long + self.ifea_short}")
             print(f"Extracting Possum features {self.pos_long + self.pos_short + self.smoothed_pssm, self.pse_pssm}")
+ 
         else:
-            print("Extracting all features for training new models only")
+            print("Extracting all features should only be used for training new models")
 
     @staticmethod
     def _batch_iterable(iterable, batch_size):
+        """
+        Create generators from iterable
+
+        Parameters
+        ----------
+        iterable : list | set | tuple
+            An iterable containing the object to be batched
+        batch_size : int
+            The length of the batch
+
+        Yields
+        ------
+        generator
+
+        """
         length = len(iterable)
         for ndx in range(0, length, batch_size):
             yield iterable[ndx:min(ndx + batch_size, length)]
@@ -147,10 +163,6 @@ class ExtractFeatures:
         """
         A class that separates the fasta files into smaller fasta files
 
-        parameters
-        ___________
-        num: int
-            The number of files to separate the original fasta_file
         """
         with open(self.fasta_file) as inp:
             record = list(SeqIO.parse(inp, "fasta"))
@@ -317,7 +329,7 @@ class ExtractFeatures:
 
     def extraction_possum(self, fasta_file):
         """
-        run the possum programme in different iteratively
+        run the possum programme iteratively
 
         Parameters
         ----------
@@ -385,6 +397,9 @@ class ReadFeatures:
             A directory for the extraction results from possum
         filtered_out: str, optional
             A directory to store the filtered features from all the generated features
+        types: list[str]
+            A list of features to be read
+        
         """
         self.ifeature_out = ifeature_out
         self.possum_out = possum_out
@@ -443,8 +458,8 @@ class ReadFeatures:
     def read_ifeature(self, length):
         """
         A function to read features from ifeatures
-        name: str
-            name of the file
+        lenght: int
+            The number of splits the input fasta has
         """
         # ifeature features
         feat = {}
@@ -520,14 +535,10 @@ class ReadFeatures:
 
     def filter_features(self):
         """
-        filter the obtained features based on the reference_feature_file (self.learning)
-        Parameters
-        ___________
-        selected: dict[str]
-            A dictionary of {algorithm name: features_kfold index} if there are different kfold indices
-
+        filter the obtained features based on the reference_feature_file (self.excel_feature)
         """
         self.read()
+        # The reference excel has a multicomlun were the first level are the kfolds and the second level are the features selected for that kfold
         training_features = pd.read_excel(self.excel_feature, index_col=0, sheet_name=self.selected_sheets, header=[0, 1],
                                           engine='openpyxl')
         with pd.ExcelWriter(self.extracted_out/"new_features.xlsx", mode="w", engine="openpyxl") as writer:
@@ -585,7 +596,7 @@ def extract_and_filter(fasta_file=None, pssm_dir="pssm", ifeature_out="ifeature_
     if "filter" in purpose:
         # feature filtering
         if not selected:
-            raise NotImplementedError("you have not defined the selected feature sets")
+            raise ValueError("you have not defined the selected feature sets")
         filtering = ReadFeatures(fasta_file, ifeature_out, possum_out, extracted_out, types, type_file,
                                  excel_feature_file, selected)
         filtering.filter_features()
