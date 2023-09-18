@@ -16,7 +16,7 @@ def scale(scaler, X_train, X_test=None):
     """
     Scale the features using RobustScaler
     """
-    scaler_dict = {"robust": RobustScaler(), "standard": StandardScaler(), "minmax": MinMaxScaler()}
+    scaler_dict = {"robust": RobustScaler(), "zscore": StandardScaler(), "minmax": MinMaxScaler()}
     transformed = scaler_dict[scaler].fit_transform(X_train)
     #transformed = pd.DataFrame(transformed, index=X_train.index, columns=X_train.columns)
     if X_test is None:

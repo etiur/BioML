@@ -37,9 +37,9 @@ def arg_parse():
                              "a single integer. Start will default to num samples / 10, Stop will default to num samples / 2 and step will be (stop - step / 5)")
     parser.add_argument("-n", "--num_thread", required=False, default=10, type=int,
                         help="The number of threads to use for parallelizing the feature selection")
-    parser.add_argument("-v", "--variance_threshold", required=False, default=7, type=float,
-                        help="it will influence the features to be eliminated the larger the less restrictive")
-    parser.add_argument("-s", "--scaler", required=False, default="robust", choices=("robust", "standard", "minmax"),
+    parser.add_argument("-v", "--variance_threshold", required=False, default=7, type=int,
+                        help="At least these many different values for a column, mostly to eliminate columns that has the same values for all the samples")
+    parser.add_argument("-s", "--scaler", required=False, default="robust", choices=("robust", "zscore", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
     parser.add_argument("-e", "--excel", required=False,
                         help="The file path to where the selected features will be saved in excel format",
@@ -55,16 +55,19 @@ def arg_parse():
                         help="How many features to include in the plot")
     parser.add_argument("-nf", "--num_filters", required=False, type=int,
                         help="The number univariate filters to use maximum 10", default=10)
+    parser.add_argument("-se", "--seed", required=False, type=int, default=None,
+                        help="The seed number used for reproducibility")
 
     args = parser.parse_args()
 
     return [args.features, args.label, args.variance_threshold, args.feature_range, args.num_thread, args.scaler,
-            args.excel, args.kfold_parameters, args.rfe_steps, args.plot, args.plot_num_features, args.num_filters]
+            args.excel, args.kfold_parameters, args.rfe_steps, args.plot, args.plot_num_features, args.num_filters,
+            args.seed]
 
 
 class FeatureSelection:
-    def __init__(self, label, excel_file, features="training_features/every_features.csv", variance_thres=7,
-                 num_thread=10, scaler="robust", num_split=5, test_size=0.2, num_filters=10):
+    def __init__(self, label, excel_file, features="training_features/every_features.csv", variance_thres=0,
+                 num_thread=10, scaler="robust", num_split=5, test_size=0.2, num_filters=10, seed=None):
         """
         _summary_
 
@@ -81,7 +84,7 @@ class FeatureSelection:
         num_thread : int, optional
             Cpus for the parallelization of the selection, by default 10
         scaler : str, optional
-            The name for the scaler. robust for RobustScaler, minmax for MinMaxScaler and standard for StadardScaler, by default "robust"
+            The name for the scaler. robust for RobustScaler, minmax for MinMaxScaler and zscore for StadardScaler, by default "robust"
         num_split : int, optional
             Number of kfold splits, by default 5
         test_size : float, optional
@@ -96,7 +99,7 @@ class FeatureSelection:
             self.label = pd.read_csv(label, index_col=0)
         else:
             self.label = self.features[label]
-            self.features.drop(label, axis=1, inplace=True)
+            
         self._check_label(label) 
         self.variance_thres = variance_thres
         self.num_thread = num_thread
@@ -108,7 +111,10 @@ class FeatureSelection:
         if not str(self.excel_file).endswith(".xlsx"):
             self.excel_file = self.excel_file.with_suffix(".xlsx")
         self.excel_file.parent.mkdir(parents=True, exist_ok=True)
-        self.seed = time.time()
+        if seed:
+            self.seed = seed
+        else:
+            self.seed = int(time.time())
         print("seed:", self.seed)
 
     def _check_label(self, label):
@@ -127,7 +133,7 @@ class FeatureSelection:
         Eliminate low variance features
         """
         nunique = self.features.apply(pd.Series.nunique)
-        cols_to_drop = nunique[nunique < len(self.features) - self.variance_thres].index
+        cols_to_drop = nunique[nunique > self.variance_thres].index
         features = self.features.drop(cols_to_drop, axis=1)
         analyse_composition(features)
         return features
@@ -177,9 +183,9 @@ class FeatureSelection:
 
     def xgbtree(self, X_train, Y_train, feature_names, split_ind, plot=True, plot_num_features=20):
         """computes the feature importance"""
-        XGBOOST = xgb.XGBClassifier(learning_rate=0.01, n_estimators=200, max_depth=4, min_child_weight=6, gamma=0,
+        XGBOOST = xgb.XGBClassifier(learning_rate=0.01, n_estimators=200, max_depth=4, gamma=0,
                                     subsample=0.8, colsample_bytree=0.8, objective='binary:logistic',
-                                    nthread=self.num_thread, scale_pos_weight=1, seed=27)
+                                    nthread=self.num_thread, seed=27)
 
         XGBOOST.fit(X_train, Y_train)
         important_features = XGBOOST.get_booster().get_score(importance_type='gain')
@@ -211,7 +217,7 @@ class FeatureSelection:
 
     def parallel_filtering(self, X_train, Y_train, num_features, feature_names, split_ind, plot=True,
                            plot_num_features=20):
-        random.seed(self.seed)
+        
         results = {}
         filter_names = ("FRatio", "SymmetricUncertainty", "SpearmanCorr", "PearsonCorr", "Chi2", "Anova",
                         "LaplacianScore", "InformationGain", "KendallCorr", "FechnerCorr")
@@ -241,19 +247,24 @@ class FeatureSelection:
         results = pd.concat(results)
         return results
 
-    def construct_feature_set(self, num_features_min=20, num_features_max=None, step_range=10, rfe_step=40,
+    def construct_feature_set_kfold(self, num_features_min=None, num_features_max=None, step_range=None, rfe_step=30,
                               plot=True, plot_num_features=20):
-
+        random.seed(self.seed)
         features = self.preprocess()
         skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=20)
         feature_dict = defaultdict(dict)
-        if step_range:
+        if not num_features_min:
+            num_features_min = int(len(self.features.index) / 10)
             if not num_features_max:
-                num_features_max = int(len(features.index) * 0.6)
+                num_features_max = int(len(self.features.index) / 2)
+            if not step_range:
+                step_range = int((num_features_max - num_features_min) / 5)
+            num_feature_range = range(num_features_min, num_features_max, step_range)
+        elif num_features_min and step_range and num_features_max:
             num_feature_range = range(num_features_min, num_features_max, step_range)
         else:
             num_feature_range = [num_features_min]
-        for i, (train_index, test_index) in enumerate(skf.split(features, self.label)):
+        for i, (train_index, test_index) in enumerate(skf.split(self.features, self.label)):
             print(f"kfold {i}")
             X_train = features.iloc[train_index]
             Y_train = self.label.iloc[train_index].values.ravel()
@@ -283,18 +294,21 @@ def main():
         plot_num_features, num_filters = arg_parse()
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     feature_range = feature_range.split(":")
-    if len(feature_range) > 1:
-        num_features_min, num_features_max, step = feature_range
-        num_features_min = int(num_features_min)
-        step = int(step)
-        if not num_features_max.isdigit():
-            num_features_max = None
-        else:
-            num_features_max = int(num_features_max)
-    else:
-        num_features_min = int(feature_range[0])
+    num_features_min, num_features_max, step = feature_range
+    if num_features_min == "none":
+        num_features_min = None
         step = None
         num_features_max = None
+    else:
+        num_features_min = int(num_features_min)
+        if step.isdigt():
+            step = int(step)
+        else:
+            step = None
+        if num_features_max.isdigit():
+            num_features_min = int(num_features_max)
+        else:
+            num_features_max = None
     selection = FeatureSelection(label, excel_file, features, variance_threshold, num_thread, scaler,
                                  num_split, test_size, num_filters)
     selection.construct_feature_set(num_features_min, num_features_max, step, rfe_steps, plot, plot_num_features)
