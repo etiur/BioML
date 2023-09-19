@@ -61,12 +61,14 @@ def arg_parse():
                         help="The seed number used for reproducibility")
     parser.add_argument("-st", "--strategy", required=False, choices=("holdout", "kfold"), default="holdout",
                         help="The spliting strategy to use")
+    parser.add_argument("-pr", "--problem", required=False, choices=("classification", "regression"), 
+                        default="classification", help="Classification or Regression problem")
 
     args = parser.parse_args()
 
     return [args.features, args.label, args.variance_threshold, args.feature_range, args.num_thread, args.scaler,
             args.excel_file, args.kfold_parameters, args.rfe_steps, args.plot, args.plot_num_features, args.num_filters,
-            args.seed, args.strategy]
+            args.seed, args.strategy, args.problem]
 
 
 class FeatureSelection:
@@ -439,13 +441,13 @@ class FeatureRegression(FeatureSelection):
         return results
     
         
-    def construct_feature_set_kfold(self, num_features_min=None, num_features_max=None, step_range=None, rfe_step=30,
-                              plot=True, plot_num_features=20):
+    def construct_kfold_regression(self, num_features_min=None, num_features_max=None, step_range=None, rfe_step=30,
+                                  plot=True, plot_num_features=20):
          
          self.feature_set_kfold(self.parallel_regression, num_features_min, num_features_max, 
                                step_range, rfe_step, plot, plot_num_features, problem="regression")
 
-    def construct_feature_set_holdout(self, num_features_min=None, num_features_max=None, step_range=None,
+    def construct_holdout_regression(self, num_features_min=None, num_features_max=None, step_range=None,
                                       plot=True, plot_num_features=20, rfe_step=30):
         
         self.feature_set_holdout(self.parallel_regression, num_features_min, num_features_max, step_range,
@@ -454,7 +456,7 @@ class FeatureRegression(FeatureSelection):
 
 def main():
     features, label, variance_threshold, feature_range, num_thread, scaler, excel_file, kfold, rfe_steps, plot, \
-        plot_num_features, num_filters, seed, strategy = arg_parse()
+        plot_num_features, num_filters, seed, strategy, problem = arg_parse()
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     feature_range = feature_range.split(":")
     num_features_min, num_features_max, step = feature_range
@@ -472,13 +474,20 @@ def main():
             num_features_min = int(num_features_max)
         else:
             num_features_max = None
-    selection = FeatureSelection(label, excel_file, features, variance_threshold, num_thread, scaler,
-                                 num_split, test_size, num_filters, seed)
-    if strategy == "holdout":
-        selection.construct_feature_set_holdout(num_features_min, num_features_max, step, rfe_steps, plot, plot_num_features)
-    elif strategy == "kfold":
-        selection.construct_feature_set_kfold(num_features_min, num_features_max, step, rfe_steps, plot, plot_num_features)
-
+    if problem == "classification":
+        selection = FeatureClassification(label, excel_file, features, variance_threshold, num_thread, scaler,
+                                    num_split, test_size, num_filters, seed)
+        if strategy == "holdout":
+            selection.construct_holdout_classification(num_features_min, num_features_max, step, rfe_steps, plot, plot_num_features)
+        elif strategy == "kfold":
+            selection.construct_kfold_classification(num_features_min, num_features_max, step, rfe_steps, plot, plot_num_features)
+    else:
+        selection = FeatureRegression(label, excel_file, features, variance_threshold, num_thread, scaler,
+                                    num_split, test_size, num_filters, seed)
+        if strategy == "holdout":
+            selection.construct_holdout_regression(num_features_min, num_features_max, step, rfe_steps, plot, plot_num_features)
+        elif strategy == "kfold":
+            selection.construct_kfold_regression(num_features_min, num_features_max, step, rfe_steps, plot, plot_num_features)
 
 if __name__ == "__main__":
     # Run this if this file is executed from command line but not if is imported as API
