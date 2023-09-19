@@ -9,9 +9,8 @@ from ITMO_FS.filters.unsupervised import TraceRatioLaplacian
 # in Unix. Altough now it seems that with fork the programme can hang indefinitely so use spaw instead
 # https://medium.com/devopss-hole/python-multiprocessing-pickle-issue-e2d35ccf96a9
 import xgboost as xgb
-from sklearn.feature_selection import RFE
-from sklearn.linear_model import RidgeClassifier
-from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.linear_model import RidgeClassifier, Ridge
+from sklearn.model_selection import StratifiedShuffleSplit, ShuffleSplit
 from ITMO_FS.filters.multivariate import STIR, TraceRatioFisher
 from collections import defaultdict
 import shap
@@ -21,9 +20,10 @@ import random
 from multiprocessing import get_context  # https://pythonspeed.com/articles/python-multiprocessing/
 import time
 from sklearn.ensemble import RandomForestClassifier as rfc
+from sklearn.ensemble import RandomForestRegressor as rfr
 from sklearn.model_selection import train_test_split
-from sklearn.feature_selection import VarianceThreshold
-
+from sklearn.feature_selection import VarianceThreshold, RFE
+from sklearn.feature_selection import SelectKBest, f_regression, mutual_info_regression
 
 def arg_parse():
     parser = argparse.ArgumentParser(description="Preprocess and Select the best features, only use it if the feature came from possum or ifeatures")
@@ -97,7 +97,12 @@ class FeatureSelection:
             The number of feature selection algorithms to use, by default 10
         """
         print("Reading the features")
-        self.features = pd.read_csv(f"{features}", index_col=0) # the first column shoudl contain the sample names
+        if isinstance(features, str):
+            self.features = pd.read_csv(f"{features}", index_col=0) # the first column shoudl contain the sample names
+        elif isinstance(features, pd.DataFrame):
+            self.features = features
+        else:
+            raise TypeError("features should be a path or a pandas DataFrame")
         analyse_composition(self.features)
         if Path(label).exists():
             self.label = pd.read_csv(label, index_col=0)
@@ -153,7 +158,10 @@ class FeatureSelection:
         scores = {x: v for x, v in zip(feature_names, ufilter.feature_scores_)}
         # sorting the features
         if filter_name != "LaplacianScore":
-            scores = pd.Series(dict(sorted(scores.items(), key=lambda items: items[1], reverse=True)))
+            if filter_name in ["SpearmanCorr", "PearsonCorr", "KendallCorr", "FechnerCorr"]:
+                scores = pd.Series(dict(sorted(scores.items(), key=lambda items: abs(items[1]), reverse=True)))
+            else:
+                scores = pd.Series(dict(sorted(scores.items(), key=lambda items: items[1], reverse=True)))
         else:
             scores = pd.Series(dict(sorted(scores.items(), key=lambda items: items[1])))
         return scores
@@ -179,20 +187,31 @@ class FeatureSelection:
 
         return scores
 
-    def random_classification(self, X_train, Y_train, feature_names):
-        rfc_classi = rfc(class_weight="balanced_subsample", random_state=27, max_features=0.5, max_samples=0.8,
-                         min_samples_leaf=5, n_estimators=200, n_jobs=self.num_thread)
-        rfc_classi.fit(X_train, Y_train)
-        gini_importance = pd.Series(rfc_classi.feature_importances_, index=feature_names)
+    def _get_num_feature_range(self, num_features_min=None, num_features_max=None, step_range=None):
+            if not num_features_min:
+                num_features_min = int(len(self.features.index) / 10)
+                if not num_features_max:
+                    num_features_max = int(len(self.features.index) / 2)
+                if not step_range:
+                    step_range = int((num_features_max - num_features_min) / 5)
+                num_feature_range = range(num_features_min, num_features_max, step_range)
+            elif num_features_min and step_range and num_features_max:
+                num_feature_range = range(num_features_min, num_features_max, step_range)
+            else:
+                num_feature_range = [num_features_min]
+        
+            return num_feature_range
+    
+    def random_forest(self, forest_model, X_train, Y_train, feature_names):
+
+        forest_model.fit(X_train, Y_train)
+        gini_importance = pd.Series(forest_model.feature_importances_, index=feature_names)
         gini_importance.sort_values(ascending=False, inplace=True)
 
         return gini_importance
 
-    def xgbtree(self, X_train, Y_train, feature_names, split_ind, plot=True, plot_num_features=20):
+    def xgbtree(self, XGBOOST, X_train, Y_train, feature_names, split_ind, plot=True, plot_num_features=20):
         """computes the feature importance"""
-        XGBOOST = xgb.XGBClassifier(learning_rate=0.01, n_estimators=200, max_depth=4, gamma=0,
-                                    subsample=0.8, colsample_bytree=0.8, objective='binary:logistic',
-                                    nthread=self.num_thread, seed=27)
 
         XGBOOST.fit(X_train, Y_train)
         important_features = XGBOOST.get_booster().get_score(importance_type='gain')
@@ -215,26 +234,36 @@ class FeatureSelection:
             plt.savefig(shap_dir / f"feature_influence_on_model_prediction_kfold{split_ind}.png", dpi=800)
         return shap_importance
 
-    @staticmethod
-    def rfe_linear(X_train, Y_train, num_features, feature_names, step=30):
-        rfe = RFE(estimator=RidgeClassifier(random_state=2, alpha=5), n_features_to_select=num_features, step=step)
+    def rfe_linear(self, X_train, Y_train, num_features, feature_names, step=30, 
+                   problem="classification"):
+        if problem == "classification":
+            linear_model = RidgeClassifier(random_state=self.seed, alpha=4)  
+        else:
+            linear_model = Ridge(random_state=self.seed, alpha=4)
+        rfe = RFE(estimator=linear_model, n_features_to_select=num_features, step=step)
         rfe.fit(X_train, Y_train)
         features = rfe.get_feature_names_out(feature_names)
         return features
-
-    def parallel_filtering(self, X_train, Y_train, num_features, feature_names, split_ind, plot=True,
-                           plot_num_features=20):
+    
+    @staticmethod
+    def regression_filters(X_train, Y_train, feature_nums, feature_names, reg_func):
+        reg_filters = {"mutual_info": mutual_info_regression, "Fscore":f_regression}
+        sel = SelectKBest(reg_filters[reg_func], k=feature_nums)
+        sel.fit(X_train, Y_train)
+        scores = sel.scores_
+        scores = {x: v for x, v in zip(feature_names, scores)}
+        scores = pd.Series(dict(sorted(scores.items(), key=lambda items: items[1], reverse=True)))
+        return scores
+    
+    def parallel_filter(self, X_train, Y_train, num_features, feature_names, 
+                        filter_names=(), multivariate=(), filter_unsupervised=(), regression_filters=()):
         
         results = {}
-        filter_names = ("FRatio", "SymmetricUncertainty", "SpearmanCorr", "PearsonCorr", "Chi2", "Anova",
-                        "LaplacianScore", "InformationGain", "KendallCorr", "FechnerCorr")
-        filter_names = random.sample(filter_names, self.num_filters)
-        multivariate = ("STIR", "TraceRatioFisher")
-        filter_unsupervised = ("TraceRatioLaplacian",)
-
         arg_univariate = [(X_train, Y_train, num_features, feature_names, x) for x in filter_names]
         arg_multivariate = [(X_train, Y_train, num_features, feature_names, x) for x in multivariate]
         arg_unsupervised = [(X_train, num_features, feature_names, x) for x in filter_unsupervised]
+        arg_regression = [(X_train, Y_train, num_features, feature_names, x) for x in regression_filters]
+        
         with get_context("spawn").Pool(self.num_thread) as pool:
             for num, res in enumerate(pool.starmap(self.univariate, arg_univariate)):
                 print(f"univariate filter: {filter_names[num]}")
@@ -247,81 +276,180 @@ class FeatureSelection:
             for num, res in enumerate(pool.starmap(self.unsupervised, arg_unsupervised)):
                 print(f"unsupervised filter: {filter_unsupervised[num]}")
                 results[filter_unsupervised[num]] = res
+            
+            for num, res in enumerate(pool.starmap(self.regression_filters, arg_regression)):
+                print(f"regression filter: {regression_filters[num]}")
+                results[regression_filters[num]] = res
 
-        results["xgbtree"] = self.xgbtree(X_train, Y_train, feature_names, split_ind, plot, plot_num_features)
-        results["random"] = self.random_classification(X_train, Y_train, feature_names)
-
-        results = pd.concat(results)
         return results
     
-    def _get_num_feature_range(self, num_features_min=None, num_features_max=None, step_range=None):
-            if not num_features_min:
-                num_features_min = int(len(self.features.index) / 10)
-                if not num_features_max:
-                    num_features_max = int(len(self.features.index) / 2)
-                if not step_range:
-                    step_range = int((num_features_max - num_features_min) / 5)
-                num_feature_range = range(num_features_min, num_features_max, step_range)
-            elif num_features_min and step_range and num_features_max:
-                num_feature_range = range(num_features_min, num_features_max, step_range)
-            else:
-                num_feature_range = [num_features_min]
-        
-            return num_feature_range
-
-    def _construct_features(self, features, feature_dict, num_feature_range, X_train, Y_train, num_features_max, i, 
-                           plot=True, plot_num_features=20, rfe_step=30):
+    def _construct_features(self, parallel_func, features, feature_dict, num_feature_range, X_train, Y_train, num_features_max, i, 
+                           plot=True, plot_num_features=20, rfe_step=30, problem="classification"):
             transformed, scaler_dict = scale(self.scaler, X_train)
             # for each split I do again feature selection and save all the features selected from different splits
             # but with the same selector in the same dictionary
             print("filtering the features")
-            ordered_features = self.parallel_filtering(transformed, Y_train, num_features_max, X_train.columns, i,
+            ordered_features = parallel_func(transformed, Y_train, num_features_max, X_train.columns, i,
                                                        plot, plot_num_features)
             for num_features in num_feature_range:
                 print(f"generating a feature set of {num_features} dimensions")
                 for filters in ordered_features.index.get_level_values(0).unique():
                     feat = ordered_features.loc[filters]
                     feature_dict[f"{filters}_{num_features}"][f"split_{i}"] = features[feat.index[:num_features]]
-                rfe_results = self.rfe_linear(transformed, Y_train, num_features, X_train.columns, rfe_step)
+                rfe_results = self.rfe_linear(transformed, Y_train, num_features, X_train.columns, rfe_step, problem)
                 feature_dict[f"rfe_{num_features}"][f"split_{i}"] = features[rfe_results]
-            
 
-    def construct_feature_set_kfold(self, num_features_min=None, num_features_max=None, step_range=None, rfe_step=30,
-                              plot=True, plot_num_features=20):
+    def _write_dict(self, feature_dict):
+        # TODO: Maybe change it to list(valu.values())[0] so It is not a multiindex column for holdout
+        final_dict = {key: pd.concat(value, axis=1) for key, value in feature_dict.items()}
+        with pd.ExcelWriter(self.excel_file, mode="w", engine="openpyxl") as writer:
+            for key in final_dict.keys():
+                write_excel(writer, final_dict[key], key)
+
+    def feature_set_kfold(self, parallel_func, num_features_min=None, num_features_max=None, 
+                        step_range=None, rfe_step=30, plot=True, plot_num_features=20, problem="classification"):
         random.seed(self.seed)
         features = self.preprocess()
-        skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.seed)
         feature_dict = defaultdict(dict)
+        if problem == "classification":
+            skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.seed)
+        else:
+            skf = ShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.seed)
+
         num_feature_range = self._get_num_feature_range(num_features_min, num_features_max, step_range)
-        
+
         for i, (train_index, test_index) in enumerate(skf.split(self.features, self.label)):
             print(f"kfold {i}")
             X_train = features.iloc[train_index]
             Y_train = self.label.iloc[train_index].values.ravel()
-            self._construct_features(features, feature_dict, num_feature_range, X_train, Y_train, 
-                                    num_features_max, i, plot, plot_num_features, rfe_step)
+            self._construct_features(parallel_func, features, feature_dict, num_feature_range, X_train, Y_train, 
+                                    num_features_max, i, plot, plot_num_features, rfe_step, problem)
 
-        final_dict = {key: pd.concat(value, axis=1) for key, value in feature_dict.items()}
-        with pd.ExcelWriter(self.excel_file, mode="w", engine="openpyxl") as writer:
-            for key in final_dict.keys():
-                write_excel(writer, final_dict[key], key)
+        self._write_dict(feature_dict)
 
-    def construct_feature_set_holdout(self, num_features_min=None, num_features_max=None, step_range=None,
-                                      plot=True, plot_num_features=20, rfe_step=30):
+
+    def feature_set_holdout(self, parallel_func,  num_features_min=None, num_features_max=None, step_range=None,
+                            plot=True, plot_num_features=20, rfe_step=30, problem="classification"):
         random.seed(self.seed)
         features = self.preprocess()
         feature_dict = defaultdict(dict)
         num_feature_range = self._get_num_feature_range(num_features_min, num_features_max, step_range)
-
-        X_train, X_test, Y_train, Y_test = train_test_split(features, self.label, test_size=0.20, random_state=self.seed, stratify=self.label)
-        self._construct_features(features, feature_dict, num_feature_range, X_train, Y_train, num_features_max, 0, 
-                                plot, plot_num_features, rfe_step)
+        if problem == "classification":
+            X_train, X_test, Y_train, Y_test = train_test_split(features, self.label, test_size=0.20, random_state=self.seed, stratify=self.label)
+        else:
+            X_train, X_test, Y_train, Y_test = train_test_split(features, self.label, test_size=0.20, random_state=self.seed)
+        self._construct_features(parallel_func, features, feature_dict, num_feature_range, X_train, Y_train, num_features_max, 0, 
+                                plot, plot_num_features, rfe_step, problem)
         
-        # TODO: Maybe change it to list(valu.values())[0] so It is not a multiindex column
-        final_dict = {key: pd.concat(value, axis=1) for key, value in feature_dict.items()}
-        with pd.ExcelWriter(self.excel_file, mode="w", engine="openpyxl") as writer:
-            for key in final_dict.keys():
-                write_excel(writer, final_dict[key], key)
+        self._write_dict(feature_dict)
+
+
+class FeatureClassification(FeatureSelection):
+    def __init__(self, label, excel_file, features="training_features/every_features.csv", variance_thres=0, num_thread=10, 
+                 scaler="robust", num_split=5, test_size=0.2, num_filters=10, seed=None):
+        super().__init__(label, excel_file, features, variance_thres, num_thread, scaler, num_split, test_size, num_filters, seed)
+
+    def random_classification(self, X_train, Y_train, feature_names):
+        rfc_classi = rfc(class_weight="balanced_subsample", random_state=self.seed, max_features=0.7, max_samples=0.8,
+                         min_samples_split=6, n_estimators=200, n_jobs=self.num_thread,
+                         min_impurity_decrease=0.1)
+        gini_importance = self.random_forest(rfc_classi, X_train, Y_train, feature_names)
+
+        return gini_importance
+
+    def xgb_classification(self, X_train, Y_train, feature_names, split_ind, plot=True, plot_num_features=20):
+        """computes the feature importance"""
+        XGBOOST = xgb.XGBClassifier(learning_rate=0.01, n_estimators=200, max_depth=4, gamma=0,
+                                    subsample=0.8, colsample_bytree=0.8, objective='binary:logistic',
+                                    nthread=self.num_thread, seed=self.seed)
+
+        shap_importance = self.xgbtree(XGBOOST, X_train, Y_train, feature_names, split_ind, plot, plot_num_features)
+
+        return shap_importance
+
+    def parallel_classification(self, X_train, Y_train, num_features, feature_names, split_ind, plot=True,
+                                plot_num_features=20):
+        
+        filter_names = ("FRatio", "SymmetricUncertainty", "SpearmanCorr", "PearsonCorr", "Chi2", "Anova",
+                        "LaplacianScore", "InformationGain", "KendallCorr", "FechnerCorr")
+        filter_names = random.sample(filter_names, self.num_filters)
+        multivariate = ("STIR", "TraceRatioFisher")
+        filter_unsupervised = ("TraceRatioLaplacian",)
+
+        results = self.parallel_filter(X_train, Y_train, num_features, feature_names, 
+                                       filter_names, multivariate, filter_unsupervised)
+
+        results["xgbtree"] = self.xgb_classification(X_train, Y_train, feature_names, split_ind, plot, plot_num_features)
+        results["random"] = self.random_classification(X_train, Y_train, feature_names)
+
+        results = pd.concat(results)
+        return results
+            
+    def construct_kfold_classification(self, num_features_min=None, num_features_max=None, step_range=None, rfe_step=30,
+                                    plot=True, plot_num_features=20):
+        
+        self.feature_set_kfold(self.parallel_classification, num_features_min, num_features_max, 
+                               step_range, rfe_step, plot, plot_num_features)
+        
+
+    def construct_holdout_classification(self, num_features_min=None, num_features_max=None, step_range=None,
+                                      plot=True, plot_num_features=20, rfe_step=30):
+        
+        self.feature_set_holdout(self.parallel_classification, num_features_min, num_features_max, step_range,
+                                 plot, plot_num_features, rfe_step)
+
+
+class FeatureRegression(FeatureSelection):
+    def __init__(self, label, excel_file, features="training_features/every_features.csv", variance_thres=0, num_thread=10, 
+                 scaler="robust", num_split=5, test_size=0.2, num_filters=4, seed=None):
+        super().__init__(label, excel_file, features, variance_thres, 
+                         num_thread, scaler, num_split, test_size, 
+                         num_filters, seed)
+
+    def random_regression(self, X_train, Y_train, feature_names):
+        forest_regression = rfr(random_state=self.seed, max_features=0.7, max_samples=0.8,
+                         min_samples_split=6, n_estimators=200, n_jobs=self.num_thread, 
+                         min_impurity_decrease=0.1)
+        gini_importance = self.random_forest(forest_regression, X_train, Y_train, feature_names)
+
+        return gini_importance
+    
+    def xgb_regression(self, X_train, Y_train, feature_names, split_ind, plot=True, plot_num_features=20):
+        """computes the feature importance"""
+        XGBOOST = xgb.XGBRegressor(learning_rate=0.01, n_estimators=200, max_depth=4, gamma=0,
+                                    subsample=0.8, colsample_bytree=0.8, objective='reg:squarederror',
+                                    nthread=self.num_thread, seed=self.seed)
+
+        shap_importance = self.xgbtree(XGBOOST, X_train, Y_train, feature_names, split_ind, plot, plot_num_features)
+        return shap_importance
+    
+    def parallel_regression(self, X_train, Y_train, num_features, feature_names, split_ind, plot=True,
+                            plot_num_features=20):
+        
+        filter_names = ("SpearmanCorr", "PearsonCorr", "KendallCorr", "FechnerCorr")
+        filter_names = random.sample(filter_names, self.num_filters)
+        regression_filters = ("mutual_info", "Fscore")
+        
+        results = self.parallel_filter(X_train, Y_train, num_features, feature_names, filter_names,
+                                       regression_filters=regression_filters)
+        results["xgbtree"] = self.xgb_regression(X_train, Y_train, feature_names, split_ind, plot, plot_num_features)
+        results["random"] = self.random_regression(X_train, Y_train, feature_names)
+
+        results = pd.concat(results)
+        return results
+    
+        
+    def construct_feature_set_kfold(self, num_features_min=None, num_features_max=None, step_range=None, rfe_step=30,
+                              plot=True, plot_num_features=20):
+         
+         self.feature_set_kfold(self.parallel_regression, num_features_min, num_features_max, 
+                               step_range, rfe_step, plot, plot_num_features, problem="regression")
+
+    def construct_feature_set_holdout(self, num_features_min=None, num_features_max=None, step_range=None,
+                                      plot=True, plot_num_features=20, rfe_step=30):
+        
+        self.feature_set_holdout(self.parallel_regression, num_features_min, num_features_max, step_range,
+                                 plot, plot_num_features, rfe_step, problem="regression")
 
 
 def main():
