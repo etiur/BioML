@@ -21,6 +21,8 @@ import random
 from multiprocessing import get_context  # https://pythonspeed.com/articles/python-multiprocessing/
 import time
 from sklearn.ensemble import RandomForestClassifier as rfc
+from sklearn.model_selection import train_test_split
+from sklearn.feature_selection import VarianceThreshold
 
 
 def arg_parse():
@@ -37,16 +39,16 @@ def arg_parse():
                              "a single integer. Start will default to num samples / 10, Stop will default to num samples / 2 and step will be (stop - step / 5)")
     parser.add_argument("-n", "--num_thread", required=False, default=10, type=int,
                         help="The number of threads to use for parallelizing the feature selection")
-    parser.add_argument("-v", "--variance_threshold", required=False, default=7, type=int,
-                        help="At least these many different values for a column, mostly to eliminate columns that has the same values for all the samples")
+    parser.add_argument("-v", "--variance_threshold", required=False, default=0, type=float,
+                        help="The variance the feature has to have, 0 means that the comlun has the same value for all samples. None to deactivate")
     parser.add_argument("-s", "--scaler", required=False, default="robust", choices=("robust", "zscore", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
-    parser.add_argument("-e", "--excel", required=False,
+    parser.add_argument("-e", "--excel_file", required=False,
                         help="The file path to where the selected features will be saved in excel format",
                         default="training_features/selected_features.xlsx")
     parser.add_argument("-k", "--kfold_parameters", required=False,
                         help="The parameters for the kfold in num_split:test_size format", default="5:0.2")
-    parser.add_argument("-st", "--rfe_steps", required=False, type=int,
+    parser.add_argument("-rt", "--rfe_steps", required=False, type=int,
                         help="The number of steps for the RFE algorithm, the more step the more precise "
                              "but also more time consuming and might lead to overfitting", default=30)
     parser.add_argument("-p", "--plot", required=False, action="store_false",
@@ -57,12 +59,14 @@ def arg_parse():
                         help="The number univariate filters to use maximum 10", default=10)
     parser.add_argument("-se", "--seed", required=False, type=int, default=None,
                         help="The seed number used for reproducibility")
+    parser.add_argument("-st", "--strategy", required=False, choices=("holdout", "kfold"), default="holdout",
+                        help="The spliting strategy to use")
 
     args = parser.parse_args()
 
     return [args.features, args.label, args.variance_threshold, args.feature_range, args.num_thread, args.scaler,
-            args.excel, args.kfold_parameters, args.rfe_steps, args.plot, args.plot_num_features, args.num_filters,
-            args.seed]
+            args.excel_file, args.kfold_parameters, args.rfe_steps, args.plot, args.plot_num_features, args.num_filters,
+            args.seed, args.strategy]
 
 
 class FeatureSelection:
@@ -75,8 +79,8 @@ class FeatureSelection:
         ----------
         label : str
             Path to the label or the name of the column with the label if included in feature file
-        excel_file : _type_
-            _description_
+        excel_file : str
+            excel file where the selected features will be saved
         features : str, optional
             The features extracted for the training, by default "training_features/every_features.csv"
         variance_thres : int, optional
@@ -92,13 +96,14 @@ class FeatureSelection:
         num_filters : int, optional
             The number of feature selection algorithms to use, by default 10
         """
-        print("Reading the features, use only when the feature came from feature_extraction.py")
+        print("Reading the features")
         self.features = pd.read_csv(f"{features}", index_col=0) # the first column shoudl contain the sample names
         analyse_composition(self.features)
         if Path(label).exists():
             self.label = pd.read_csv(label, index_col=0)
         else:
             self.label = self.features[label]
+            self.features.drop(label, axis=1, inplace=True)
             
         self._check_label(label) 
         self.variance_thres = variance_thres
@@ -132,11 +137,13 @@ class FeatureSelection:
         """
         Eliminate low variance features
         """
-        nunique = self.features.apply(pd.Series.nunique)
-        cols_to_drop = nunique[nunique > self.variance_thres].index
-        features = self.features.drop(cols_to_drop, axis=1)
-        analyse_composition(features)
-        return features
+        if self.variance_thres is not None:
+            variance = VarianceThreshold(self.variance_thres)
+            fit = variance.fit_transform(self.features)
+            self.features = pd.DataFrame(fit, index=self.features.index, 
+                                         columns=variance.get_feature_names_out())
+
+        return self.features
 
     @staticmethod
     def univariate(X_train, Y_train, num_features, feature_names, filter_name):
@@ -246,29 +253,24 @@ class FeatureSelection:
 
         results = pd.concat(results)
         return results
+    
+    def _get_num_feature_range(self, num_features_min=None, num_features_max=None, step_range=None):
+            if not num_features_min:
+                num_features_min = int(len(self.features.index) / 10)
+                if not num_features_max:
+                    num_features_max = int(len(self.features.index) / 2)
+                if not step_range:
+                    step_range = int((num_features_max - num_features_min) / 5)
+                num_feature_range = range(num_features_min, num_features_max, step_range)
+            elif num_features_min and step_range and num_features_max:
+                num_feature_range = range(num_features_min, num_features_max, step_range)
+            else:
+                num_feature_range = [num_features_min]
+        
+            return num_feature_range
 
-    def construct_feature_set_kfold(self, num_features_min=None, num_features_max=None, step_range=None, rfe_step=30,
-                              plot=True, plot_num_features=20):
-        random.seed(self.seed)
-        features = self.preprocess()
-        skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=20)
-        feature_dict = defaultdict(dict)
-        if not num_features_min:
-            num_features_min = int(len(self.features.index) / 10)
-            if not num_features_max:
-                num_features_max = int(len(self.features.index) / 2)
-            if not step_range:
-                step_range = int((num_features_max - num_features_min) / 5)
-            num_feature_range = range(num_features_min, num_features_max, step_range)
-        elif num_features_min and step_range and num_features_max:
-            num_feature_range = range(num_features_min, num_features_max, step_range)
-        else:
-            num_feature_range = [num_features_min]
-        for i, (train_index, test_index) in enumerate(skf.split(self.features, self.label)):
-            print(f"kfold {i}")
-            X_train = features.iloc[train_index]
-            Y_train = self.label.iloc[train_index].values.ravel()
-            print("scaling the features")
+    def _construct_features(self, features, feature_dict, num_feature_range, X_train, Y_train, num_features_max, i, 
+                           plot=True, plot_num_features=20, rfe_step=30):
             transformed, scaler_dict = scale(self.scaler, X_train)
             # for each split I do again feature selection and save all the features selected from different splits
             # but with the same selector in the same dictionary
@@ -282,7 +284,40 @@ class FeatureSelection:
                     feature_dict[f"{filters}_{num_features}"][f"split_{i}"] = features[feat.index[:num_features]]
                 rfe_results = self.rfe_linear(transformed, Y_train, num_features, X_train.columns, rfe_step)
                 feature_dict[f"rfe_{num_features}"][f"split_{i}"] = features[rfe_results]
+            
 
+    def construct_feature_set_kfold(self, num_features_min=None, num_features_max=None, step_range=None, rfe_step=30,
+                              plot=True, plot_num_features=20):
+        random.seed(self.seed)
+        features = self.preprocess()
+        skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.seed)
+        feature_dict = defaultdict(dict)
+        num_feature_range = self._get_num_feature_range(num_features_min, num_features_max, step_range)
+        
+        for i, (train_index, test_index) in enumerate(skf.split(self.features, self.label)):
+            print(f"kfold {i}")
+            X_train = features.iloc[train_index]
+            Y_train = self.label.iloc[train_index].values.ravel()
+            self._construct_features(features, feature_dict, num_feature_range, X_train, Y_train, 
+                                    num_features_max, i, plot, plot_num_features, rfe_step)
+
+        final_dict = {key: pd.concat(value, axis=1) for key, value in feature_dict.items()}
+        with pd.ExcelWriter(self.excel_file, mode="w", engine="openpyxl") as writer:
+            for key in final_dict.keys():
+                write_excel(writer, final_dict[key], key)
+
+    def construct_feature_set_holdout(self, num_features_min=None, num_features_max=None, step_range=None,
+                                      plot=True, plot_num_features=20, rfe_step=30):
+        random.seed(self.seed)
+        features = self.preprocess()
+        feature_dict = defaultdict(dict)
+        num_feature_range = self._get_num_feature_range(num_features_min, num_features_max, step_range)
+
+        X_train, X_test, Y_train, Y_test = train_test_split(features, self.label, test_size=0.20, random_state=self.seed, stratify=self.label)
+        self._construct_features(features, feature_dict, num_feature_range, X_train, Y_train, num_features_max, 0, 
+                                plot, plot_num_features, rfe_step)
+        
+        # TODO: Maybe change it to list(valu.values())[0] so It is not a multiindex column
         final_dict = {key: pd.concat(value, axis=1) for key, value in feature_dict.items()}
         with pd.ExcelWriter(self.excel_file, mode="w", engine="openpyxl") as writer:
             for key in final_dict.keys():
@@ -291,7 +326,7 @@ class FeatureSelection:
 
 def main():
     features, label, variance_threshold, feature_range, num_thread, scaler, excel_file, kfold, rfe_steps, plot, \
-        plot_num_features, num_filters = arg_parse()
+        plot_num_features, num_filters, seed, strategy = arg_parse()
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     feature_range = feature_range.split(":")
     num_features_min, num_features_max, step = feature_range
@@ -310,8 +345,11 @@ def main():
         else:
             num_features_max = None
     selection = FeatureSelection(label, excel_file, features, variance_threshold, num_thread, scaler,
-                                 num_split, test_size, num_filters)
-    selection.construct_feature_set(num_features_min, num_features_max, step, rfe_steps, plot, plot_num_features)
+                                 num_split, test_size, num_filters, seed)
+    if strategy == "holdout":
+        selection.construct_feature_set_holdout(num_features_min, num_features_max, step, rfe_steps, plot, plot_num_features)
+    elif strategy == "kfold":
+        selection.construct_feature_set_kfold(num_features_min, num_features_max, step, rfe_steps, plot, plot_num_features)
 
 
 if __name__ == "__main__":
