@@ -10,6 +10,7 @@ from lightgbm import LGBMClassifier
 from sklearn.neural_network import MLPClassifier
 import ast
 import numpy as np
+import logging
 
 
 def scale(scaler, X_train, X_test=None):
@@ -29,10 +30,14 @@ def scale(scaler, X_train, X_test=None):
 
 def analyse_composition(dataframe):
     col = dataframe.columns
-    count = 0
-    for x in col:
-        if "pssm" in x or "tpc" in x or "eedp" in x or "edp" in x:
-            count += 1
+    if col.dtype == int:
+        print("num columns: ", len(col))
+        return len(col)
+    count = col.str.contains("pssm|tpc|eedp|edp").sum()
+    if count == 0:
+        print("num columns: ", len(col))
+        return len(col)
+    
     print(f"POSSUM: {count}, iFeature: {len(col) - count}")
     return count, len(col) - count
 
@@ -132,3 +137,95 @@ def rewrite_possum(possum_stand_alone_path):
                 new_possum.append(line)
     with open(possum_path, "w") as possum_out:
         possum_out.writelines(new_possum)
+
+class Log:
+    """
+    A class to keep log of the output from different modules
+    """
+
+    def __init__(self, name):
+        """
+        Initialize the Log class
+
+        Parameters
+        __________
+        name: str
+            The name of the log file
+        """
+        self._logger = logging.getLogger(name)
+        self._logger.handlers = []
+        self._logger.setLevel(logging.DEBUG)
+        self.fh = logging.FileHandler("{}.log".format(name))
+        self.fh.setLevel(logging.DEBUG)
+        self.ch = logging.StreamHandler()
+        self.ch.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', "%d-%m-%Y %H:%M:%S")
+        self.fh.setFormatter(formatter)
+        self.ch.setFormatter(formatter)
+        self._logger.addHandler(self.fh)
+        self._logger.addHandler(self.ch)
+
+    def debug(self, messages, exc_info=False):
+        """
+        It pulls a debug message.
+
+        Parameters
+        ----------
+        messages : str
+            The messages to log
+        exc_info : bool, optional
+            Set to true to include the exception error message            
+        """
+        self._logger.debug(messages, exc_info=exc_info)
+
+    def info(self, messages, exc_info=False):
+        """
+        It pulls an info message.
+
+        Parameters
+        ----------
+        messages : str
+            The messages to log
+        exc_info : bool, optional
+            Set to true to include the exception error message            
+        """
+        self._logger.info(messages, exc_info=exc_info)
+
+    def warning(self, messages, exc_info=False):
+        """
+        It pulls a warning message.
+
+        Parameters
+        ----------
+        messages : str
+            The messages to log
+        exc_info : bool, optional
+            Set to true to include the exception error message            
+        """
+        self._logger.warning(messages, exc_info=exc_info)
+
+    def error(self, messages, exc_info=False):
+        """
+        It pulls a error message.
+
+        Parameters
+        ----------
+        messages : str
+            The messages to log
+        exc_info : bool, optional
+            Set to true to include the exception error message
+        """
+        self._logger.error(messages, exc_info=exc_info)
+
+    def critical(self, messages, exc_info=False):
+        """
+        It pulls a critical message.
+
+        Parameters
+        ----------
+        messages : str
+            The messages to log
+        exc_info : bool, optional
+            Set to true to include the exception error message
+        """
+        self._logger.critical(messages, exc_info=exc_info)
