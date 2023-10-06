@@ -10,6 +10,7 @@ from pycaret.regression import RegressionExperiment
 import argparse
 import numpy as np
 from sklearn.metrics import average_precision_score
+import time
 
 
 def arg_parse():
@@ -67,14 +68,15 @@ def arg_parse():
 
 class Trainer:
     def __init__(self, features, label, training_output="training_results", num_splits=5, test_size=0.2,
-                 outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, ranking_params=None, small=True):
+                 outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, ranking_params=None, small=True,
+                 best_model=3, seed=None):
         
-        ranking_dict = dict(precision_weight=1, recall_weight=1, report_weight=0.4, 
-                            difference_weight=1.1, class0_weight=0.5)
+        ranking_dict = dict(precision_weight=1, recall_weight=1, report_weight=0.5, 
+                            difference_weight=1.1)
         if isinstance(ranking_params, dict):
             for key, value in ranking_params.items():
                 if key not in ranking_dict:
-                    raise KeyError(f"The key {key} is not found in the ranking params")
+                    raise KeyError(f"The key {key} is not found in the ranking params uses theses keys: presition_weight, recall_weight, report_weight difference_weight")
                 ranking_dict[key] = value
 
         self.outliers = outliers
@@ -82,7 +84,8 @@ class Trainer:
         self.test_size = test_size
         self.log = Log("model_training")
         self.log.info("Reading the features")
-        self.features, self.labels = self._fix_features_labels(features, label)
+        self.with_split = False
+        self.features, self.label = self._fix_features_labels(features, label)
         self.scaler = scaler
         self.max_evals = max_evals
         self.trial_time_out = trial_time
@@ -93,10 +96,13 @@ class Trainer:
         self.rec_weight = ranking_dict["recall_weight"]
         self.report_weight = ranking_dict["report_weight"]
         self.difference_weight = ranking_dict["difference_weight"]
-        self.class0_weight = ranking_dict["class0_weight"]
-        self.with_split = True
         self.small = small
-
+        self.best_model = best_model
+        if seed:
+            self.seed = seed
+        else:
+            self.seed = int(time.time())
+        self.log.info(f"seed: {self.seed}")
 
     def train(self, experiment, selected_models):
         results = {}
@@ -110,35 +116,45 @@ class Trainer:
         return results, returned_models
 
     def _fix_features_labels(self, features, label):
+        # concatenate features and labels
+        if isinstance(features, str):
+            if features.endswith(".csv"):
+                feat = {"model 1": pd.read_csv(f"{features}", index_col=0)} # the first column should contain the sample names
 
-        if isinstance(features, str) and features.endswith(".csv"):
-            features = pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
+            elif features.endswith(".xlsx"):
+                self.with_split = True
+                sheet_names = pd.ExcelFile(features).sheet_names
+                feat = pd.read_excel(features, index_col=0, header=[0, 1], engine='openpyxl', sheet_name=sheet_names)
+
         elif isinstance(features, pd.DataFrame):
-            features = features
+            feat = {"model 1": features}
         elif isinstance(features, (list, np.ndarray)):
-            features = pd.DataFrame(features)
+            feat = {"model 1": pd.DataFrame(features)}
         else:
-            self.log.error("features should be a csv file, an array or a pandas DataFrame")
-            raise TypeError("features should be a csv file, an array or a pandas DataFrame")
+            self.log.error("features should be a csv or excel file, an array or a pandas DataFrame")
+            raise TypeError("features should be a csv or excel file, an array or a pandas DataFrame")
         
         if isinstance(label, pd.Series):
             label.index.name = "target"
-            features = pd.concat([features, label], axis=1)
             labels = "target"
+            for key, value in feat.items():
+                feat[key] = pd.concat([value, label], axis=1)
+            
         elif isinstance(label, str):
             if Path(label).exists():
                 label = pd.read_csv(label, index_col=0)
                 label.index.name = "target"
-                features = pd.concat([features, label], axis=1)
                 labels = "target"
-    
-            elif label in features.columns:
+                for key, value in feat.items():
+                    feat[key] = pd.concat([value, label], axis=1)
+
+            else:
                 labels = label            
         else:
             self.log.error("label should be a csv file, a pandas Series or inside features")
             raise TypeError("label should be a csv file, a pandas Series or inside features")
         
-        return features, labels
+        return feat, labels
 
     @staticmethod
     def get_score(pred, Y_train, Y_test):
@@ -169,34 +185,39 @@ class Trainer:
 
         return scalar_scores, param_scores
 
-    def _scale(self, features, train_index, test_index, split_index):
+    @staticmethod
+    def _get_params(name, model):
+        if name != "catboost":
+            model_params = model.get_params()
+        else:
+            model_params = model.get_all_params()
+        model_params = {key: value for key, value in model_params.items() if key not in ["warm_start", "verbose",
+                                                                                         "oob_score"]}
+        model_params = pd.Series(model_params)
+        return model_params
+    
+    def _scale(self, train_index, test_index, features = None, strategy="holdout", split_index=None):
         # split and filter
         if self.with_split:
             feat_subset = features.loc[:, f"split_{split_index}"]  # each split different features and different fold of
             # training and test data
         else:
             feat_subset = features
-        X_train = feat_subset.iloc[train_index]
-        Y_train = self.labels.iloc[train_index]
-        X_test = feat_subset.iloc[test_index]
-        Y_test = self.labels.iloc[test_index]
+
+        if strategy == "kfold":
+            X_train = feat_subset.iloc[train_index]
+            X_test = feat_subset.iloc[test_index]
+        elif strategy == "holdout":
+            X_train = train_index
+            X_test = test_index
+
+        #remove outliers
         X_train = X_train.loc[[x for x in X_train.index if x not in self.outliers]]
         X_test = X_test.loc[[x for x in X_test.index if x not in self.outliers]]
-        Y_train = Y_train.loc[[x for x in Y_train.index if x not in self.outliers]].values.ravel()
-        Y_test = Y_test.loc[[x for x in Y_test.index if x not in self.outliers]].values.ravel()
+
         transformed_x, scaler_dict, test_x = scale(self.scaler, X_train, X_test)
 
-        return transformed_x, test_x, Y_test, Y_train
-
-    def _check_features(self, sheet_names) -> dict:
-        features = pd.read_excel(self.features, index_col=0, header=[0, 1], engine='openpyxl')
-        if f"split_{0}" not in features.columns.unique(level=0):
-            self.with_split = False
-        if self.with_split:
-            excel_data = pd.read_excel(self.features, index_col=0, sheet_name=sheet_names, header=[0, 1])
-        else:
-            excel_data = pd.read_excel(self.features, index_col=0, sheet_name=sheet_names, header=0)
-        return excel_data
+        return transformed_x, test_x
 
     def nested_cv(self, feature):
         """Performs something similar to a nested cross-validation"""
@@ -214,10 +235,6 @@ class Trainer:
 
         return metric_scalar, parameter_list, split_index
     
-    def hold_out(self, problem="classification"):
-        if problem == "classification":
-            X_train, X_test, Y_train, Y_test = train_test_split(self.features, self.label, test_size=0.20, random_state=self.seed, stratify=self.label)
-
     @staticmethod
     def to_dataframe(metric_scalar, parameter_list, split_index):
         matrix = namedtuple("confusion_matrix", ["true_n", "false_p", "false_n", "true_p"])
@@ -261,39 +278,35 @@ class Trainer:
         return dataframe, report.T, params
 
     def _calculate_score_dataframe(self, dataframe):
-        return ((dataframe["train_MCC"] + dataframe["test_MCC"])
-                - self.difference_weight * (abs(dataframe["test_MCC"] - dataframe["train_MCC"]))).sum()
+        mcc = ((dataframe.loc[("CV-Train", "Mean")]["MCC"] + dataframe.loc[("CV-Val", "Mean")]["MCC"])
+                - self.difference_weight * abs(dataframe.loc[("CV-Val", "Mean")]["MCC"] - dataframe.loc[("CV-Train", "Mean")]["MCC"] ))
+        
+        prec = ((dataframe.loc[("CV-Train", "Mean")]["Prec."] + dataframe.loc[("CV-Val", "Mean")]["Prec."])
+                - self.difference_weight * abs(dataframe.loc[("CV-Val", "Mean")]["Prec."] - dataframe.loc[("CV-Train", "Mean")]["Prec."]))
+        
+        recall = ((dataframe.loc[("CV-Train", "Mean")]["Recall"] + dataframe.loc[("CV-Val", "Mean")]["Recall"])
+                - self.difference_weight * abs(dataframe.loc[("CV-Val", "Mean")]["Recall"] - dataframe.loc[("CV-Train", "Mean")]["Recall"]))
+        
+        return mcc + self.report_weight * (self.pre_weight * prec + self.rec_weight * recall)
 
-    def _calculate_score_report(self, report, class_label):
-        class_level = report.loc[report.index.get_level_values(1) == class_label,
-                                 report.columns.get_level_values(1).isin(["precision", "recall"])]
-        pre_sum = self.pre_weight * (class_level.loc[(slice(None), class_label), ("test", "precision")] +
-                                     class_level.loc[(slice(None), class_label), ("train", "precision")])
-        rec_sum = self.rec_weight * (class_level.loc[(slice(None), class_label), ("test", "recall")] +
-                                     class_level.loc[(slice(None), class_label), ("train", "recall")])
-        pre_diff = self.pre_weight * abs(class_level.loc[(slice(None), class_label), ("test", "precision")] -
-                                         class_level.loc[(slice(None), class_label), ("train", "precision")])
-        rec_diff = self.rec_weight * abs(class_level.loc[(slice(None), class_label), ("test", "recall")] -
-                                         class_level.loc[(slice(None), class_label), ("train", "recall")])
-        return (pre_sum + rec_sum - self.difference_weight * (pre_diff + rec_diff)).sum()
+    def rank_results(self, results, returned_models):
 
-    def rank_results(self, result_item: list) -> float:
+        scores = {}
+        for key, value in results.items():
+            score_dataframe = self._calculate_score_dataframe(value)
+            scores[key] = score_dataframe
 
-        sheet, dataframe, report, params = result_item
+        sorted_keys = sorted(scores, key=lambda x: scores[x], reverse=True)
+        #sorted_scores = {key: scores[key] for key in sorted_keys}
+        sorted_results = {key: results[key] for key in sorted_keys}
+        sorted_models = {key: returned_models[key] for key in sorted_keys}
 
-        score_dataframe = self._calculate_score_dataframe(dataframe)
-        score_report_class0 = self._calculate_score_report(report, "class 0")
-        score_report_class1 = self._calculate_score_report(report, "class 1")
-        # Calculate the overall rank as the sum of the scores -> the greater, the better
-        rank = score_dataframe + (self.report_weight * (self.class0_weight * score_report_class0 +
-                                                        score_report_class1)/2)
-
-        return rank
+        return sorted_results, sorted_models
 
     def run(self):
         """A function that runs nested_cv several times, as many as the sheets in the Excel"""
         # reading the data
-        sheet_names = pd.ExcelFile(self.features).sheet_names
+        
         excel_data = self._check_features(sheet_names)
         result_list = []
         for num, feature in enumerate(excel_data.values()):
@@ -315,19 +328,19 @@ class Trainer:
 
 class Classifier(Trainer):
     def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
-                 outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, ranking_params=dict(precision_weight=1,
-                 recall_weight=1, report_weight=0.4, difference_weight=1.1, class0_weight=0.5), small=True, seed=123, drop=("ada","gpc")):
-        
+                 outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, ranking_params=None, small=True, 
+                 best_model=3, seed=None, drop=("ada","gpc")):
+        """dict(precision_weight=1,
+                 recall_weight=1, report_weight=0.4, difference_weight=1.1, class0_weight=0.5)"""
         super().__init__(feature_path, label, training_output, num_splits, test_size,
-                         outliers, scaler, max_evals, trial_time, num_threads, ranking_params, small)
+                         outliers, scaler, max_evals, trial_time, num_threads, ranking_params, small, best_model, seed)
         self.classifier = ClassificationExperiment()
-        self.seed = seed
         self.mod = self.classifier.models()
         self.interested = self.mod.drop(list(drop)).index.to_list()
 
-    def train_classifier(self, X_train, X_test, target_name):
+    def train_classifier(self, X_train, X_test):
 
-        self.classifier.setup(data=X_train, target=target_name, normalize=False, preprocess=False, log_experiment=False, experiment_name="Classification", 
+        self.classifier.setup(data=X_train, target=self.label, normalize=False, preprocess=False, log_experiment=False, experiment_name="Classification", 
                               session_id = self.seed, fold_shuffle=True, fold=10, test_data=X_test)
         # To access the transformed data
         self.classifier.add_metric("averagePre", "Average Precision Score", average_precision_score, average="weighted", target="pred_proba", multiclass=False)
@@ -336,9 +349,15 @@ class Classifier(Trainer):
         
         return results, returned_models
     
-    def rank_results(self):
-        
+    def setup_holdout(self, feature):
+        X_train, X_test = train_test_split(feature, test_size=self.test_size, random_state=self.seed, stratify=feature[self.label])
+        transformed_x, test_x = self._scale(X_train, X_test)
+        results, returned_models = self.train_classifier(transformed_x, test_x)
+        sorted_results, sorted_models = self.rank_results(results, returned_models)
+        return sorted_results, sorted_models
 
+    def setup_kfold(self, feature):
+        
 
 
 

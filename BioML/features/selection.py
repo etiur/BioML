@@ -200,14 +200,12 @@ class FeatureSelection:
         else:
             self.seed = int(time.time())
         # log parameters
-        
         self.log.info("Starting feature selection and using the following parameters")    
         self.log.info(f"seed: {self.seed}")
         self.log.info(f"Features shape: {self.features.shape}")
         self.log.info(f"Scaler: {self.scaler}")
         self.log.info(f"Variance Threshold: {self.variance_thres}")
         self.log.info(f"Kfold parameters: {self.num_splits}:{self.test_size}")
-
 
     def _check_label(self, label_path):
         if len(self.label) != len(self.features):
@@ -469,9 +467,10 @@ class FeatureSelection:
         feature_dict = defaultdict(dict)
         num_feature_range = self._get_num_feature_range(num_features_min, num_features_max, step_range)
         if problem == "classification":
-            X_train, X_test, Y_train, Y_test = train_test_split(self.features, self.label, test_size=0.20, random_state=self.seed, stratify=self.label)
+            X_train, X_test, Y_train, Y_test = train_test_split(self.features, self.label, test_size=self.test_size, 
+                                                                random_state=self.seed, stratify=self.label)
         else:
-            X_train, X_test, Y_train, Y_test = train_test_split(self.features, self.label, test_size=0.20, random_state=self.seed)
+            X_train, X_test, Y_train, Y_test = train_test_split(self.features, self.label, test_size=self.test_size, random_state=self.seed)
         
         transformed, scaler_dict = scale(self.scaler, X_train)
         print("filtering the features")
