@@ -72,6 +72,87 @@ def arg_parse():
 
 
 class FeatureSelection:
+    """
+    Class for selecting features from a dataset using different filter methods.
+    
+    This class provides methods for preprocessing features, running various 
+    filter-based feature selection techniques in parallel, and constructing 
+    feature sets of different sizes by selecting top features from the filters.
+    
+    The main methods are:
+    
+    - preprocess: Remove low variance features.
+    
+    - parallel_filter: Run filters in parallel to score features.
+    
+    - feature_set_kfold: Construct feature sets over KFold CV splits.
+    
+    - feature_set_holdout: Construct feature sets on a holdout split.
+    
+    The filter methods include univariate, multivariate, unsupervised filters 
+    as well as tree-based models for scoring feature importance.
+    
+    The class handles scaling features, splitting data for CV, plotting feature 
+    importance and saving results to Excel.
+    """
+    """
+    Class for selecting features from a dataset using different filter methods.
+    
+    Parameters:
+    
+    label: Path to label file or label column in feature dataframe. 
+    
+    excel_file: Path to output Excel file to save selected features.
+    
+    features: Path to input feature CSV file or Pandas DataFrame.
+    
+    variance_thres: Features with variance below this will be removed.
+    
+    num_thread: Number of threads for parallel execution. 
+    
+    scaler: Name of scaler to use before feature selection.
+    
+    num_split: Number of folds for KFold cross-validation.
+    
+    test_size: Test set size for HoldOut validation.  
+    
+    num_filters: Number of filters to apply for feature selection.
+    
+    seed: Random seed for reproducibility.
+    
+    Attributes:
+    
+    features: Input feature DataFrame.
+    
+    label: Target labels Series.
+    
+    variance_thres: Variance threshold for filtering. 
+    
+    num_thread: Threads for parallelism.
+    
+    scaler: Chosen scaler.
+    
+    num_splits: Number of KFold splits. 
+    
+    test_size: HoldOut test set size.
+    
+    excel_file: Output Excel file path.
+    
+    num_filters: Number of filters to apply.
+    
+    seed: Random seed.
+    
+    Methods:
+    
+    preprocess: Remove low variance features.
+    
+    parallel_filter: Run filters in parallel.
+    
+    feature_set_kfold: KFold feature selection.
+    
+    feature_set_holdout: HoldOut feature selection.
+    
+    """
     def __init__(self, label, excel_file, features="training_features/every_features.csv", variance_thres=0,
                  num_thread=10, scaler="robust", num_split=5, test_size=0.2, num_filters=10, seed=None):
         """
@@ -98,29 +179,10 @@ class FeatureSelection:
         num_filters : int, optional
             The number of feature selection algorithms to use, by default 10
         """
-        print("Reading the features")
-        if isinstance(features, str) and features.endswith(".csv"):
-            self.features = pd.read_csv(f"{features}", index_col=0) # the first column shoudl contain the sample names
-        elif isinstance(features, pd.DataFrame):
-            self.features = features
-        else:
-            self.log.error("features should be a csv file or a pandas DataFrame")
-            raise TypeError("features should be a csv file or a pandas DataFrame")
-        
+        self.log = Log("feature_selection")
+        self.log.info("Reading the features")
+        self.features, self.label = self._fix_features_labels(features, label)
         analyse_composition(self.features)
-        if isinstance(label, pd.Series):
-            self.label = label
-        elif isinstance(label, str):
-            if Path(label).exists():
-                self.label = pd.read_csv(label, index_col=0)
-            
-            elif label in self.features.columns:
-                self.label = self.features[label]
-                self.features.drop(label, axis=1, inplace=True)
-        else:
-            self.log.error("label should be a csv file, a pandas Series or inside features")
-            raise TypeError("label should be a csv file, a pandas Series or inside features")
-        
         self.preprocess
         self._check_label("labels_corrected.csv") 
         self.variance_thres = variance_thres
@@ -138,7 +200,8 @@ class FeatureSelection:
         else:
             self.seed = int(time.time())
         # log parameters
-        self.log = Log("feature_selection")    
+        
+        self.log.info("Starting feature selection and using the following parameters")    
         self.log.info(f"seed: {self.seed}")
         self.log.info(f"Features shape: {self.features.shape}")
         self.log.info(f"Scaler: {self.scaler}")
@@ -156,6 +219,36 @@ class FeatureSelection:
             except KeyError as e:
                 self.log.error(f"feature dataframe and labels have different index names: {e}")
                 raise KeyError(f"feature dataframe and labels have different index names: {e}")
+    
+    def _fix_features_labels(self, features, labels):
+        
+        if isinstance(features, str) and features.endswith(".csv"):
+            features = pd.read_csv(f"{features}", index_col=0) # the first column shoudl contain the sample names
+        elif isinstance(features, pd.DataFrame):
+            features = features
+        elif isinstance(features, (list, np.ndarray)):
+            features = pd.DataFrame(features)
+        else:
+            self.log.error("features should be a csv file, an array or a pandas DataFrame")
+            raise TypeError("features should be a csv file, an array or a pandas DataFrame")
+        
+        if isinstance(labels, pd.Series):
+            label = labels
+        elif isinstance(labels, (list, set, np.ndarray)):
+            label = pd.Series(labels, index=features.index, name="target")
+
+        elif isinstance(labels, str):
+            if Path(labels).exists():
+                label = pd.read_csv(labels, index_col=0)
+            
+            elif labels in features.columns:
+                label = features[labels]
+                features.drop(labels, axis=1, inplace=True)
+        else:
+            self.log.error("label should be a csv file, a pandas Series, an array or inside features")
+            raise TypeError("label should be a csv file, a pandas Series, an array or inside features")
+
+        return features, label
 
     def preprocess(self):
         """

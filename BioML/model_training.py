@@ -1,20 +1,15 @@
-from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
 import pandas as pd
 from sklearn.metrics import matthews_corrcoef, confusion_matrix
 from sklearn.metrics import classification_report as class_re
 from collections import namedtuple
-from openpyxl import load_workbook
-from hpsklearn import HyperoptEstimator
-from BioML.utilities import scale, write_excel
-from hyperopt import hp, anneal, tpe, mix, rand
+from BioML.utilities import scale, write_excel, Log
 from pathlib import Path
-from hpsklearn import random_forest_classifier, extra_trees_classifier
-from hpsklearn import sgd_classifier, ridge_classifier, passive_aggressive_classifier
-from hpsklearn import mlp_classifier, k_neighbors_classifier, xgboost_classification, lightgbm_classification
-from hpsklearn import svc
+from pycaret.classification import ClassificationExperiment
+from pycaret.regression import RegressionExperiment
 import argparse
 import numpy as np
-from hyperopt.pyll import scope
+from sklearn.metrics import average_precision_score
 
 
 def arg_parse():
@@ -69,75 +64,81 @@ def arg_parse():
             args.class0_weight, args.report_weight, args.difference_weight, args.small]
 
 
-def interesting_classifiers(name, small=True):
-    """
-    All classifiers
-    """
-    def _name(msg):
-        return f"{name}.k_neighbors_classifier_{msg}"
 
-    def _name_svc(msg):
-        return f"{name}.svc_{msg}"
+class Trainer:
+    def __init__(self, features, label, training_output="training_results", num_splits=5, test_size=0.2,
+                 outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, ranking_params=None, small=True):
+        
+        ranking_dict = dict(precision_weight=1, recall_weight=1, report_weight=0.4, 
+                            difference_weight=1.1, class0_weight=0.5)
+        if isinstance(ranking_params, dict):
+            for key, value in ranking_params.items():
+                if key not in ranking_dict:
+                    raise KeyError(f"The key {key} is not found in the ranking params")
+                ranking_dict[key] = value
 
-    def _neighbors_p(name: str):
-        """
-        Declaration search space 'p' parameter
-        """
-        return scope.int(hp.uniform(name, 1, 5))
-
-    classifiers = [
-        random_forest_classifier(name + ".random_forest"),
-        extra_trees_classifier(name + ".extra_trees"),
-        sgd_classifier(name + ".sgd", random_state=10),
-        ridge_classifier(name + ".ridge", random_state=20),
-        passive_aggressive_classifier(name + ".passive_aggressive"),
-        mlp_classifier(name + ".mlp"),
-        svc(name + ".svc", C=hp.choice(_name_svc('C'), np.arange(0.05, 5.0,0.01))),
-        k_neighbors_classifier(name + ".knn", algorithm="auto", p=_neighbors_p(_name("p")),
-                               n_neighbors=scope.int(hp.uniform(_name("n_neighbors"), 2, 10)))
-    ]
-    if not small:
-        classifiers.append(lightgbm_classification(name + ".lightgbm"))
-        classifiers.append(xgboost_classification(name + ".xgboost"))
-
-    return hp.choice(name, classifiers)
-
-
-class Classifier:
-    def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
-                 outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, precision_weight=1,
-                 recall_weight=1, report_weight=0.4, difference_weight=1.1, class0_weight=0.5, small=True):
         self.outliers = outliers
         self.num_splits = num_splits
         self.test_size = test_size
-        self.features = Path(feature_path)  # if only one features it will perform split and train
-        self.labels = pd.read_csv(label, index_col=0)
+        self.log = Log("model_training")
+        self.log.info("Reading the features")
+        self.features, self.labels = self._fix_features_labels(features, label)
         self.scaler = scaler
         self.max_evals = max_evals
         self.trial_time_out = trial_time
         self.num_threads = num_threads
         self.output_path = Path(training_output)  # for the model results
         self.output_path.mkdir(parents=True, exist_ok=True)
-        self.pre_weight = precision_weight
-        self.rec_weight = recall_weight
-        self.report_weight = report_weight
-        self.difference_weight = difference_weight
-        self.class0_weight = class0_weight
+        self.pre_weight = ranking_dict["precision_weight"]
+        self.rec_weight = ranking_dict["recall_weight"]
+        self.report_weight = ranking_dict["report_weight"]
+        self.difference_weight = ranking_dict["difference_weight"]
+        self.class0_weight = ranking_dict["class0_weight"]
         self.with_split = True
         self.small = small
 
-    def train(self, X_train, Y_train, X_test):
 
-        estimator = HyperoptEstimator(classifier=interesting_classifiers("automl", self.small), preprocessing=[],
-                                      algo=tpe.suggest, max_evals=self.max_evals, trial_timeout=self.trial_time_out,
-                                      n_jobs=self.num_threads, verbose=True)
-        estimator.fit(X_train, Y_train)
-        # Model predictions
-        pred_test_y = estimator.predict(X_test)
-        # training data prediction
-        pred_train_y = estimator.predict(X_train)
-        pred = namedtuple("prediction", ["fitted", "pred_test_y", "pred_train_y"])
-        return pred(*[estimator, pred_test_y, pred_train_y])
+    def train(self, experiment, selected_models):
+        results = {}
+        returned_models = {}
+        for m in selected_models:
+            model = experiment.create_model(m, return_train_score=True, verbose=False)
+            model_results = experiment.pull(pop=True)
+            returned_models[m] = model
+            results[m] = model_results
+        
+        return results, returned_models
+
+    def _fix_features_labels(self, features, label):
+
+        if isinstance(features, str) and features.endswith(".csv"):
+            features = pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
+        elif isinstance(features, pd.DataFrame):
+            features = features
+        elif isinstance(features, (list, np.ndarray)):
+            features = pd.DataFrame(features)
+        else:
+            self.log.error("features should be a csv file, an array or a pandas DataFrame")
+            raise TypeError("features should be a csv file, an array or a pandas DataFrame")
+        
+        if isinstance(label, pd.Series):
+            label.index.name = "target"
+            features = pd.concat([features, label], axis=1)
+            labels = "target"
+        elif isinstance(label, str):
+            if Path(label).exists():
+                label = pd.read_csv(label, index_col=0)
+                label.index.name = "target"
+                features = pd.concat([features, label], axis=1)
+                labels = "target"
+    
+            elif label in features.columns:
+                labels = label            
+        else:
+            self.log.error("label should be a csv file, a pandas Series or inside features")
+            raise TypeError("label should be a csv file, a pandas Series or inside features")
+        
+        return features, labels
 
     @staticmethod
     def get_score(pred, Y_train, Y_test):
@@ -212,6 +213,10 @@ class Classifier:
             parameter_list.append(param_scores)
 
         return metric_scalar, parameter_list, split_index
+    
+    def hold_out(self, problem="classification"):
+        if problem == "classification":
+            X_train, X_test, Y_train, Y_test = train_test_split(self.features, self.label, test_size=0.20, random_state=self.seed, stratify=self.label)
 
     @staticmethod
     def to_dataframe(metric_scalar, parameter_list, split_index):
@@ -288,7 +293,7 @@ class Classifier:
     def run(self):
         """A function that runs nested_cv several times, as many as the sheets in the Excel"""
         # reading the data
-        sheet_names = load_workbook(self.features, read_only=True).sheetnames
+        sheet_names = pd.ExcelFile(self.features).sheet_names
         excel_data = self._check_features(sheet_names)
         result_list = []
         for num, feature in enumerate(excel_data.values()):
@@ -306,6 +311,35 @@ class Classifier:
                 write_excel(writer1, dataframe, sheet)
                 write_excel(writer2, params, sheet)
                 write_excel(writer3, report, sheet)
+
+
+class Classifier(Trainer):
+    def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
+                 outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, ranking_params=dict(precision_weight=1,
+                 recall_weight=1, report_weight=0.4, difference_weight=1.1, class0_weight=0.5), small=True, seed=123, drop=("ada","gpc")):
+        
+        super().__init__(feature_path, label, training_output, num_splits, test_size,
+                         outliers, scaler, max_evals, trial_time, num_threads, ranking_params, small)
+        self.classifier = ClassificationExperiment()
+        self.seed = seed
+        self.mod = self.classifier.models()
+        self.interested = self.mod.drop(list(drop)).index.to_list()
+
+    def train_classifier(self, X_train, X_test, target_name):
+
+        self.classifier.setup(data=X_train, target=target_name, normalize=False, preprocess=False, log_experiment=False, experiment_name="Classification", 
+                              session_id = self.seed, fold_shuffle=True, fold=10, test_data=X_test)
+        # To access the transformed data
+        self.classifier.add_metric("averagePre", "Average Precision Score", average_precision_score, average="weighted", target="pred_proba", multiclass=False)
+
+        results, returned_models = self.train(self.classifier, self.interested)
+        
+        return results, returned_models
+    
+    def rank_results(self):
+        
+
+
 
 
 def main():
