@@ -1,8 +1,5 @@
-from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
+from sklearn.model_selection import StratifiedShuffleSplit, train_test_split, ShuffleSplit
 import pandas as pd
-from sklearn.metrics import matthews_corrcoef, confusion_matrix
-from sklearn.metrics import classification_report as class_re
-from collections import namedtuple
 from BioML.utilities import scale, write_excel, Log
 from pathlib import Path
 from pycaret.classification import ClassificationExperiment
@@ -69,9 +66,9 @@ def arg_parse():
 class Trainer:
     def __init__(self, features, label, training_output="training_results", num_splits=5, test_size=0.2,
                  outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, ranking_params=None, small=True,
-                 best_model=3, seed=None):
+                 best_model=3, seed=None, verbose=False):
         
-        ranking_dict = dict(precision_weight=1, recall_weight=1, report_weight=0.5, 
+        ranking_dict = dict(precision_weight=1, recall_weight=1, report_weight=0.6, 
                             difference_weight=1.1)
         if isinstance(ranking_params, dict):
             for key, value in ranking_params.items():
@@ -103,6 +100,7 @@ class Trainer:
         else:
             self.seed = int(time.time())
         self.log.info(f"seed: {self.seed}")
+        self.verbose=verbose
 
     def train(self, experiment, selected_models):
         results = {}
@@ -110,6 +108,8 @@ class Trainer:
         for m in selected_models:
             model = experiment.create_model(m, return_train_score=True, verbose=False)
             model_results = experiment.pull(pop=True)
+            if not self.verbose:
+                model_results = model_results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
             returned_models[m] = model
             results[m] = model_results
         
@@ -141,7 +141,7 @@ class Trainer:
                 feat[key] = pd.concat([value, label], axis=1)
             
         elif isinstance(label, str):
-            if Path(label).exists():
+            if Path(label).exists() and Path(label).suffix == ".csv":
                 label = pd.read_csv(label, index_col=0)
                 label.index.name = "target"
                 labels = "target"
@@ -156,44 +156,21 @@ class Trainer:
         
         return feat, labels
 
-    @staticmethod
-    def get_score(pred, Y_train, Y_test):
-        """ The function prints the scores of the models and the prediction performance """
-        target_names = ["class 0", "class 1"]
+    def _get_params(self, sorted_models):
+        model_params = {}
+        for ind, (name, model) in enumerate(sorted_models.items(), 1):
+            if ind > self.best_model:
+                continue
 
-        scalar_record = namedtuple("scores", ["cv_score", "train_mat", "test_matthews"])
-        parameter_record = namedtuple("parameters", ["params", "test_confusion", "tr_report", "te_report",
-                                                     "train_confusion", "model_name"])
-        # Model comparison
-        cv_score = 1 - pred.fitted._best_loss
-        model_params = pred.fitted.best_model()["learner"].get_params()
-        model_params = {key: value for key, value in model_params.items() if key not in ["warm_start", "verbose",
-                                                                                         "oob_score"]}
-        model_params = pd.Series(model_params)
-        # Training scores
-        train_confusion = confusion_matrix(Y_train, pred.pred_train_y)
-        tr_report = class_re(Y_train, pred.pred_train_y, target_names=target_names, output_dict=True)
-        train_mat = matthews_corrcoef(Y_train, pred.pred_train_y)
-        # Test metrics grid
-        test_confusion = confusion_matrix(Y_test, pred.pred_test_y)
-        test_matthews = matthews_corrcoef(Y_test, pred.pred_test_y)
-        te_report = class_re(Y_test, pred.pred_test_y, target_names=target_names, output_dict=True)
-        # save the results in namedtuples
-        scalar_scores = scalar_record(*[cv_score, train_mat, test_matthews])
-        param_scores = parameter_record(*[model_params, test_confusion, tr_report, te_report, train_confusion,
-                                          pred.fitted.best_model()["learner"].__class__.__name__])
+            if name != "catboost":
+                params = model.get_params()
+            else:
+                params = model.get_all_params()
+            params = {key: value for key, value in params.items() if key not in ["warm_start", "verbose",
+                                                                                            "oob_score"]}
+            params = pd.Series(model_params)
+            model_params[name] = params
 
-        return scalar_scores, param_scores
-
-    @staticmethod
-    def _get_params(name, model):
-        if name != "catboost":
-            model_params = model.get_params()
-        else:
-            model_params = model.get_all_params()
-        model_params = {key: value for key, value in model_params.items() if key not in ["warm_start", "verbose",
-                                                                                         "oob_score"]}
-        model_params = pd.Series(model_params)
         return model_params
     
     def _scale(self, train_index, test_index, features = None, strategy="holdout", split_index=None):
@@ -219,64 +196,6 @@ class Trainer:
 
         return transformed_x, test_x
 
-    def nested_cv(self, feature):
-        """Performs something similar to a nested cross-validation"""
-        metric_scalar = []
-        parameter_list = []
-        split_index = []
-        skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=20)
-        for ind, (train_index, test_index) in enumerate(skf.split(feature, self.labels)):
-            split_index.append(ind)
-            transformed_x, test_x, Y_test, Y_train = self._scale(feature, train_index, test_index, ind)
-            pred = self.train(transformed_x, Y_train, test_x)
-            scalar_scores, param_scores = self.get_score(pred, Y_train, Y_test)
-            metric_scalar.append(scalar_scores)
-            parameter_list.append(param_scores)
-
-        return metric_scalar, parameter_list, split_index
-    
-    @staticmethod
-    def to_dataframe(metric_scalar, parameter_list, split_index):
-        matrix = namedtuple("confusion_matrix", ["true_n", "false_p", "false_n", "true_p"])
-        # performance scores
-        test_mathew = [x.test_matthews for x in metric_scalar]
-        cv_score = [x.cv_score for x in metric_scalar]
-        train_mathew = [x.train_mat for x in metric_scalar]
-        # model parameters
-        model_name = [x.model_name for x in parameter_list]
-        params = pd.concat({i: pd.concat({x.model_name: x.params}) for i, x in zip(split_index, parameter_list)})
-        # Taking the confusion matrix
-        test_confusion = [matrix(*x.test_confusion.ravel()) for x in parameter_list]
-        training_confusion = [matrix(*x.train_confusion.ravel()) for x in parameter_list]
-        te_report = {num: pd.DataFrame(x.te_report).transpose() for num, x in zip(split_index, parameter_list)}
-        te_report = pd.concat(te_report)
-        te_report.index.names = ["split_index", "labels"]
-        tr_report = {num: pd.DataFrame(x.tr_report).transpose() for num, x in zip(split_index, parameter_list)}
-        tr_report = pd.concat(tr_report)
-        tr_report.index.names = ["split_index", "labels"]
-        report = pd.concat({"train": tr_report.T, "test": te_report.T})
-        # Separating confusion matrix into individual elements
-        test_true_n = [y.true_n for y in test_confusion]
-        test_false_p = [y.false_p for y in test_confusion]
-        test_false_n = [y.false_n for y in test_confusion]
-        test_true_p = [y.true_p for y in test_confusion]
-
-        training_true_n = [z.true_n for z in training_confusion]
-        training_false_p = [z.false_p for z in training_confusion]
-        training_false_n = [z.false_n for z in training_confusion]
-        training_true_p = [z.true_p for z in training_confusion]
-
-        dataframe = pd.DataFrame([split_index, test_true_n, test_true_p, test_false_p, test_false_n, training_true_n,
-                                  training_true_p, training_false_p, training_false_n, cv_score,
-                                  train_mathew, test_mathew, model_name])
-
-        dataframe = dataframe.transpose()
-        dataframe.columns = ["split_index", "test_tn", "test_tp", "test_fp", "test_fn", "train_tn", "train_tp",
-                             "train_fp", "train_fn", "CV_MCC", "train_MCC", "test_MCC", "model_name"]
-        dataframe.set_index("split_index", inplace=True)
-
-        return dataframe, report.T, params
-
     def _calculate_score_dataframe(self, dataframe):
         mcc = ((dataframe.loc[("CV-Train", "Mean")]["MCC"] + dataframe.loc[("CV-Val", "Mean")]["MCC"])
                 - self.difference_weight * abs(dataframe.loc[("CV-Val", "Mean")]["MCC"] - dataframe.loc[("CV-Train", "Mean")]["MCC"] ))
@@ -301,42 +220,37 @@ class Trainer:
         sorted_results = {key: results[key] for key in sorted_keys}
         sorted_models = {key: returned_models[key] for key in sorted_keys}
 
-        return sorted_results, sorted_models
+        return pd.concat(sorted_results), sorted_models
+    
+    def analyse_best_models(self, experiment, sorted_models, selected_plots, split_ind=None):
+        if self.verbose:
+            self.log.info("Analyse the best models and plotting them")
+        for ind, (name, model) in enumerate(sorted_models.items(), 1):
+            if ind <= self.best_model:
+                self.log.info(f"Analyse the top {ind} model: {name}")
+                if not split_ind:
+                    plot_path = self.output_path / "model_plots" / name
+                else:
+                    plot_path = self.output_path / "model_plots" / f"{name}" / f"split_{split_ind}"
+                plot_path.mkdir(parents=True, exist_ok=True)
+                for pl in selected_plots:
+                    experiment.plot_model(model, pl, save=plot_path)
 
-    def run(self):
-        """A function that runs nested_cv several times, as many as the sheets in the Excel"""
-        # reading the data
-        
-        excel_data = self._check_features(sheet_names)
-        result_list = []
-        for num, feature in enumerate(excel_data.values()):
-            print(f"using {sheet_names[num]} for training")
-            metric_scalar, parameter_list, split_index = self.nested_cv(feature)
-            dataframe, report, params = self.to_dataframe(metric_scalar, parameter_list, split_index)
-            result_list.append((sheet_names[num], dataframe, report, params))
-
-        result_list.sort(key=self.rank_results, reverse=True)
-        with (pd.ExcelWriter(self.output_path / "training_results.xlsx", mode="w", engine="openpyxl") as writer1,
-              pd.ExcelWriter(self.output_path / "hyperparameters.xlsx", mode="w", engine="openpyxl") as writer2,
-              pd.ExcelWriter(self.output_path / "classification_report.xlsx", mode="w", engine="openpyxl") as writer3):
-            for x in result_list:
-                sheet, dataframe, report, params = x
-                write_excel(writer1, dataframe, sheet)
-                write_excel(writer2, params, sheet)
-                write_excel(writer3, report, sheet)
 
 
 class Classifier(Trainer):
     def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
                  outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, ranking_params=None, small=True, 
-                 best_model=3, seed=None, drop=("ada","gpc")):
+                 best_model=3, seed=None, drop=("ada", "gpc", "lightgbm"), verbose=False):
         """dict(precision_weight=1,
                  recall_weight=1, report_weight=0.4, difference_weight=1.1, class0_weight=0.5)"""
         super().__init__(feature_path, label, training_output, num_splits, test_size,
-                         outliers, scaler, max_evals, trial_time, num_threads, ranking_params, small, best_model, seed)
+                         outliers, scaler, max_evals, trial_time, num_threads, ranking_params, small, best_model, 
+                         seed, verbose)
         self.classifier = ClassificationExperiment()
         self.mod = self.classifier.models()
         self.interested = self.mod.drop(list(drop)).index.to_list()
+        self.classification_plots = ["confusion_matrix", "learning", "class_report", "auc", "pr"]
 
     def train_classifier(self, X_train, X_test):
 
@@ -349,17 +263,197 @@ class Classifier(Trainer):
         
         return results, returned_models
     
-    def setup_holdout(self, feature):
+    def setup_holdout(self, feature, plot=("learning", "confusion_matrix", "class_report")):
+        """
+        A function that splits the data into training and test sets and then trains the models
+        using cross-validation but only on the training data
+
+        Parameters
+        ----------
+        feature : pd.DataFrame
+            A dataframe containing the training samples and the features
+        plot : bool, optional
+            Plot the plots relevant to the models, by default 1, 4 and 5
+                1. learning: learning curve
+                2. pr: Precision recall curve
+                3. auc: the ROC curve
+                4. confusion_matrix 
+                5. class_report: read classification_report from sklearn.metrics
+
+        Returns
+        -------
+        dict[pd.DataFrame]
+            A dictionary with the sorted results from pycaret
+        dict[models]
+            A dictionary with the sorted models from pycaret
+         
+        """
         X_train, X_test = train_test_split(feature, test_size=self.test_size, random_state=self.seed, stratify=feature[self.label])
         transformed_x, test_x = self._scale(X_train, X_test)
         results, returned_models = self.train_classifier(transformed_x, test_x)
         sorted_results, sorted_models = self.rank_results(results, returned_models)
-        return sorted_results, sorted_models
+        top_params = self._get_params(sorted_models)
+        if plot:
+            self.analyse_best_models(self.classifier, sorted_models, [x for x in self.classification_plots if x in plot])
+        return sorted_results, sorted_models, top_params
 
-    def setup_kfold(self, feature):
+    def setup_kfold(self, feature, plot=()):
+        """
+        A function that splits the data into kfolds of training and test sets and then trains the models
+        using cross-validation but only on the training data. It is a nested cross-validation
+
+        Parameters
+        ----------
+        feature : pd.DataFrame
+            A dataframe containing the training samples and the features
+        plot : bool, optional
+            Plot the plots relevant to the models, by default None
+                1. learning: learning curve
+                2. pr: Precision recall curve
+                3. auc: the ROC curve
+                4. confusion_matrix 
+                5. class_report: read classification_report from sklearn.metrics
+
+        Returns
+        -------
+        dict[tuple(dict[pd.DataFrame], dict[models]))]
+            A dictionary with the sorted results and sorted models from pycaret organized by split index or kfold index
+        """
+        res = {}
+        top_params = {}
+        mod = {}
+        skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.seed)
+        for ind, (train_index, test_index) in enumerate(skf.split(feature, feature[self.label])):
+            transformed_x, test_x = self._scale(feature, train_index, test_index, strategy="kfold", split_index=ind)
+            results, returned_models = self.train_classifier(transformed_x, test_x)
+            sorted_results, sorted_models = self.rank_results(results, returned_models)
+            if plot:
+                self.analyse_best_models(self.classifier, sorted_models, [x for x in self.classification_plots if x in plot], split_ind=ind)
+            res[f"split_{ind}"] = sorted_results
+            top_params[f"split_{ind}"] = self._get_params(sorted_models)
+            mod[f"split_{ind}"] = sorted_models
+        return pd.concat(res, axis=1), mod, pd.concat(top_params, axis=1)
+    
+    def run(self, strategy="holdout", plot_holdout=("learning", "confusion_matrix", "class_report"), plot_kfold=()):
+        for key, value in self.features.items():
+            if strategy == "holdout":
+                sorted_results, sorted_models, top_params = self.setup_holdout(value, plot_holdout)
+                write_excel(self.output_path / "training_results.xlsx", sorted_results, key)
+                write_excel(self.output_path / f"top_{self.best_model}_hyperparameters.xlsx", top_params, key)
+            elif strategy == "kfold":
+                sorted_results, sorted_models, top_params = self.setup_kfold(value, plot_kfold)
+                write_excel(self.output_path / "training_results.xlsx", sorted_results, f"{key}")
+                write_excel(self.output_path / f"top_{self.best_model}_hyperparameters.xlsx", top_params, f"{key}")
+            else:
+                raise ValueError("strategy should be either holdout or kfold")
+            
+        return sorted_results, sorted_models, top_params
+
+
+class Regressor(Trainer):
+    def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
+                 outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, ranking_params=None, small=True, 
+                 best_model=3, seed=None, drop=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), verbose=False):
+
+        super().__init__(feature_path, label, training_output, num_splits, test_size,
+                         outliers, scaler, max_evals, trial_time, num_threads, ranking_params, small, best_model, 
+                         seed, verbose)
+        self.regression = RegressionExperiment()
+        self.mod = self.regression.models()
+        self.interested = self.mod.drop(list(drop)).index.to_list()
+        self.regression_plots = ["residuals", "error", "learning"]
+
+    def train_regressor(self, X_train, X_test):
+
+        self.regression.setup(data=X_train, target=self.label, normalize=False, preprocess=False, log_experiment=False, experiment_name="Regression", 
+                              session_id = self.seed, fold_shuffle=True, fold=10, test_data=X_test)
+        # To access the transformed data
+
+        results, returned_models = self.train(self.regression, self.interested)
         
+        return results, returned_models
+    
+    def setup_holdout(self, feature, plot=("residuals", "error", "learning")):
+        """
+        A function that splits the data into training and test sets and then trains the models
+        using cross-validation but only on the training data
 
+        Parameters
+        ----------
+        feature : pd.DataFrame
+            A dataframe containing the training samples and the features
+        plot : bool, optional
+            Plot the plots relevant to the models, by default 1,2,3
+                1. residuals: Plots the difference (predicted-actual value) vs predicted value for train and test
+                2. error: Plots the actual values vs predicted values
+                3. learning: learning curve
 
+        Returns
+        -------
+        dict[pd.DataFrame]
+            A dictionary with the sorted results from pycaret
+        dict[models]
+            A dictionary with the sorted models from pycaret
+         
+        """
+        X_train, X_test = train_test_split(feature, test_size=self.test_size, random_state=self.seed, stratify=feature[self.label])
+        transformed_x, test_x = self._scale(X_train, X_test)
+        results, returned_models = self.train_regressor(transformed_x, test_x)
+        sorted_results, sorted_models = self.rank_results(results, returned_models)
+        top_params = self._get_params(sorted_models)
+        if plot:
+            self.analyse_best_models(self.regression, sorted_models, [x for x in self.regression_plots if x in plot])
+        return sorted_results, sorted_models, top_params
+
+    def setup_kfold(self, feature, plot=()):
+        """
+        A function that splits the data into kfolds of training and test sets and then trains the models
+        using cross-validation but only on the training data. It is a nested cross-validation
+
+        Parameters
+        ----------
+        feature : pd.DataFrame
+            A dataframe containing the training samples and the features
+        plot : bool, optional
+            Plot the plots relevant to the models, by default -> ()
+                1. residuals: Plots the difference (predicted-actual value) vs predicted value for train and test
+                2. error: Plots the actual values vs predicted values
+                3. learning: learning curve
+
+        Returns
+        -------
+        dict[tuple(dict[pd.DataFrame], dict[models]))]
+            A dictionary with the sorted results and sorted models from pycaret organized by split index or kfold index
+        """
+        res = {}
+        top_params = {}
+        mod = {}
+        skf = ShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.seed)
+        for ind, (train_index, test_index) in enumerate(skf.split(feature, feature[self.label])):
+            transformed_x, test_x = self._scale(feature, train_index, test_index, strategy="kfold", split_index=ind)
+            results, returned_models = self.train_regressor(transformed_x, test_x)
+            sorted_results, sorted_models = self.rank_results(results, returned_models)
+            if plot:
+                self.analyse_best_models(self.regression, sorted_models, [x for x in self.regression_plots if x in plot], split_ind=ind)
+            res[f"split_{ind}"] = sorted_results
+            top_params[f"split_{ind}"] = self._get_params(sorted_models)
+            mod[f"split_{ind}"] = sorted_models
+        return pd.concat(res, axis=1), mod, pd.concat(top_params, axis=1)
+    
+    def run(self, strategy="holdout", plot_holdout=("learning", "confusion_matrix", "class_report"), plot_kfold=()):
+        for key, value in self.features.items():
+            if strategy == "holdout":
+                sorted_results, sorted_models, top_params = self.setup_holdout(value, plot_holdout)
+                write_excel(self.output_path / "training_results.xlsx", sorted_results, key)
+                write_excel(self.output_path / f"top_{self.best_model}_hyperparameters.xlsx", top_params, key)
+            elif strategy == "kfold":
+                sorted_results, sorted_models, top_params = self.setup_kfold(value, plot_kfold)
+                write_excel(self.output_path / "training_results.xlsx", sorted_results, f"{key}")
+                write_excel(self.output_path / f"top_{self.best_model}_hyperparameters.xlsx", top_params, f"{key}")
+            else:
+                raise ValueError("strategy should be either holdout or kfold")
+        
+        return sorted_results, sorted_models, top_params
 
 def main():
     label, training_output, hyperparameter_tuning, num_thread, scaler, excel, kfold, outliers, \

@@ -447,13 +447,14 @@ class FeatureSelection:
         num_feature_range = self._get_num_feature_range(num_features_min, num_features_max, step_range)
 
         for i, (train_index, test_index) in enumerate(skf.split(self.features, self.label)):
-            print(f"kfold {i}")
+            self.log.info(f"kfold {i}")
+            self.log.info("------------------------------------")
             X_train = self.features.iloc[train_index]
             Y_train = self.label.iloc[train_index].values.ravel()
             transformed, scaler_dict = scale(self.scaler, X_train)
             # for each split I do again feature selection and save all the features selected from different splits
             # but with the same selector in the same dictionary
-            print("filtering the features")
+            self.log.info("filtering the features")
             ordered_features = self.parallel_filter(transformed, Y_train, num_feature_range[-1], self.features.columns, i,
                                                     plot, plot_num_features, problem, filter_args)
             self._construct_features(ordered_features, self.features, feature_dict, num_feature_range, transformed, Y_train, 
