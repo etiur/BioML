@@ -31,11 +31,8 @@ def arg_parse():
                         help="A list of outliers if any, the name should be the same as in the excel file with the "
                              "filtered features, you can also specify the path to a file in plain text format, each "
                              "record should be in a new line")
-    parser.add_argument("-hp", "--hyperparameter_tuning", required=False, default="50:30",
-                        help="The parameters for the class that performs hyperparameter tuning"
-                             " in max_evals: trial_time format. Max_evals refers to how many model configurations or "
-                             "hyperparameters to test and the trial_time is the total time allocated to test each "
-                             "configuration, could be None in which case there is no time limit")
+    parser.add_argument("-bu", "--budget_time", required=False, default=None, type=float,
+                        help="The time budget for the training in minutes, should be > 0 or None")
     parser.add_argument("-pw", "--precision_weight", required=False, default=1.2, type=float,
                         help="Weights to specify how relevant is the precision for the ranking of the different "
                              "features")
@@ -48,21 +45,29 @@ def arg_parse():
                              "the performance of a model")
     parser.add_argument("-dw", "--difference_weight", required=False, default=1.2, type=float,
                         help="How important is to have similar training and test metrics")
-    parser.add_argument("-sm", "--small", required=False, action="store_false",
-                        help="Default to true, if the number of samples is < 300 or if you machine is slow. "
-                             "The hyperparameters tuning will fail if you set trial time short and your machine is slow")
+    parser.add_argument("-r2", "--r2_weight", required=False, default=0.8, type=float,
+                        help="The weights for the R2 score")
+    parser.add_argument("-st", "--strategy", required=False, choices=("holdout", "kfold"), default="holdout",
+                        help="The spliting strategy to use")
+    parser.add_argument("-pr", "--problem", required=False, choices=("classification", "regression"), 
+                        default="classification", help="Classification or Regression problem")
+    parser.add_argument("-be", "--best_model", required=False, default=3, type=int,
+                        help="The number of best models to select, it affects the analysis and the save hyperparameters")
+    parser.add_argument("--seed", required=False, default=None, type=int, help="The seed for the random state")
+
 
     args = parser.parse_args()
 
-    return [args.label, args.training_output, args.hyperparameter_tuning, args.num_thread, args.scaler,
+    return [args.label, args.training_output, args.budget_time, args.num_thread, args.scaler,
             args.excel, args.kfold_parameters, args.outliers, args.precision_weight, args.recall_weight,
-            args.report_weight, args.difference_weight, args.small]
+            args.report_weight, args.difference_weight, args.r2_weight, args.strategy, args.problem, args.best_model,
+            args.seed]
 
 
 
 class Trainer:
     def __init__(self, features, label, training_output="training_results", num_splits=5, test_size=0.2,
-                 outliers=(), scaler="robust", trial_time=None, num_threads=10, small=True,
+                 outliers=(), scaler="robust", trial_time=None, num_threads=10,
                  best_model=3, seed=None, verbose=False):
         
         self.log = Log("model_training")
@@ -244,10 +249,10 @@ class Trainer:
 
 class Classifier(Trainer):
     def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
-                 outliers=(), scaler="robust", trial_time=30, num_threads=10, ranking_params=None, small=True, 
+                 outliers=(), scaler="robust", trial_time=30, num_threads=10, ranking_params=None, 
                  best_model=3, seed=None, drop=("ada", "gpc", "lightgbm"), verbose=False):
         super().__init__(feature_path, label, training_output, num_splits, test_size,
-                         outliers, scaler, trial_time, num_threads, small, best_model, seed, verbose)
+                         outliers, scaler, trial_time, num_threads, best_model, seed, verbose)
         
         ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
                             difference_weight=1.2)
@@ -405,12 +410,11 @@ class Classifier(Trainer):
 
 class Regressor(Trainer):
     def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
-                 outliers=(), scaler="robust", trial_time=None, num_threads=10, ranking_params=None, small=True, 
+                 outliers=(), scaler="robust", trial_time=None, num_threads=10, ranking_params=None, 
                  best_model=3, seed=None, drop=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), verbose=False):
 
         super().__init__(feature_path, label, training_output, num_splits, test_size,
-                         outliers, scaler, trial_time, num_threads, small, best_model, 
-                         seed, verbose)
+                         outliers, scaler, trial_time, num_threads, best_model, seed, verbose)
         
         ranking_dict = dict(R2_weight=0.8, difference_weight=1.2)
         if isinstance(ranking_params, dict):
@@ -541,7 +545,7 @@ class Regressor(Trainer):
             mod[f"split_{ind}"] = sorted_models
         return pd.concat(res, axis=1), mod, pd.concat(top_params, axis=1)
     
-    def run(self, strategy="holdout", plot_holdout=("learning", "confusion_matrix", "class_report"), plot_kfold=()):
+    def run(self, strategy="holdout", plot_holdout=("residuals", "error", "learning"), plot_kfold=()):
         for key, value in self.features.items():
             if strategy == "holdout":
                 sorted_results, sorted_models, top_params = self.setup_holdout(value, plot_holdout)
@@ -558,22 +562,25 @@ class Regressor(Trainer):
 
 
 def main():
-    label, training_output, hyperparameter_tuning, num_thread, scaler, excel, kfold, outliers, \
-        precision_weight, recall_weight, report_weight, difference_weight, small = arg_parse()
+    label, training_output, trial_time, num_thread, scaler, excel, kfold, outliers, \
+        precision_weight, recall_weight, report_weight, difference_weight, r2_weight, strategy, problem, seed, \
+    best_model = arg_parse()
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
-    max_evals, trial_time = int(hyperparameter_tuning.split(":")[0]), hyperparameter_tuning.split(":")[1]
-    if trial_time.isdigit():
-        trial_time = int(trial_time)
-    else:
-        trial_time = None
+
     if len(outliers) > 0 and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = [x.strip() for x in out.readlines()]
-    ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight, report_weight=report_weight, 
+    if problem == "classification":
+        ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight, report_weight=report_weight, 
                             difference_weight=difference_weight)
-    training = Classifier(excel, label, training_output, num_split, test_size, outliers, scaler, max_evals,
-                          trial_time, num_thread, ranking_dict, small)
-    training.run()
+        training = Classifier(excel, label, training_output, num_split, test_size, outliers, scaler, trial_time, 
+                              num_thread, ranking_dict, best_model, seed)
+    elif problem == "regression":
+        ranking_dict = dict(R2_weight=r2_weight, difference_weight=difference_weight)
+        training = Regressor(excel, label, training_output, num_split, test_size, outliers, scaler, trial_time, 
+                             num_thread, ranking_dict, best_model, seed)
+    
+    training.run(strategy)
 
 
 if __name__ == "__main__":
