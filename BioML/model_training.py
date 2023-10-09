@@ -67,8 +67,7 @@ def arg_parse():
 
 class Trainer:
     def __init__(self, features, label, training_output="training_results", num_splits=5, test_size=0.2,
-                 outliers=(), scaler="robust", trial_time=None, num_threads=10,
-                 best_model=3, seed=None, verbose=False):
+                 outliers=(), scaler="robust", trial_time=None, num_threads=10, best_model=3, seed=None, verbose=False):
         
         self.log = Log("model_training")
         self.log.info("Reading the features")
@@ -90,7 +89,6 @@ class Trainer:
         #self.num_threads = num_threads
         self.output_path = Path(training_output)  # for the model results
         self.output_path.mkdir(parents=True, exist_ok=True)
-        self.small = small
         self.best_model = best_model
         if seed:
             self.seed = seed
@@ -244,7 +242,6 @@ class Trainer:
                 plot_path.mkdir(parents=True, exist_ok=True)
                 for pl in selected_plots:
                     experiment.plot_model(model, pl, save=plot_path)
-
 
 
 class Classifier(Trainer):
@@ -406,6 +403,7 @@ class Classifier(Trainer):
                 raise ValueError("strategy should be either holdout or kfold")
             
         return sorted_results, sorted_models, top_params
+
 
 
 class Regressor(Trainer):
