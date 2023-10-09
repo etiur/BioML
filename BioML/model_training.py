@@ -36,20 +36,17 @@ def arg_parse():
                              " in max_evals: trial_time format. Max_evals refers to how many model configurations or "
                              "hyperparameters to test and the trial_time is the total time allocated to test each "
                              "configuration, could be None in which case there is no time limit")
-    parser.add_argument("-pw", "--precision_weight", required=False, default=1, type=float,
+    parser.add_argument("-pw", "--precision_weight", required=False, default=1.2, type=float,
                         help="Weights to specify how relevant is the precision for the ranking of the different "
                              "features")
     parser.add_argument("-rw", "--recall_weight", required=False, default=0.8, type=float,
                         help="Weights to specify how relevant is the recall for the ranking of the different features")
-    parser.add_argument("-c0", "--class0_weight", required=False, default=0.5, type=float,
-                        help="Weights to specify how relevant is the f1, precision and recall scores of the class 0"
-                             " or the negative class for the ranking of the different features with respect to class 1 "
-                             "or the positive class")
-    parser.add_argument("-rpw", "--report_weight", required=False, default=0.25, type=float,
+
+    parser.add_argument("-rpw", "--report_weight", required=False, default=0.6, type=float,
                         help="Weights to specify how relevant is the f1, precision and recall for the ranking of the "
                              "different features with respect to MCC which is a more general measures of "
                              "the performance of a model")
-    parser.add_argument("-dw", "--difference_weight", required=False, default=1.1, type=float,
+    parser.add_argument("-dw", "--difference_weight", required=False, default=1.2, type=float,
                         help="How important is to have similar training and test metrics")
     parser.add_argument("-sm", "--small", required=False, action="store_false",
                         help="Default to true, if the number of samples is < 300 or if you machine is slow. "
@@ -59,7 +56,7 @@ def arg_parse():
 
     return [args.label, args.training_output, args.hyperparameter_tuning, args.num_thread, args.scaler,
             args.excel, args.kfold_parameters, args.outliers, args.precision_weight, args.recall_weight,
-            args.class0_weight, args.report_weight, args.difference_weight, args.small]
+            args.report_weight, args.difference_weight, args.small]
 
 
 
@@ -68,19 +65,19 @@ class Trainer:
                  outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, ranking_params=None, small=True,
                  best_model=3, seed=None, verbose=False):
         
-        ranking_dict = dict(precision_weight=1, recall_weight=1, report_weight=0.6, 
-                            difference_weight=1.1)
+        ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
+                            difference_weight=1.2)
         if isinstance(ranking_params, dict):
             for key, value in ranking_params.items():
                 if key not in ranking_dict:
-                    raise KeyError(f"The key {key} is not found in the ranking params uses theses keys: presition_weight, recall_weight, report_weight difference_weight")
+                    raise KeyError(f"The key {key} is not found in the ranking params use theses keys: presition_weight, recall_weight, report_weight difference_weight")
                 ranking_dict[key] = value
 
+        self.log = Log("model_training")
+        self.log.info("Reading the features")
         self.outliers = outliers
         self.num_splits = num_splits
         self.test_size = test_size
-        self.log = Log("model_training")
-        self.log.info("Reading the features")
         self.with_split = False
         self.features, self.label = self._fix_features_labels(features, label)
         self.scaler = scaler
@@ -99,7 +96,13 @@ class Trainer:
             self.seed = seed
         else:
             self.seed = int(time.time())
-        self.log.info(f"seed: {self.seed}")
+        self.log.info(f"Test_size: {test_size}")
+        self.log.info(f"Outliers: {', '.join(self.outliers)}")
+        self.log.info(f"Scaler: {scaler}")
+        self.log.info(f"Seed: {self.seed}")
+        self.log.info(f"Number of kfolds: {self.num_splits}")
+        self.log.info(f"The output path: {self.output_path}")
+        self.log.info(f"Num cpus: {self.num_threads}")
         self.verbose=verbose
 
     def train(self, experiment, selected_models):
@@ -122,10 +125,13 @@ class Trainer:
                 feat = {"model 1": pd.read_csv(f"{features}", index_col=0)} # the first column should contain the sample names
 
             elif features.endswith(".xlsx"):
-                self.with_split = True
                 sheet_names = pd.ExcelFile(features).sheet_names
+                f = pd.read_excel(features, index_col=0, header=[0, 1], engine='openpyxl', sheet_name=sheet_names[0])
+                if "split_0" in f.columns.unique(0):
+                    self.with_split = True
+                    del f
                 feat = pd.read_excel(features, index_col=0, header=[0, 1], engine='openpyxl', sheet_name=sheet_names)
-
+                
         elif isinstance(features, pd.DataFrame):
             feat = {"model 1": features}
         elif isinstance(features, (list, np.ndarray)):
@@ -196,23 +202,11 @@ class Trainer:
 
         return transformed_x, test_x
 
-    def _calculate_score_dataframe(self, dataframe):
-        mcc = ((dataframe.loc[("CV-Train", "Mean")]["MCC"] + dataframe.loc[("CV-Val", "Mean")]["MCC"])
-                - self.difference_weight * abs(dataframe.loc[("CV-Val", "Mean")]["MCC"] - dataframe.loc[("CV-Train", "Mean")]["MCC"] ))
-        
-        prec = ((dataframe.loc[("CV-Train", "Mean")]["Prec."] + dataframe.loc[("CV-Val", "Mean")]["Prec."])
-                - self.difference_weight * abs(dataframe.loc[("CV-Val", "Mean")]["Prec."] - dataframe.loc[("CV-Train", "Mean")]["Prec."]))
-        
-        recall = ((dataframe.loc[("CV-Train", "Mean")]["Recall"] + dataframe.loc[("CV-Val", "Mean")]["Recall"])
-                - self.difference_weight * abs(dataframe.loc[("CV-Val", "Mean")]["Recall"] - dataframe.loc[("CV-Train", "Mean")]["Recall"]))
-        
-        return mcc + self.report_weight * (self.pre_weight * prec + self.rec_weight * recall)
-
-    def rank_results(self, results, returned_models):
+    def rank_results(self, results, returned_models, scoring_function):
 
         scores = {}
         for key, value in results.items():
-            score_dataframe = self._calculate_score_dataframe(value)
+            score_dataframe = scoring_function(value)
             scores[key] = score_dataframe
 
         sorted_keys = sorted(scores, key=lambda x: scores[x], reverse=True)
@@ -223,8 +217,8 @@ class Trainer:
         return pd.concat(sorted_results), sorted_models
     
     def analyse_best_models(self, experiment, sorted_models, selected_plots, split_ind=None):
-        if self.verbose:
-            self.log.info("Analyse the best models and plotting them")
+        
+        self.log.info("Analyse the best models and plotting them")
         for ind, (name, model) in enumerate(sorted_models.items(), 1):
             if ind <= self.best_model:
                 self.log.info(f"Analyse the top {ind} model: {name}")
@@ -263,6 +257,21 @@ class Classifier(Trainer):
         
         return results, returned_models
     
+    def _calculate_score_dataframe(self, dataframe):
+        cv_train = dataframe.loc[("CV-Train", "Mean")]
+        cv_val = dataframe.loc[("CV-Val", "Mean")]
+
+        mcc = ((cv_train["MCC"] + cv_val["MCC"])
+                - self.difference_weight * abs(cv_val["MCC"] - cv_val["MCC"] ))
+        
+        prec = ((cv_train["Prec."] + cv_val["Prec."])
+                - self.difference_weight * abs(cv_val["Prec."] - cv_train["Prec."]))
+        
+        recall = ((cv_train["Recall"] + cv_val["Recall"])
+                - self.difference_weight * abs(cv_val["Recall"] - cv_train["Recall"]))
+        
+        return mcc + self.report_weight * (self.pre_weight * prec + self.rec_weight * recall)
+    
     def setup_holdout(self, feature, plot=("learning", "confusion_matrix", "class_report")):
         """
         A function that splits the data into training and test sets and then trains the models
@@ -291,7 +300,7 @@ class Classifier(Trainer):
         X_train, X_test = train_test_split(feature, test_size=self.test_size, random_state=self.seed, stratify=feature[self.label])
         transformed_x, test_x = self._scale(X_train, X_test)
         results, returned_models = self.train_classifier(transformed_x, test_x)
-        sorted_results, sorted_models = self.rank_results(results, returned_models)
+        sorted_results, sorted_models = self.rank_results(results, returned_models, self._calculate_score_dataframe)
         top_params = self._get_params(sorted_models)
         if plot:
             self.analyse_best_models(self.classifier, sorted_models, [x for x in self.classification_plots if x in plot])
@@ -326,7 +335,7 @@ class Classifier(Trainer):
         for ind, (train_index, test_index) in enumerate(skf.split(feature, feature[self.label])):
             transformed_x, test_x = self._scale(feature, train_index, test_index, strategy="kfold", split_index=ind)
             results, returned_models = self.train_classifier(transformed_x, test_x)
-            sorted_results, sorted_models = self.rank_results(results, returned_models)
+            sorted_results, sorted_models = self.rank_results(results, returned_models, self._calculate_score_dataframe)
             if plot:
                 self.analyse_best_models(self.classifier, sorted_models, [x for x in self.classification_plots if x in plot], split_ind=ind)
             res[f"split_{ind}"] = sorted_results
@@ -457,7 +466,7 @@ class Regressor(Trainer):
 
 def main():
     label, training_output, hyperparameter_tuning, num_thread, scaler, excel, kfold, outliers, \
-        precision_weight, recall_weight, class0_weight, report_weight, difference_weight, small = arg_parse()
+        precision_weight, recall_weight, report_weight, difference_weight, small = arg_parse()
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     max_evals, trial_time = int(hyperparameter_tuning.split(":")[0]), hyperparameter_tuning.split(":")[1]
     if trial_time.isdigit():
@@ -467,9 +476,10 @@ def main():
     if len(outliers) > 0 and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = [x.strip() for x in out.readlines()]
+    ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight, report_weight=report_weight, 
+                            difference_weight=difference_weight)
     training = Classifier(excel, label, training_output, num_split, test_size, outliers, scaler, max_evals,
-                          trial_time, num_thread, precision_weight, recall_weight, report_weight, difference_weight,
-                          class0_weight, small)
+                          trial_time, num_thread, ranking_dict, small)
     training.run()
 
 
