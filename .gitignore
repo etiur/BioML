@@ -1,5 +1,6 @@
 tests/*.log
-tests/*.ipynb/*
+tests/*.ipynb*
+
 tests/mlruns/*
 tests/catboost_info
 .vscode
