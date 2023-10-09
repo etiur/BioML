@@ -62,17 +62,9 @@ def arg_parse():
 
 class Trainer:
     def __init__(self, features, label, training_output="training_results", num_splits=5, test_size=0.2,
-                 outliers=(), scaler="robust", trial_time=None, num_threads=10, ranking_params=None, small=True,
+                 outliers=(), scaler="robust", trial_time=None, num_threads=10, small=True,
                  best_model=3, seed=None, verbose=False):
         
-        ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
-                            difference_weight=1.2)
-        if isinstance(ranking_params, dict):
-            for key, value in ranking_params.items():
-                if key not in ranking_dict:
-                    raise KeyError(f"The key {key} is not found in the ranking params use theses keys: presition_weight, recall_weight, report_weight difference_weight")
-                ranking_dict[key] = value
-
         self.log = Log("model_training")
         self.log.info("Reading the features")
         self.outliers = outliers
@@ -93,10 +85,6 @@ class Trainer:
         #self.num_threads = num_threads
         self.output_path = Path(training_output)  # for the model results
         self.output_path.mkdir(parents=True, exist_ok=True)
-        self.pre_weight = ranking_dict["precision_weight"]
-        self.rec_weight = ranking_dict["recall_weight"]
-        self.report_weight = ranking_dict["report_weight"]
-        self.difference_weight = ranking_dict["difference_weight"]
         self.small = small
         self.best_model = best_model
         if seed:
@@ -259,12 +247,24 @@ class Classifier(Trainer):
                  outliers=(), scaler="robust", trial_time=30, num_threads=10, ranking_params=None, small=True, 
                  best_model=3, seed=None, drop=("ada", "gpc", "lightgbm"), verbose=False):
         super().__init__(feature_path, label, training_output, num_splits, test_size,
-                         outliers, scaler, trial_time, num_threads, ranking_params, small, best_model, 
-                         seed, verbose)
+                         outliers, scaler, trial_time, num_threads, small, best_model, seed, verbose)
+        
+        ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
+                            difference_weight=1.2)
+        if isinstance(ranking_params, dict):
+            for key, value in ranking_params.items():
+                if key not in ranking_dict:
+                    raise KeyError(f"The key {key} is not found in the ranking params use theses keys: {', '.join(ranking_dict.keys())}")
+                ranking_dict[key] = value
+
         self.classifier = ClassificationExperiment()
         self.mod = self.classifier.models()
         self._final_models = self.mod.drop(list(drop)).index.to_list()
         self.classification_plots = ["confusion_matrix", "learning", "class_report", "auc", "pr"]
+        self.pre_weight = ranking_dict["precision_weight"]
+        self.rec_weight = ranking_dict["recall_weight"]
+        self.report_weight = ranking_dict["report_weight"]
+        self.difference_weight = ranking_dict["difference_weight"]
 
     @property
     def final_models(self):
@@ -405,16 +405,25 @@ class Classifier(Trainer):
 
 class Regressor(Trainer):
     def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
-                 outliers=(), scaler="robust", trial_time=30, num_threads=10, ranking_params=None, small=True, 
+                 outliers=(), scaler="robust", trial_time=None, num_threads=10, ranking_params=None, small=True, 
                  best_model=3, seed=None, drop=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), verbose=False):
 
         super().__init__(feature_path, label, training_output, num_splits, test_size,
-                         outliers, scaler, trial_time, num_threads, ranking_params, small, best_model, 
+                         outliers, scaler, trial_time, num_threads, small, best_model, 
                          seed, verbose)
+        
+        ranking_dict = dict(R2_weight=0.8, difference_weight=1.2)
+        if isinstance(ranking_params, dict):
+            for key, value in ranking_params.items():
+                if key not in ranking_dict:
+                    raise KeyError(f"The key {key} is not found in the ranking params use theses keys: {', '.join(ranking_dict.keys())}")
+                ranking_dict[key] = value
         self.regression = RegressionExperiment()
         self.mod = self.regression.models()
         self._final_models = self.mod.drop(list(drop)).index.to_list()
         self.regression_plots = ["residuals", "error", "learning"]
+        self.difference_weight = ranking_dict["difference_weight"]
+        self.R2_weight = ranking_dict["R2_weight"]
 
     @property
     def final_models(self):
@@ -437,6 +446,19 @@ class Regressor(Trainer):
             raise TypeError("the models should be a list or a string")
         
         self._final_models = value
+
+    def _calculate_score_dataframe(self, dataframe):
+        cv_train = dataframe.loc[("CV-Train", "Mean")]
+        cv_val = dataframe.loc[("CV-Val", "Mean")]
+
+        rmse = ((cv_train["RMSE"] + cv_val["RMSE"])
+                - self.difference_weight * abs(cv_val["RMSE"] - cv_val["RMSE"] ))
+        
+        r2 = ((cv_train["R2"] + cv_val["R2"])
+                - self.difference_weight * abs(cv_val["R2"] - cv_train["R2"]))
+        
+        
+        return rmse + (self.R2_weight * r2)
 
     def train_regressor(self, X_train, X_test):
 
@@ -478,7 +500,7 @@ class Regressor(Trainer):
         X_train, X_test = train_test_split(feature, test_size=self.test_size, random_state=self.seed, stratify=feature[self.label])
         transformed_x, test_x = self._scale(X_train, X_test)
         results, returned_models = self.train_regressor(transformed_x, test_x)
-        sorted_results, sorted_models = self.rank_results(results, returned_models)
+        sorted_results, sorted_models = self.rank_results(results, returned_models, self._calculate_score_dataframe)
         top_params = self._get_params(sorted_models)
         if plot:
             self.analyse_best_models(self.regression, sorted_models, [x for x in self.regression_plots if x in plot])
@@ -511,7 +533,7 @@ class Regressor(Trainer):
         for ind, (train_index, test_index) in enumerate(skf.split(feature, feature[self.label])):
             transformed_x, test_x = self._scale(feature, train_index, test_index, strategy="kfold", split_index=ind)
             results, returned_models = self.train_regressor(transformed_x, test_x)
-            sorted_results, sorted_models = self.rank_results(results, returned_models)
+            sorted_results, sorted_models = self.rank_results(results, returned_models, self._calculate_score_dataframe)
             if plot:
                 self.analyse_best_models(self.regression, sorted_models, [x for x in self.regression_plots if x in plot], split_ind=ind)
             res[f"split_{ind}"] = sorted_results
@@ -533,6 +555,7 @@ class Regressor(Trainer):
                 raise ValueError("strategy should be either holdout or kfold")
         
         return sorted_results, sorted_models, top_params
+
 
 def main():
     label, training_output, hyperparameter_tuning, num_thread, scaler, excel, kfold, outliers, \
