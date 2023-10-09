@@ -243,8 +243,24 @@ class Classifier(Trainer):
                          seed, verbose)
         self.classifier = ClassificationExperiment()
         self.mod = self.classifier.models()
-        self.interested = self.mod.drop(list(drop)).index.to_list()
+        self._final_models = self.mod.drop(list(drop)).index.to_list()
         self.classification_plots = ["confusion_matrix", "learning", "class_report", "auc", "pr"]
+
+    @property
+    def final_models(self):
+        return self._final_models
+    
+    @final_models.setter
+    def final_models(self, value):
+        if isinstance(value, list):
+            value = set(value).intersection(self.mod.index.to_list())
+            if not value:
+                raise ValueError(f"the models should be one of the following: {self.mod.index.to_list()}")
+        elif isinstance(value, str):
+            if value not in self.mod.index.to_list():
+                raise ValueError(f"the models should be one of the following: {self.mod.index.to_list()}")
+            value = [value]
+        self._final_models = value
 
     def train_classifier(self, X_train, X_test):
 
@@ -253,7 +269,7 @@ class Classifier(Trainer):
         # To access the transformed data
         self.classifier.add_metric("averagePre", "Average Precision Score", average_precision_score, average="weighted", target="pred_proba", multiclass=False)
 
-        results, returned_models = self.train(self.classifier, self.interested)
+        results, returned_models = self.train(self.classifier, self.final_models)
         
         return results, returned_models
     
@@ -369,8 +385,24 @@ class Regressor(Trainer):
                          seed, verbose)
         self.regression = RegressionExperiment()
         self.mod = self.regression.models()
-        self.interested = self.mod.drop(list(drop)).index.to_list()
+        self._final_models = self.mod.drop(list(drop)).index.to_list()
         self.regression_plots = ["residuals", "error", "learning"]
+
+    @property
+    def final_models(self):
+        return self._final_models
+    
+    @final_models.setter
+    def final_models(self, value):
+        if isinstance(value, list):
+            value = set(value).intersection(self.mod.index.to_list())
+            if not value:
+                raise ValueError(f"the models should be one of the following: {self.mod.index.to_list()}")
+        elif isinstance(value, str):
+            if value not in self.mod.index.to_list():
+                raise ValueError(f"the models should be one of the following: {self.mod.index.to_list()}")
+            value = [value]
+        self._final_models = value
 
     def train_regressor(self, X_train, X_test):
 
@@ -378,7 +410,7 @@ class Regressor(Trainer):
                               session_id = self.seed, fold_shuffle=True, fold=10, test_data=X_test)
         # To access the transformed data
 
-        results, returned_models = self.train(self.regression, self.interested)
+        results, returned_models = self.train(self.regression, self.final_models)
         
         return results, returned_models
     
