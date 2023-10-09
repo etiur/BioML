@@ -62,7 +62,7 @@ def arg_parse():
 
 class Trainer:
     def __init__(self, features, label, training_output="training_results", num_splits=5, test_size=0.2,
-                 outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, ranking_params=None, small=True,
+                 outliers=(), scaler="robust", trial_time=None, num_threads=10, ranking_params=None, small=True,
                  best_model=3, seed=None, verbose=False):
         
         ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
@@ -81,9 +81,16 @@ class Trainer:
         self.with_split = False
         self.features, self.label = self._fix_features_labels(features, label)
         self.scaler = scaler
-        self.max_evals = max_evals
-        self.trial_time_out = trial_time
-        self.num_threads = num_threads
+
+        if isinstance(trial_time, (int, float)):
+            if trial_time > 0:
+                self.budget_time = trial_time
+            else:
+                raise ValueError("The budget time should be greater than 0")
+        elif trial_time is None:
+            self.budget_time = trial_time
+
+        #self.num_threads = num_threads
         self.output_path = Path(training_output)  # for the model results
         self.output_path.mkdir(parents=True, exist_ok=True)
         self.pre_weight = ranking_dict["precision_weight"]
@@ -102,12 +109,17 @@ class Trainer:
         self.log.info(f"Seed: {self.seed}")
         self.log.info(f"Number of kfolds: {self.num_splits}")
         self.log.info(f"The output path: {self.output_path}")
-        self.log.info(f"Num cpus: {self.num_threads}")
+        #self.log.info(f"Num cpus: {self.num_threads}")
         self.verbose=verbose
 
     def train(self, experiment, selected_models):
         results = {}
         returned_models = {}
+        np.random.seed(self.seed)
+        np.random.shuffle(selected_models)
+        if self.budget_time:
+            self.log.info(f"Time budget is {self.budget_time} minutes")
+        runtime_start = time.time()
         for m in selected_models:
             model = experiment.create_model(m, return_train_score=True, verbose=False)
             model_results = experiment.pull(pop=True)
@@ -115,7 +127,17 @@ class Trainer:
                 model_results = model_results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
             returned_models[m] = model
             results[m] = model_results
-        
+            runtime_train = time.time()
+            total_runtime = (runtime_train - runtime_start) / 60
+            
+            if self.budget_time and total_runtime > self.budget_time:
+                self.log.info(
+                    f"Total runtime {total_runtime} is over time budget by {total_runtime - self.budget_time}, breaking loop"
+                )
+                break
+           
+        self.log.info(f"Traininf over: Total runtime {total_runtime}")
+
         return results, returned_models
 
     def _fix_features_labels(self, features, label):
@@ -234,12 +256,10 @@ class Trainer:
 
 class Classifier(Trainer):
     def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
-                 outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, ranking_params=None, small=True, 
+                 outliers=(), scaler="robust", trial_time=30, num_threads=10, ranking_params=None, small=True, 
                  best_model=3, seed=None, drop=("ada", "gpc", "lightgbm"), verbose=False):
-        """dict(precision_weight=1,
-                 recall_weight=1, report_weight=0.4, difference_weight=1.1, class0_weight=0.5)"""
         super().__init__(feature_path, label, training_output, num_splits, test_size,
-                         outliers, scaler, max_evals, trial_time, num_threads, ranking_params, small, best_model, 
+                         outliers, scaler, trial_time, num_threads, ranking_params, small, best_model, 
                          seed, verbose)
         self.classifier = ClassificationExperiment()
         self.mod = self.classifier.models()
@@ -248,11 +268,14 @@ class Classifier(Trainer):
 
     @property
     def final_models(self):
+        """
+        The models to be used for classification
+        """
         return self._final_models
     
     @final_models.setter
     def final_models(self, value):
-        if isinstance(value, list):
+        if isinstance(value, (list, np.ndarray, tuple, set)):
             value = set(value).intersection(self.mod.index.to_list())
             if not value:
                 raise ValueError(f"the models should be one of the following: {self.mod.index.to_list()}")
@@ -260,10 +283,15 @@ class Classifier(Trainer):
             if value not in self.mod.index.to_list():
                 raise ValueError(f"the models should be one of the following: {self.mod.index.to_list()}")
             value = [value]
+        else:
+            raise TypeError("the models should be a list or a string")
+        
         self._final_models = value
 
     def train_classifier(self, X_train, X_test):
-
+        self.log.info("--------------------------------------------------------")
+        self.log.info("Training the models")
+        self.log.info(f"The models used {self.final_models}")
         self.classifier.setup(data=X_train, target=self.label, normalize=False, preprocess=False, log_experiment=False, experiment_name="Classification", 
                               session_id = self.seed, fold_shuffle=True, fold=10, test_data=X_test)
         # To access the transformed data
@@ -377,11 +405,11 @@ class Classifier(Trainer):
 
 class Regressor(Trainer):
     def __init__(self, feature_path, label, training_output="training_results", num_splits=5, test_size=0.2,
-                 outliers=(), scaler="robust", max_evals=45, trial_time=30, num_threads=10, ranking_params=None, small=True, 
+                 outliers=(), scaler="robust", trial_time=30, num_threads=10, ranking_params=None, small=True, 
                  best_model=3, seed=None, drop=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), verbose=False):
 
         super().__init__(feature_path, label, training_output, num_splits, test_size,
-                         outliers, scaler, max_evals, trial_time, num_threads, ranking_params, small, best_model, 
+                         outliers, scaler, trial_time, num_threads, ranking_params, small, best_model, 
                          seed, verbose)
         self.regression = RegressionExperiment()
         self.mod = self.regression.models()
@@ -390,11 +418,14 @@ class Regressor(Trainer):
 
     @property
     def final_models(self):
+        """
+        The models to be used for regression
+        """
         return self._final_models
     
     @final_models.setter
     def final_models(self, value):
-        if isinstance(value, list):
+        if isinstance(value, (list, np.ndarray, tuple, set)):
             value = set(value).intersection(self.mod.index.to_list())
             if not value:
                 raise ValueError(f"the models should be one of the following: {self.mod.index.to_list()}")
@@ -402,9 +433,16 @@ class Regressor(Trainer):
             if value not in self.mod.index.to_list():
                 raise ValueError(f"the models should be one of the following: {self.mod.index.to_list()}")
             value = [value]
+        else:
+            raise TypeError("the models should be a list or a string")
+        
         self._final_models = value
 
     def train_regressor(self, X_train, X_test):
+
+        self.log.info("--------------------------------------------------------")
+        self.log.info("Training the models")
+        self.log.info(f"The models used {self.final_models}")
 
         self.regression.setup(data=X_train, target=self.label, normalize=False, preprocess=False, log_experiment=False, experiment_name="Regression", 
                               session_id = self.seed, fold_shuffle=True, fold=10, test_data=X_test)
