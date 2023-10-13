@@ -122,11 +122,11 @@ class ExtractPssm:
                        out_ascii_pssm=f"{abspath(self.pssm)}/{name}.pssm", save_pssm_after_last_round=True, query=file,
                        num_threads=self.num_thread)
 
-        start = time.time()
+        start = time.perf_counter()
         psi()
-        end = time.time()
+        end = time.perf_counter()
         self._check_output(f"{abspath(self.pssm)}/{name}.pssm")
-        return f"it took {end - start} to finish {name}.pssm"
+        return f"it took {round((end - start)/60, 4)} min to finish {name}.pssm"
 
     def run_generate(self, num):
         """

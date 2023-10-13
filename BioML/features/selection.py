@@ -24,6 +24,7 @@ from sklearn.ensemble import RandomForestRegressor as rfr
 from sklearn.model_selection import train_test_split
 from sklearn.feature_selection import VarianceThreshold, RFE
 from sklearn.feature_selection import SelectKBest, f_regression, mutual_info_regression
+from typing import Iterable
 
 def arg_parse():
     parser = argparse.ArgumentParser(description="Preprocess and Select the best features, only use it if the feature came from possum or ifeatures")
@@ -72,29 +73,6 @@ def arg_parse():
 
 
 class FeatureSelection:
-    """
-    Class for selecting features from a dataset using different filter methods.
-    
-    This class provides methods for preprocessing features, running various 
-    filter-based feature selection techniques in parallel, and constructing 
-    feature sets of different sizes by selecting top features from the filters.
-    
-    The main methods are:
-    
-    - preprocess: Remove low variance features.
-    
-    - parallel_filter: Run filters in parallel to score features.
-    
-    - feature_set_kfold: Construct feature sets over KFold CV splits.
-    
-    - feature_set_holdout: Construct feature sets on a holdout split.
-    
-    The filter methods include univariate, multivariate, unsupervised filters 
-    as well as tree-based models for scoring feature importance.
-    
-    The class handles scaling features, splitting data for CV, plotting feature 
-    importance and saving results to Excel.
-    """
     """
     Class for selecting features from a dataset using different filter methods.
     
@@ -153,32 +131,38 @@ class FeatureSelection:
     feature_set_holdout: HoldOut feature selection.
     
     """
-    def __init__(self, label, excel_file, features="training_features/every_features.csv", variance_thres=0,
-                 num_thread=10, scaler="robust", num_split=5, test_size=0.2, num_filters=10, seed=None):
+    def __init__(self, label: pd.Series | str | Iterable[int|float], excel_file: str | Path,
+                 features: pd.DataFrame | str | list | np.ndarray ="training_features/every_features.csv", variance_thres: int | None =0,
+                 num_thread: int =10, scaler: str="robust", num_split: int=5, test_size: float=0.2, 
+                 num_filters: int=10, seed: int | None=None):
         """
-        _summary_
+        Initialize a new instance of the FeatureSelection class.
 
         Parameters
         ----------
-        label : str or pd.Series
-            Path to the label or the name of the column with the label if included in feature file
-        excel_file : str
-            excel file where the selected features will be saved
-        features : str, optional
-            The features extracted for the training, by default "training_features/every_features.csv"
+        label : pd.Series or str or Iterable[int or float]
+            The label data for the model.
+        excel_file : str or Path
+            The path to the Excel file to save the selected features.
+        features : pd.DataFrame or str or Iterable[list or np.ndarray]
+            The input data for the model. Defaults to "training_features/every_features.csv".
         variance_thres : int, optional
-            The maximum number of repeated values for a column, if > the column will be eliminated, by default 7
+            The variance threshold for feature selection. Defaults to 0.
         num_thread : int, optional
-            Cpus for the parallelization of the selection, by default 10
+            The number of threads to use for feature selection. Defaults to 10.
         scaler : str, optional
-            The name for the scaler. robust for RobustScaler, minmax for MinMaxScaler and zscore for StadardScaler, by default "robust"
+            The type of scaler to use for feature scaling. Defaults to "robust".
         num_split : int, optional
-            Number of kfold splits, by default 5
+            The number of splits to use for cross-validation. Defaults to 5.
         test_size : float, optional
-            The size of the test set, by default 0.2
+            The proportion of data to use for testing. Defaults to 0.2.
         num_filters : int, optional
-            The number of feature selection algorithms to use, by default 10
+            The number of filter algorithms to use for feature selection. Defaults to 10.
+        seed : int or None, optional
+            The random seed to use for reproducibility. Defaults to None.
         """
+        # method body
+        
         self.log = Log("feature_selection")
         self.log.info("Reading the features")
         self.features, self.label = self._fix_features_labels(features, label)
@@ -207,7 +191,24 @@ class FeatureSelection:
         self.log.info(f"Variance Threshold: {self.variance_thres}")
         self.log.info(f"Kfold parameters: {self.num_splits}:{self.test_size}")
 
-    def _check_label(self, label_path):
+    def _check_label(self, label_path: str | Path) -> None:
+        """
+        Check that the label data matches the feature data and save it to a file if necessary.
+
+        Parameters
+        ----------
+        label_path : str or Path
+            The path to the label data file.
+
+        Raises
+        ------
+        KeyError
+            If the feature dataframe and labels have different index names.
+
+        Returns
+        -------
+        None
+        """
         if len(self.label) != len(self.features):
             try:
                 self.label = self.label.loc[self.features.index]
@@ -218,8 +219,28 @@ class FeatureSelection:
                 self.log.error(f"feature dataframe and labels have different index names: {e}")
                 raise KeyError(f"feature dataframe and labels have different index names: {e}")
     
-    def _fix_features_labels(self, features, labels):
-        
+    def _fix_features_labels(self, features: str | pd.DataFrame | list | np.ndarray, 
+                             labels: str | pd.Series | Iterable) -> tuple[pd.DataFrame, pd.Series]:
+        """
+        Fix the feature and label data to ensure they are in the correct format.
+
+        Parameters
+        ----------
+        features : str or pd.DataFrame or list or np.ndarray
+            The feature data for the model.
+        labels : pd.Series or str or list or set or np.ndarray
+            The label data for the model.
+
+        Raises
+        ------
+        TypeError
+            If the features or labels are not in a valid format.
+
+        Returns
+        -------
+        pd.DataFrame, pd.Series
+            The fixed feature and label data.
+        """
         if isinstance(features, str) and features.endswith(".csv"):
             features = pd.read_csv(f"{features}", index_col=0) # the first column shoudl contain the sample names
         elif isinstance(features, pd.DataFrame):
@@ -248,9 +269,9 @@ class FeatureSelection:
 
         return features, label
 
-    def preprocess(self):
+    def preprocess(self) -> pd.DataFrame:
         """
-        Eliminate low variance features
+        Eliminate low variance features using the VarianceThreshold from sklearn
         """
         if self.variance_thres is not None:
             variance = VarianceThreshold(self.variance_thres)
@@ -261,8 +282,29 @@ class FeatureSelection:
         return self.features
 
     @staticmethod
-    def univariate(X_train, Y_train, num_features, feature_names, filter_name):
-        """Features are considered one at the time and we are using statistical filters"""
+    def univariate(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, 
+                   num_features: int, feature_names: Iterable[str], filter_name: str) -> pd.Series:
+        """
+        Perform univariate feature selection.
+
+        Parameters
+        ----------
+        X_train : pd.DataFrame or np.ndarray
+            The training feature data.
+        Y_train : pd.Series or np.ndarray
+            The training label data.
+        num_features : int
+            The number of features or columns to select.
+        feature_names : Iterable[str]
+            The names of the features or columns.
+        filter_name : str
+            The name of the statistical filter to use.
+
+        Returns
+        -------
+        pd.Series
+            A series containing the feature scores, sorted in descending order.
+        """
         ufilter = UnivariateFilter(filter_name, select_k_best(num_features))
         ufilter.fit(X_train, Y_train)
         scores = {x: v for x, v in zip(feature_names, ufilter.feature_scores_)}
@@ -277,7 +319,29 @@ class FeatureSelection:
         return scores
 
     @staticmethod
-    def multivariate(X_train, Y_train, num_features, feature_names, filter_name):
+    def multivariate(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, 
+                     num_features: int, feature_names: Iterable[str], filter_name: str) -> pd.Series:
+        """
+        Perform multivariate feature selection.
+
+        Parameters
+        ----------
+        X_train : pd.DataFrame or np.ndarray
+            The training feature data.
+        Y_train : pd.Series or np.ndarray
+            The training label data.
+        num_features : int
+            The number of features to select.
+        feature_names : list or np.ndarray
+            The names of the features.
+        filter_name : str
+            The name of the statistical filter to use.
+
+        Returns
+        -------
+        pd.Series
+            A series containing the feature scores, sorted in descending order.
+        """
         if filter_name == "STIR":
             ufilter = STIR(num_features, k=5).fit(X_train, Y_train)
             scores = {x: v for x, v in zip(feature_names, ufilter.feature_scores_)}
@@ -288,7 +352,27 @@ class FeatureSelection:
         return scores
 
     @staticmethod
-    def unsupervised(X_train, num_features, feature_names, filter_name):
+    def unsupervised(X_train: pd.DataFrame | np.ndarray, num_features: int, 
+                     feature_names: Iterable[str], filter_name: str) -> pd.Series:
+        """
+        Perform unsupervised feature selection using a statistical filter.
+
+        Parameters
+        ----------
+        X_train : pd.DataFrame or np.ndarray
+            The training feature data.
+        num_features : int
+            The number of features to select.
+        feature_names : list or np.ndarray
+            The names of the features.
+        filter_name : str
+            The name of the statistical filter to use.
+
+        Returns
+        -------
+        pd.Series
+            A series containing the feature scores, sorted in descending order.
+        """
         if "Trace" in filter_name:
             ufilter = TraceRatioLaplacian(num_features).fit(X_train)
             scores = {x: v for x, v in zip(feature_names, ufilter.score_)}
@@ -297,22 +381,61 @@ class FeatureSelection:
 
         return scores
 
-    def _get_num_feature_range(self, num_features_min=None, num_features_max=None, step_range=None):
-            if not num_features_min:
-                num_features_min = len(self.features.columns) // 10
-                if not num_features_max:
-                    num_features_max = len(self.features.columns) // 2 + 1
-                if not step_range:
-                    step_range = (num_features_max - num_features_min) // 4
-                num_feature_range = list(range(num_features_min, num_features_max, step_range))
-            elif num_features_min and step_range and num_features_max:
-                num_feature_range = list(range(num_features_min, num_features_max, step_range))
-            else:
-                num_feature_range = [num_features_min]
-        
-            return num_feature_range
+    def _get_num_feature_range(self, num_features_min: int | None=None, 
+                               num_features_max: int | None=None, step_range: int | None=None) -> list:
+        """
+        Get a range of numbers for the number of features to select.
+
+        Parameters
+        ----------
+        num_features_min : int, optional
+            The minimum number of features to select. If not provided, defaults to 1/10 of the total number of features.
+        num_features_max : int, optional
+            The maximum number of features to select. If not provided, defaults to 1/2 of the total number of features + 1.
+        step_range : int, optional
+            The step size for the range of numbers. If not provided, defaults to 1/4 of the difference between the minimum
+            and maximum number of features.
+
+        Returns
+        -------
+        list
+            A list of integers representing the range of numbers for the number of features to select.
+        """
+        if not num_features_min:
+            num_features_min = len(self.features.columns) // 10
+            if not num_features_max:
+                num_features_max = len(self.features.columns) // 2 + 1
+            if not step_range:
+                step_range = (num_features_max - num_features_min) // 4
+            num_feature_range = list(range(num_features_min, num_features_max, step_range))
+        elif num_features_min and step_range and num_features_max:
+            num_feature_range = list(range(num_features_min, num_features_max, step_range))
+        else:
+            num_feature_range = [num_features_min]
     
-    def random_forest(self, X_train, Y_train, feature_names, problem="classification"):
+        return num_feature_range
+    
+    def random_forest(self, X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray,
+                      feature_names: Iterable[str], problem: str="classification") -> pd.Series:
+        """
+        Perform feature selection using a random forest model.
+
+        Parameters
+        ----------
+        X_train : pd.DataFrame or np.ndarray
+            The training feature data.
+        Y_train : pd.Series or np.ndarray
+            The training label data.
+        feature_names : list or np.ndarray
+            The names of the features.
+        problem : str, optional
+            The type of problem to solve. Defaults to "classification".
+
+        Returns
+        -------
+        pd.Series
+            A series containing the feature importances, sorted in descending order.
+        """
         if problem == "classification":
             forest_model = rfc(class_weight="balanced_subsample", random_state=self.seed, max_features=0.7, max_samples=0.8,
                          min_samples_split=6, n_estimators=200, n_jobs=self.num_thread,
@@ -327,9 +450,34 @@ class FeatureSelection:
 
         return gini_importance
 
-    def xgbtree(self, X_train, Y_train, feature_names, split_ind, plot=True, plot_num_features=20,
-                problem="classification"):
-        """computes the feature importance"""
+    def xgbtree(self, X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, 
+                feature_names: Iterable[str], split_ind: int, plot: bool=True, plot_num_features: int=20,
+                problem: str="classification") -> pd.Series:
+        """
+        Perform feature selection using a xgboost model.
+
+        Parameters
+        ----------
+        X_train : pd.DataFrame or np.ndarray
+            The training feature data.
+        Y_train : pd.Series or np.ndarray
+            The training label data.
+        feature_names : list or np.ndarray
+            The names of the features.
+        split_ind : int
+            The index of the current split.
+        plot : bool, optional
+            Whether to plot the feature importances. Defaults to True.
+        plot_num_features : int, optional
+            The number of features to include in the plot. Defaults to 20.
+        problem : str, optional
+            The type of problem to solve. Defaults to "classification".
+
+        Returns
+        -------
+        pd.Series
+            A series containing the feature importances, sorted in descending order.
+        """
         if problem == "classification":
             XGBOOST = xgb.XGBClassifier(learning_rate=0.01, n_estimators=200, max_depth=4, gamma=0,
                                     subsample=0.8, colsample_bytree=0.8, objective='binary:logistic',
@@ -360,8 +508,31 @@ class FeatureSelection:
             plt.savefig(shap_dir / f"feature_influence_on_model_prediction_kfold{split_ind}.png", dpi=800)
         return shap_importance
 
-    def rfe_linear(self, X_train, Y_train, num_features, feature_names, step=30, 
-                   problem="classification"):
+    def rfe_linear(self, X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, num_features: int, 
+                   feature_names: Iterable[str], step: int=30, problem: str="classification") -> list[str]:
+        """
+        Perform feature selection using recursive feature elimination with a linear model.
+
+        Parameters
+        ----------
+        X_train : pd.DataFrame or np.ndarray
+            The training feature data.
+        Y_train : pd.Series or np.ndarray
+            The training label data.
+        num_features : int
+            The number of features to select.
+        feature_names : list or np.ndarray
+            The names of the features.
+        step : int, optional
+            The number of features to remove at each iteration. Defaults to 30.
+        problem : str, optional
+            The type of problem to solve. Defaults to "classification".
+
+        Returns
+        -------
+        list
+            A list of the selected feature names.
+        """
         if problem == "classification":
             linear_model = RidgeClassifier(random_state=self.seed, alpha=4)  
         else:
@@ -372,7 +543,29 @@ class FeatureSelection:
         return features
     
     @staticmethod
-    def regression_filters(X_train, Y_train, feature_nums, feature_names, reg_func):
+    def regression_filters(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, feature_nums: int, 
+                       feature_names: Iterable[str], reg_func: str) -> pd.Series:
+        """
+        Perform feature selection using regression filters.
+
+        Parameters
+        ----------
+        X_train : pd.DataFrame or np.ndarray
+            The training feature data.
+        Y_train : pd.Series or np.ndarray
+            The training label data.
+        feature_nums : int
+            The number of features to select.
+        feature_names : list or np.ndarray
+            The names of the features.
+        reg_func : str
+            The name of the regression filter to use. Available options are "mutual_info" and "Fscore".
+
+        Returns
+        -------
+        pd.Series
+            A series containing the feature scores, sorted in descending order.
+        """
         reg_filters = {"mutual_info": mutual_info_regression, "Fscore":f_regression}
         sel = SelectKBest(reg_filters[reg_func], k=feature_nums)
         sel.fit(X_train, Y_train)
@@ -381,11 +574,39 @@ class FeatureSelection:
         scores = pd.Series(dict(sorted(scores.items(), key=lambda items: items[1], reverse=True)))
         return scores
     
-    def parallel_filter(self, X_train, Y_train, num_features, feature_names, split_ind,
-                        plot=True, plot_num_features=20, problem="classification",
-                        filter_args={"filter_names":(), "multivariate":(), "filter_unsupervised":(), 
-                        "regression_filters":()}):
-        
+    def parallel_filter(self, X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, num_features: int, 
+                        feature_names: Iterable[str], split_ind: int, plot: bool=True, plot_num_features: int=20, 
+                        problem: str="classification", filter_args: dict={"filter_names":(), "multivariate":(), 
+                        "filter_unsupervised":(), "regression_filters":()}) -> pd.Series:
+        """
+        Perform feature selection using parallelized filters.
+
+        Parameters
+        ----------
+        X_train : pd.DataFrame or np.ndarray
+            The training feature data.
+        Y_train : pd.Series or np.ndarray
+            The training label data.
+        num_features : int
+            The number of features to select.
+        feature_names : list or np.ndarray
+            The names of the features.
+        split_ind : int
+            The index of the current split.
+        plot : bool, optional
+            Whether to plot the feature importances. Defaults to True.
+        plot_num_features : int, optional
+            The number of features to include in the plot. Defaults to 20.
+        problem : str, optional
+            The type of problem to solve. Defaults to "classification".
+        filter_args : dict, optional
+            A dictionary containing the arguments for each filter. Defaults to an empty dictionary.
+
+        Returns
+        -------
+        pd.Series
+            A series containing the feature scores, sorted in descending order.
+        """
         results = {}
         filter_names, multivariate = filter_args["filter_names"], filter_args["multivariate"]
         filter_unsupervised, regression_filters = filter_args["filter_unsupervised"], filter_args["regression_filters"]
@@ -417,27 +638,94 @@ class FeatureSelection:
 
         return pd.concat(results)
     
-    def _construct_features(self, univariate_features, features, feature_dict, num_feature_range, transformed, Y_train, i, 
-                           rfe_step=30, problem="classification"):
+    def _construct_features(self, univariate_features: pd.DataFrame, features: pd.DataFrame, feature_dict: dict, 
+                        num_feature_range: Iterable[int], transformed: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, 
+                        split_ind: int, rfe_step: int=30, problem: str="classification") -> None:
+        """
+        Construct a dictionary of feature sets using univariate filters and recursive feature elimination.
+
+        Parameters
+        ----------
+        univariate_features : pd.DataFrame
+            A dataframe containing the univariate filter scores for each feature.
+        features : pd.DataFrame
+            The original feature data.
+        feature_dict : dict
+            A dictionary to store the constructed feature sets.
+        num_feature_range : list or np.ndarray
+            A range of the number of features to include in each feature set.
+        transformed : pd.DataFrame
+            The transformed feature data.
+        Y_train : pd.Series or np.ndarray
+            The training label data.
+        split_ind : int
+            The index of the current split.
+        rfe_step : int, optional
+            The number of features to remove at each iteration in recursive feature elimination. Defaults to 30.
+        problem : str, optional
+            The type of problem to solve. Defaults to "classification".
+
+        Returns
+        -------
+        None
+        """
 
         for num_features in num_feature_range:
             print(f"generating a feature set of {num_features} dimensions")
             for filters in univariate_features.index.unique(0):
                 feat = univariate_features.loc[filters]
-                feature_dict[f"{filters}_{num_features}"][f"split_{i}"] = features[feat.index[:num_features]]
+                feature_dict[f"{filters}_{num_features}"][f"split_{split_ind}"] = features[feat.index[:num_features]]
             rfe_results = self.rfe_linear(transformed, Y_train, num_features, features.columns, rfe_step, problem)
-            feature_dict[f"rfe_{num_features}"][f"split_{i}"] = features[rfe_results]
+            feature_dict[f"rfe_{num_features}"][f"split_{split_ind}"] = features[rfe_results]
 
-    def _write_dict(self, feature_dict):
+    def _write_dict(self, feature_dict: dict) -> None:
+        """
+        Write the constructed feature sets to an Excel file.
+
+        Parameters
+        ----------
+        feature_dict : dict
+            A dictionary containing the constructed feature sets.
+
+        Returns
+        -------
+        None
+        """
         # TODO: Maybe change it to list(value.values())[0] so It is not a multiindex column for holdout
         final_dict = {key: pd.concat(value, axis=1) for key, value in feature_dict.items()}
         with pd.ExcelWriter(self.excel_file, mode="w", engine="openpyxl") as writer:
             for key in final_dict.keys():
                 write_excel(writer, final_dict[key], key)
 
-    def feature_set_kfold(self, filter_args, num_features_min=None, num_features_max=None, 
-                        step_range=None, rfe_step=30, plot=True, plot_num_features=20, problem="classification"):
-        
+    def feature_set_kfold(self, filter_args: dict, num_features_min: int=None, num_features_max: int=None, 
+                      step_range: Iterable[int]=None, rfe_step: int=30, plot: bool=True, 
+                      plot_num_features: int=20, problem: str="classification") -> None:
+        """
+        Perform feature selection using k-fold cross-validation.
+
+        Parameters
+        ----------
+        filter_args : dict
+            A dictionary containing the arguments for each filter algorithm.
+        num_features_min : int, optional
+            The minimum number of features to include in each feature set. Defaults to None.
+        num_features_max : int, optional
+            The maximum number of features to include in each feature set. Defaults to None.
+        step_range : list or np.ndarray, optional
+            A range of the number of features to include in each feature set. Defaults to None.
+        rfe_step : int, optional
+            The number of features to remove at each iteration in recursive feature elimination. Defaults to 30.
+        plot : bool, optional
+            Whether to plot the feature importances. Defaults to True.
+        plot_num_features : int, optional
+            The number of features to include in the plot. Defaults to 20.
+        problem : str, optional
+            The type of problem to solve. Defaults to "classification".
+
+        Returns
+        -------
+        None
+        """
         feature_dict = defaultdict(dict)
         if problem == "classification":
             skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.seed)
@@ -462,9 +750,35 @@ class FeatureSelection:
 
         self._write_dict(feature_dict)
 
-    def feature_set_holdout(self, filter_args,  num_features_min=None, num_features_max=None, step_range=None,
-                            plot=True, plot_num_features=20, rfe_step=30, problem="classification"):
-        
+    def feature_set_holdout(self, filter_args: dict, num_features_min: int=None, num_features_max: int=None, 
+                            step_range: Iterable[int]=None, plot: bool=True, plot_num_features: int=20, rfe_step: int=30, 
+                            problem: str="classification") -> None:
+        """
+        Perform feature selection using a holdout set.
+
+        Parameters
+        ----------
+        filter_args : dict
+            A dictionary containing the arguments for each filter.
+        num_features_min : int, optional
+            The minimum number of features to include in each feature set. Defaults to None.
+        num_features_max : int, optional
+            The maximum number of features to include in each feature set. Defaults to None.
+        step_range : list or np.ndarray, optional
+            A range of the number of features to include in each feature set. Defaults to None.
+        plot : bool, optional
+            Whether to plot the feature importances. Defaults to True.
+        plot_num_features : int, optional
+            The number of features to include in the plot. Defaults to 20.
+        rfe_step : int, optional
+            The number of features to remove at each iteration in recursive feature elimination. Defaults to 30.
+        problem : str, optional
+            The type of problem to solve. Defaults to "classification".
+
+        Returns
+        -------
+        None
+        """
         feature_dict = defaultdict(dict)
         num_feature_range = self._get_num_feature_range(num_features_min, num_features_max, step_range)
         if problem == "classification":
@@ -487,19 +801,26 @@ class FeatureClassification(FeatureSelection):
     def __init__(self, label, excel_file, features="training_features/every_features.csv", variance_thres=0, num_thread=10, 
                  scaler="robust", num_split=5, test_size=0.2, num_filters=10, seed=None):
         super().__init__(label, excel_file, features, variance_thres, num_thread, scaler, num_split, test_size, num_filters, seed)
-        
+        """Subclass to perform feature selection on classification problems with a set of predefined filter methods"""
         random.seed(self.seed)
         filter_names = ("FRatio", "SymmetricUncertainty", "SpearmanCorr", "PearsonCorr", "Chi2", "Anova",
                         "LaplacianScore", "InformationGain", "KendallCorr", "FechnerCorr")
         filter_names = random.sample(filter_names, self.num_filters)
         multivariate = ("STIR", "TraceRatioFisher")
         filter_unsupervised = ("TraceRatioLaplacian",)
-        self.filter_args = {"filter_names": filter_names, "multivariate": multivariate, 
+        self._filter_args = {"filter_names": filter_names, "multivariate": multivariate, 
                             "filter_unsupervised": filter_unsupervised, "regression_filters":()}
 
         self.log.info("Classification Problem")
         self.log.info(f"Using {len(filter_names)+len(multivariate)+len(filter_unsupervised)} filters: {filter_names}, {filter_unsupervised} and {multivariate}")
 
+    @property
+    def filter_args(self):
+        return self._filter_args
+    
+    @filter_args.setter
+    def filter_args(self, value: tuple[str, Iterable[str]]):
+        self._filter_args[value[0]] = value[1]
 
     def construct_kfold_classification(self, num_features_min=None, num_features_max=None, step_range=None, rfe_step=30,
                                         plot=True, plot_num_features=20):
@@ -521,14 +842,24 @@ class FeatureRegression(FeatureSelection):
         super().__init__(label, excel_file, features, variance_thres, 
                          num_thread, scaler, num_split, test_size, 
                          num_filters, seed)
+        
+        """Subclass to perform feature selection on regression problems with a set of predefined filter methods"""
         random.seed(self.seed)
         filter_names = ("SpearmanCorr", "PearsonCorr", "KendallCorr", "FechnerCorr")
         filter_names = random.sample(filter_names, self.num_filters)
         regression_filters = ("mutual_info", "Fscore")
-        self.filter_args = {"filter_names": filter_names, "multivariate": (), 
+        self._filter_args = {"filter_names": filter_names, "multivariate": (), 
                             "filter_unsupervised": (), "regression_filters": regression_filters}
         self.log.info("Regression Problem")
         self.log.info(f"Using {len(filter_names) + len(regression_filters)} filters: {filter_names} and {regression_filters}")
+
+    @property
+    def filter_args(self):
+        return self._filter_args
+    
+    @filter_args.setter
+    def filter_args(self, value: tuple[str, Iterable[str]]):
+        self._filter_args[value[0]] = value[1]
 
     def construct_kfold_regression(self, num_features_min=None, num_features_max=None, step_range=None, rfe_step=30,
                                   plot=True, plot_num_features=20):
