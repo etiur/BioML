@@ -165,7 +165,7 @@ class FeatureSelection:
         
         self.log = Log("feature_selection")
         self.log.info("Reading the features")
-        self.features, self.label = self._fix_features_labels(features, label)
+        self.features, self.label = self._read_features_labels(features, label)
         analyse_composition(self.features)
         self.preprocess
         self._check_label("labels_corrected.csv") 
@@ -219,7 +219,7 @@ class FeatureSelection:
                 self.log.error(f"feature dataframe and labels have different index names: {e}")
                 raise KeyError(f"feature dataframe and labels have different index names: {e}")
     
-    def _fix_features_labels(self, features: str | pd.DataFrame | list | np.ndarray, 
+    def _read_features_labels(self, features: str | pd.DataFrame | list | np.ndarray, 
                              labels: str | pd.Series | Iterable) -> tuple[pd.DataFrame, pd.Series]:
         """
         Fix the feature and label data to ensure they are in the correct format.
@@ -820,7 +820,7 @@ class FeatureClassification(FeatureSelection):
     
     @filter_args.setter
     def filter_args(self, value: tuple[str, Iterable[str]]):
-        self._filter_args[value[0]] = value[1]
+        self._filter_args[value[0]] = tuple(value[1])
 
     def construct_kfold_classification(self, num_features_min=None, num_features_max=None, step_range=None, rfe_step=30,
                                         plot=True, plot_num_features=20):
@@ -859,7 +859,7 @@ class FeatureRegression(FeatureSelection):
     
     @filter_args.setter
     def filter_args(self, value: tuple[str, Iterable[str]]):
-        self._filter_args[value[0]] = value[1]
+        self._filter_args[value[0]] = tuple(value[1])
 
     def construct_kfold_regression(self, num_features_min=None, num_features_max=None, step_range=None, rfe_step=30,
                                   plot=True, plot_num_features=20):
