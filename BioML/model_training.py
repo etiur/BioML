@@ -1,3 +1,4 @@
+from typing import Iterable
 from sklearn.model_selection import StratifiedShuffleSplit, train_test_split, ShuffleSplit
 import pandas as pd
 from BioML.utilities import scale, write_excel, Log
@@ -66,16 +67,47 @@ def arg_parse():
 
 
 class Trainer:
-    def __init__(self, features, label, training_output="training_results", num_splits=5, test_size=0.2,
-                 outliers=(), scaler="robust", trial_time=None, num_threads=10, best_model=3, seed=None, verbose=False):
-        
+    def __init__(self, features: str | pd.DataFrame | list | np.ndarray, label: str | pd.Series | Iterable, 
+                 training_output: str="training_results", num_splits: int=5, test_size: float=0.2,
+                 outliers: tuple[str, ...]=(), scaler: str="robust", trial_time: int | None=None, 
+                 num_threads: int=10, best_model: int=3, seed: int | None=None, verbose: bool=False):
+        """
+        Initialize a Trainer object with the given parameters.
+
+        Parameters
+        ----------
+        features : str or pd.DataFrame or np.ndarray
+            The path to the features file or the features data.
+        label : str or pd.Series or np.ndarray
+            The path to the label file or the label data.
+        training_output : str, optional
+            The path to the directory where the training results will be saved. Defaults to "training_results".
+        num_splits : int, optional
+            The number of splits to use in cross-validation. Defaults to 5.
+        test_size : float, optional
+            The proportion of the dataset to include in the test split. Defaults to 0.2.
+        outliers : tuple, optional
+            A tuple of row names to be treated as outliers. Defaults to ().
+        scaler : str, optional
+            The type of scaler to use for feature scaling. Defaults to "robust".
+        trial_time : int, optional
+            The maximum time (in minutes) to spend on training each model. Defaults to None.
+        num_threads : int, optional
+            The number of threads to use for parallel processing. Defaults to 10, not used currently.
+        best_model : int, optional
+            The number of best models to save. Defaults to 3.
+        seed : int, optional
+            The random seed to use for reproducibility. Defaults to None.
+        verbose : bool, optional
+            Whether to print verbose output during training. Defaults to False.
+        """
         self.log = Log("model_training")
         self.log.info("Reading the features")
         self.outliers = outliers
         self.num_splits = num_splits
         self.test_size = test_size
         self.with_split = False
-        self.features, self.label = self._fix_features_labels(features, label)
+        self.features, self.label = self._read_features_labels(features, label)
         self.scaler = scaler
 
         if isinstance(trial_time, (int, float)):
@@ -90,10 +122,7 @@ class Trainer:
         self.output_path = Path(training_output)  # for the model results
         self.output_path.mkdir(parents=True, exist_ok=True)
         self.best_model = best_model
-        if seed:
-            self.seed = seed
-        else:
-            self.seed = int(time.time())
+
         self.log.info(f"Test_size: {test_size}")
         self.log.info(f"Outliers: {', '.join(self.outliers)}")
         self.log.info(f"Scaler: {scaler}")
@@ -131,14 +160,15 @@ class Trainer:
 
         return results, returned_models
 
-    def _fix_features_labels(self, features, label):
+    def _read_features_labels(self, features, label):
         # concatenate features and labels
         if isinstance(features, str):
             if features.endswith(".csv"):
                 feat = {"model 1": pd.read_csv(f"{features}", index_col=0)} # the first column should contain the sample names
 
             elif features.endswith(".xlsx"):
-                sheet_names = pd.ExcelFile(features).sheet_names
+                with pd.ExcelFile(features) as file:
+                    sheet_names = file.sheet_names
                 f = pd.read_excel(features, index_col=0, header=[0, 1], engine='openpyxl', sheet_name=sheet_names[0])
                 if "split_0" in f.columns.unique(0):
                     self.with_split = True

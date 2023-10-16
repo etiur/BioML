@@ -29,20 +29,6 @@ def scale(scaler, X_train, X_test=None):
         return transformed, scaler_dict, test_x
 
 
-def analyse_composition(dataframe):
-    col = dataframe.columns
-    if col.dtype == int:
-        print("num columns: ", len(col))
-        return len(col)
-    count = col.str.contains("pssm|tpc|eedp|edp").sum()
-    if count == 0:
-        print("num columns: ", len(col))
-        return len(col)
-    
-    print(f"POSSUM: {count}, iFeature: {len(col) - count}")
-    return count, len(col) - count
-
-
 def write_excel(file, dataframe, sheet_name, overwrite=False):
     if not isinstance(file, pd.io.excel._openpyxl.OpenpyxlWriter):
         if overwrite or not Path(file).exists():

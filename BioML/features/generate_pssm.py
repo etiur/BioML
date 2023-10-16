@@ -176,8 +176,9 @@ class ExtractPssm:
     
     def _remove_sequences_from_input(self):
         """
-        A function that removes the fasta sequences that psiblast cannot generate pssm files from,
-        from the input fasta file. If inside the remove dir there are fasta files them you have to use this function.
+        A function that removes the fasta sequences that psiblast could not generate pssm files from,
+        from the input fasta file. 
+        If inside the remove dir there are fasta files them you have to use this function.
         """
         # Search for fasta files that doesn't have pssm files
         fasta_files = list(map(lambda x: basename(x.replace(".fsa", "")), glob.glob(
