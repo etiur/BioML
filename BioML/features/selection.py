@@ -413,8 +413,7 @@ class FeatureSelection:
                 write_excel(writer, final_dict[key], key)
 
     def generate_features(self, filter_args: dict, X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, 
-                          feature_range: Iterable[int], feature_dict: dict, 
-                          split_ind: int, rfe_step: int=30, plot: bool=True,
+                          feature_range: Iterable[int], feature_dict: dict, split_ind: int, rfe_step: int=30, plot: bool=True,
                           plot_num_features: int=20) -> None:
         """
         Construct a dictionary of feature sets using univariate filters and recursive feature elimination.
