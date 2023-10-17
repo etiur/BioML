@@ -1,5 +1,4 @@
 import argparse
-from types import MethodDescriptorType
 import pandas as pd
 from sklearn.feature_selection import VarianceThreshold
 from BioML.utilities import scale, analyse_composition, write_excel, Log
@@ -10,13 +9,12 @@ from pathlib import Path
 # https://medium.com/devopss-hole/python-multiprocessing-pickle-issue-e2d35ccf96a9
 import xgboost as xgb
 from sklearn.linear_model import RidgeClassifier, Ridge
-from sklearn.model_selection import StratifiedShuffleSplit, ShuffleSplit
 from collections import defaultdict
 import numpy as np
 import random
 from multiprocessing import get_context  # https://pythonspeed.com/articles/python-multiprocessing/
 import time
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, ShuffleSplit
 from typing import Iterable
 from dataclasses import dataclass
 import BioML.features.methods as methods
@@ -99,8 +97,8 @@ class DataReader:
     checked_label_path: str = "labels_corrected.csv"
 
     def __post_init__(self):
-        self.features = self._read_features(self.features)
-        self.labels = self._read_label(self.label)
+        self.features = self.read_features(self.features)
+        self.labels = self.read_label(self.label)
         self._check_label(self.checked_label_path)
         self.features = self.preprocess()
         self.analyse_composition(self.features)
@@ -133,7 +131,7 @@ class DataReader:
                 self.log.error(f"feature dataframe and labels have different index names: {e}")
                 raise KeyError(f"feature dataframe and labels have different index names: {e}")
         
-    def _read_feature(self, features: str | pd.DataFrame | list | np.ndarray) -> pd.DataFrame:
+    def read_feature(self, features: str | pd.DataFrame | list | np.ndarray) -> pd.DataFrame:
         """
         Read the feature data and return a dataframe.
 
@@ -162,7 +160,7 @@ class DataReader:
         self.log.error("features should be a csv file, an array or a pandas DataFrame")
         raise TypeError("features should be a csv file, an array or a pandas DataFrame")
 
-    def _read_label(self,  labels: str | pd.Series | Iterable) -> pd.Series:
+    def read_label(self,  labels: str | pd.Series | Iterable) -> pd.Series:
         """
         Read the label data and return a Series.
 
@@ -417,7 +415,7 @@ class FeatureSelection:
     def generate_features(self, filter_args: dict, X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, 
                           feature_range: Iterable[int], feature_dict: dict, 
                           split_ind: int, rfe_step: int=30, plot: bool=True,
-                          plot_num_features: int=20, problem: str="classification") -> None:
+                          plot_num_features: int=20) -> None:
         """
         Construct a dictionary of feature sets using univariate filters and recursive feature elimination.
 
@@ -439,8 +437,6 @@ class FeatureSelection:
             The index of the current split.
         rfe_step : int, optional
             The number of features to remove at each iteration in recursive feature elimination. Defaults to 30.
-        problem : str, optional
-            The type of problem to solve. Defaults to "classification".
 
         Returns
         -------
@@ -454,7 +450,7 @@ class FeatureSelection:
         univariate_features = self.parallel_filter(filter_args, transformed, Y_train, feature_range[-1],
                                                     self.features.columns)
         supervised_features = self.supervised_filters(filter_args, transformed, Y_train, split_ind, self.features.columns, 
-                                                        self.excel_file.parent, problem, plot, plot_num_features)
+                                                        self.excel_file.parent, plot, plot_num_features)
         
         concatenated_features = pd.concat([univariate_features, supervised_features])
         for num_features in feature_range:
@@ -471,7 +467,7 @@ class FeatureSelection:
 
     def feature_set_kfold(self, filter_args: dict, split_function: ShuffleSplit | StratifiedShuffleSplit, 
                           feature_range, rfe_step: int=30, plot: bool=True, 
-                      plot_num_features: int=20, problem: str="classification") -> None:
+                          plot_num_features: int=20) -> None:
         """
         Perform feature selection using k-fold cross-validation.
 
@@ -479,20 +475,14 @@ class FeatureSelection:
         ----------
         filter_args : dict
             A dictionary containing the arguments for each filter algorithm.
-        num_features_min : int, optional
-            The minimum number of features to include in each feature set. Defaults to None.
-        num_features_max : int, optional
-            The maximum number of features to include in each feature set. Defaults to None.
-        step_range : list or np.ndarray, optional
-            A range of the number of features to include in each feature set. Defaults to None.
+        feature_range : list[int]
+            A range of the number of features to include in each feature set.
         rfe_step : int, optional
             The number of features to remove at each iteration in recursive feature elimination. Defaults to 30.
         plot : bool, optional
             Whether to plot the feature importances. Defaults to True.
         plot_num_features : int, optional
             The number of features to include in the plot. Defaults to 20.
-        problem : str, optional
-            The type of problem to solve. Defaults to "classification".
 
         Returns
         -------
@@ -505,7 +495,7 @@ class FeatureSelection:
             X_train = self.features.iloc[train_index]
             Y_train = self.label.iloc[train_index].values.ravel()
             self.generate_features(filter_args, X_train, Y_train, feature_range, feature_dict, split_index, rfe_step, plot,
-                                   plot_num_features, problem)
+                                   plot_num_features)
 
         return feature_dict
 
@@ -534,8 +524,14 @@ class FeatureClassification(FeatureSelection):
         return self._filter_args
     
     @filter_args.setter
-    def filter_args(self, value: tuple[str, Iterable[str]]):
-        self._filter_args[value[0]] = tuple(value[1])
+    def filter_args(self, value: tuple[str, Iterable[str]] | dict[str, Iterable[str]]):
+        if isinstance(value, dict):
+            dif = set(value.keys()).difference(self._filter_args.keys())
+            if dif:
+                raise KeyError(f"these keys: {dif} are not valid")
+            self._filter_args = value
+        elif isinstance(value, tuple):
+            self._filter_args[value[0]] = tuple(value[1])
 
     def construct_kfold(self, feature_range, rfe_step=30, plot=True, plot_num_features=20):
 
@@ -603,8 +599,7 @@ class FeatureRegression(FeatureSelection):
     def construct_kfold(self, feature_range, rfe_step=30, plot=True, plot_num_features=20):
          
          skf = ShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.seed)
-         feature_dict = self.feature_set_kfold(self.filter_args, skf, feature_range, rfe_step, plot, plot_num_features, 
-                                problem="regression")
+         feature_dict = self.feature_set_kfold(self.filter_args, skf, feature_range, rfe_step, plot, plot_num_features)
          self._write_dict(feature_dict)
 
     def construct_holdout(self, feature_range: Iterable[int], plot=True, plot_num_features=20, rfe_step=30):
