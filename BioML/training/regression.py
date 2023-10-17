@@ -67,8 +67,6 @@ def arg_parse():
             args.seed, args.drop]
 
 
-    
-
 
 class Regressor(Trainer):
     def __init__(self, model: PycaretInterface, training_output="training_results", num_splits=5, test_size=0.2,

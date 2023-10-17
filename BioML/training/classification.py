@@ -96,3 +96,5 @@ class Classifier(Trainer):
         skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.experiment.seed)
         sorted_results, sorted_models, top_params = self.setup_kfold(feature.features, feature.label, skf, plot, feature.with_split)
         return sorted_results, sorted_models, top_params
+    
+    def retune_best_models(self):
