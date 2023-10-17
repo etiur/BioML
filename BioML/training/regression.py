@@ -1,4 +1,3 @@
-from re import X
 from typing import Iterable
 from sklearn.model_selection import train_test_split, ShuffleSplit
 import pandas as pd
@@ -150,6 +149,9 @@ class Regressor(Trainer):
         skf = ShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.experiment.seed)
         sorted_results, sorted_models, top_params = self.setup_kfold(feature.features, feature.label, skf, plot, feature.with_split)
         return sorted_results, sorted_models, top_params
+    
+    
+
 
 def run(output_path, best_model, features,  sorted_results, sorted_models, top_params, strategy="holdout", 
         plot_holdout=("learning", "confusion_matrix", "class_report"), 

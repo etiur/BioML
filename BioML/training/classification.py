@@ -1,3 +1,4 @@
+import pandas as pd
 from .base import PycaretInterface, Trainer, DataParser
 from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
 
@@ -97,4 +98,3 @@ class Classifier(Trainer):
         sorted_results, sorted_models, top_params = self.setup_kfold(feature.features, feature.label, skf, plot, feature.with_split)
         return sorted_results, sorted_models, top_params
     
-    def retune_best_models(self):

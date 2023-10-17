@@ -202,21 +202,69 @@ class PycaretInterface:
                 for pl in self.plots:
                     self.model.plot_model(model, pl, save=plot_path)
 
-    def get_params(self, sorted_models):
+    def get_params(self, name, model):
+        if name != "catboost":
+            params = model.get_params()
+        else:
+            params = model.get_all_params()
+        params = {key: value for key, value in params.items() if key not in 
+                    ["warm_start", "verbose", "oob_score"]}
+        params = pd.Series(params)
+        return params
+    
+    def get_params_stacked(stacked_models):
+        params_dict = stacked_models.get_params()
+        return pd.Series(params_dict["final_estimator"].get_params())
+
+    def get_params_multiple(self, sorted_models):
         model_params = {}
         for ind, (name, model) in enumerate(sorted_models.items(), 1):
             if ind > self.best_model:
                 break
-            if name != "catboost":
-                params = model.get_params()
-            else:
-                params = model.get_all_params()
-            params = {key: value for key, value in params.items() if key not in 
-                      ["warm_start", "verbose", "oob_score"]}
-            params = pd.Series(params)
+            params = self.get_params(name, model)
             model_params[name] = params
 
         return pd.concat(model_params)
+    
+    def _retune_model(self, name, model, optimize="MCC", num_iter=5, fold=5):
+        self.log.info("---------Retuning the best models--------------")
+        self.log.info(f"optimize: {optimize}")
+        self.log.info(f"num_iter: {num_iter}")
+        self.log.info(f"fold: {fold}")
+        tuned_model = self.model.tune_model(model, optimize=optimize, search_library="optuna", search_algorithm="tpe", 
+                                            early_stopping="asha", return_train_score=True, n_iter=num_iter, fold=fold,
+                                            verbose=False)
+        results = self.model.pull(pop=True)
+        tuned_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
+        params = self.get_params(name, tuned_model)
+        return tuned_model, tuned_results, params
+    
+    def _stack_models(self, estimator_dict: dict, optimize="MCC", fold=5, probability_threshold=0.5):
+        self.log.info("----------Stacking the best models--------------")
+        self.log.info(f"fold: {fold}")
+        self.log.info(f"probability_threshold: {probability_threshold}")
+        self.log.info(f"optimize: {optimize}")
+        stacked_models = self.model.stack_models(list(estimator_dict.values()), optimize=optimize, return_train_score=True, 
+                                                 verbose=False, fold=fold, probability_threshold=probability_threshold)
+        results = self.model.pull(pop=True)
+        stacked_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
+        params = self.get_params_stacked(stacked_models)
+        return stacked_models, stacked_results, params
+    
+    def _create_majority(self, estimator_dict: dict, optimize="MCC", fold=5, probability_threshold=0.5, weights=None):
+        self.log.info("----------Creating a majority voting model--------------")
+        self.log.info(f"fold: {fold}")
+        self.log.info(f"probability_threshold: {probability_threshold}")
+        self.log.info(f"optimize: {optimize}")
+        self.log.info(f"weights: {weights}")
+        majority_model = self.model.blend_models(list(estimator_dict.values()), optimize=optimize, verbose=False,
+                                                 return_train_score=True, fold=fold, probability_threshold=probability_threshold,
+                                                 weights=weights)
+        
+        results = self.model.pull(pop=True)
+        majority_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
+        return majority_model, majority_results
+
 
 class Trainer:
     def __init__(self, model: PycaretInterface, training_output: str="training_results", num_splits: int=5, 
@@ -304,7 +352,7 @@ class Trainer:
     def analyse_models(self, transformed_x, test_x, scoring_fn):
         results, returned_models = self.train(transformed_x, test_x)
         sorted_results, sorted_models = self.rank_results(results, returned_models, scoring_fn)
-        top_params = self.experiment.get_params(sorted_models)
+        top_params = self.experiment.get_params_multiple(sorted_models)
 
         return sorted_results, sorted_models, top_params
 
@@ -380,3 +428,23 @@ class Trainer:
             self.experiment.plots = plot
             self.experiment.plot_best_models(sorted_models)
         return sorted_results, sorted_models, top_params
+    
+    def retune_best_models(self, sorted_models, optimize="MCC", num_iter=5):
+        new_models = {}
+        new_results = {}
+        new_params = {}
+        self.log.info("--------Retuning the best models--------")
+        for key, model in list(sorted_models.item())[:self.experiment.best_model]:
+            self.log.info(f"Retuning {key}")
+            tuned_model, results, params =  self.experiment.retune_model(key, model, optimize, num_iter, fold=self.num_splits)
+            new_models[key] = tuned_model
+            new_results[key] = results
+            new_params[key] = params
+
+        return new_models, pd.concat(new_results), pd.concat(new_params)
+    
+    def stack_best_models(self, sorted_models):
+        self.log.info("--------Stacking the best models--------")
+        stacked_models = self.experiment.stack_models(estimator_list=list(sorted_models.values())[:self.experiment.best_model])
+        results = self.experiment.pull(pop=True)
+        return stacked_models, results
