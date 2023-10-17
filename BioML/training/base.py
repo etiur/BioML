@@ -226,7 +226,7 @@ class PycaretInterface:
 
         return pd.concat(model_params)
     
-    def _retune_model(self, name, model, optimize="MCC", num_iter=5, fold=5):
+    def retune_model(self, name, model, optimize="MCC", num_iter=5, fold=5):
         self.log.info("---------Retuning the best models--------------")
         self.log.info(f"optimize: {optimize}")
         self.log.info(f"num_iter: {num_iter}")
@@ -239,7 +239,7 @@ class PycaretInterface:
         params = self.get_params(name, tuned_model)
         return tuned_model, tuned_results, params
     
-    def _stack_models(self, estimator_dict: dict, optimize="MCC", fold=5, probability_threshold=0.5):
+    def stack_models(self, estimator_dict: dict, optimize="MCC", fold=5, probability_threshold=0.5):
         self.log.info("----------Stacking the best models--------------")
         self.log.info(f"fold: {fold}")
         self.log.info(f"probability_threshold: {probability_threshold}")
@@ -251,7 +251,7 @@ class PycaretInterface:
         params = self.get_params_stacked(stacked_models)
         return stacked_models, stacked_results, params
     
-    def _create_majority(self, estimator_dict: dict, optimize="MCC", fold=5, probability_threshold=0.5, weights=None):
+    def create_majority(self, estimator_dict: dict, optimize="MCC", fold=5, probability_threshold=0.5, weights=None):
         self.log.info("----------Creating a majority voting model--------------")
         self.log.info(f"fold: {fold}")
         self.log.info(f"probability_threshold: {probability_threshold}")
