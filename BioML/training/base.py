@@ -7,12 +7,8 @@ from pathlib import Path
 import time
 from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
-
-from BioML import predict
 from ..utilities import Log, scale
 from sklearn.metrics import average_precision_score
-from pycaret.internal.meta_estimators import CustomProbabilityThresholdClassifier
-from sklearn.ensemble import StackingClassifier, StackingRegressor, VotingClassifier, VotingRegressor
 
 
 @dataclass
@@ -617,8 +613,7 @@ class Trainer:
                             final[key] = {}
                         for model_name, mod in list(value.items())[:self.experiment.best_model]:
                             final[key][model_name] = self.experiment.finalize_model(mod)
-                    elif isinstance(value, (CustomProbabilityThresholdClassifier, VotingRegressor, 
-                                            VotingClassifier, StackingRegressor, StackingClassifier)):
+                    else:
                         final[key] = self.experiment.finalize_model(value)
                 return final
             
@@ -628,14 +623,13 @@ class Trainer:
                     final[model_name] = self.experiment.finalize_model(mod)
                 return final
             
-            case CustomProbabilityThresholdClassifier(model) | VotingRegressor(model) | VotingClassifier(model) | StackingRegressor(model) | StackingClassifier(model):
+            case model:
                 final = self.experiment.finalize_model(model)
                 return final
             
-            case _:
-                raise TypeError("The model should be a list of models, a dictionary of models or a model")
+
             
-    def _save_model(self, model, filename):
+    def _save_model(self, sorted_models, filename: str | dict[str, str] | None=None):
         """
         Save the model
 
@@ -643,11 +637,25 @@ class Trainer:
         ----------
         model : Any
             The trained model.
-        filename : str
+        filename : str, dict[str, str]
             The name of the file to save the model.
         """
         model_output = self.output_path / "models"
-        self.experiment.save(model, model_output/filename)
+        match sorted_models:
+            case {**models} if "split" in list(models)[0]:
+                for key, value in models.items():
+                    if isinstance(value, dict):
+                        for model_name, mod in value.items():
+                            self.experiment.save(mod, model_output/key/model_name)
+                    else:
+                        self.experiment.save(value, model_output/filename[key])
+            case {**models}:
+                for model_name, mod in models.items():
+                    self.experiment.save(mod, model_output/model_name)
+            
+            case other:
+                self.experiment.save(other, model_output/filename)
+
             
             
 
