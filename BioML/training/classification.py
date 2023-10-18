@@ -38,12 +38,10 @@ def arg_parse():
                              "the performance of a model")
     parser.add_argument("-dw", "--difference_weight", required=False, default=1.2, type=float,
                         help="How important is to have similar training and test metrics")
-    parser.add_argument("-r2", "--r2_weight", required=False, default=0.8, type=float,
-                        help="The weights for the R2 score")
+
     parser.add_argument("-st", "--strategy", required=False, choices=("holdout", "kfold"), default="holdout",
                         help="The spliting strategy to use")
-    parser.add_argument("-pr", "--problem", required=False, choices=("classification", "regression"), 
-                        default="classification", help="Classification or Regression problem")
+
     parser.add_argument("-be", "--best_model", required=False, default=3, type=int,
                         help="The number of best models to select, it affects the analysis and the save hyperparameters")
     parser.add_argument("--seed", required=False, default=None, type=int, help="The seed for the random state")
@@ -54,7 +52,7 @@ def arg_parse():
 
     return [args.label, args.training_output, args.budget_time, args.num_thread, args.scaler,
             args.excel, args.kfold_parameters, args.outliers, args.precision_weight, args.recall_weight,
-            args.report_weight, args.difference_weight, args.r2_weight, args.strategy, args.problem, args.best_model,
+            args.report_weight, args.difference_weight, args.strategy, args.best_model,
             args.seed, args.drop]
 
 

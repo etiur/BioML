@@ -627,8 +627,6 @@ class Trainer:
                 final = self.experiment.finalize_model(model)
                 return final
             
-
-            
     def _save_model(self, sorted_models, filename: str | dict[str, str] | None=None):
         """
         Save the model

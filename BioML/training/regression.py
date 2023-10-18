@@ -29,11 +29,6 @@ def arg_parse():
                              "record should be in a new line")
     parser.add_argument("-bu", "--budget_time", required=False, default=None, type=float,
                         help="The time budget for the training in minutes, should be > 0 or None")
-    parser.add_argument("-pw", "--precision_weight", required=False, default=1.2, type=float,
-                        help="Weights to specify how relevant is the precision for the ranking of the different "
-                             "features")
-    parser.add_argument("-rw", "--recall_weight", required=False, default=0.8, type=float,
-                        help="Weights to specify how relevant is the recall for the ranking of the different features")
 
     parser.add_argument("-rpw", "--report_weight", required=False, default=0.6, type=float,
                         help="Weights to specify how relevant is the f1, precision and recall for the ranking of the "
@@ -45,8 +40,6 @@ def arg_parse():
                         help="The weights for the R2 score")
     parser.add_argument("-st", "--strategy", required=False, choices=("holdout", "kfold"), default="holdout",
                         help="The spliting strategy to use")
-    parser.add_argument("-pr", "--problem", required=False, choices=("classification", "regression"), 
-                        default="classification", help="Classification or Regression problem")
     parser.add_argument("-be", "--best_model", required=False, default=3, type=int,
                         help="The number of best models to select, it affects the analysis and the save hyperparameters")
     parser.add_argument("--seed", required=False, default=None, type=int, help="The seed for the random state")
@@ -56,8 +49,8 @@ def arg_parse():
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.budget_time, args.num_thread, args.scaler,
-            args.excel, args.kfold_parameters, args.outliers, args.precision_weight, args.recall_weight,
-            args.report_weight, args.difference_weight, args.r2_weight, args.strategy, args.problem, args.best_model,
+            args.excel, args.kfold_parameters, args.outliers, args.report_weight, 
+            args.difference_weight, args.r2_weight, args.strategy, args.best_model,
             args.seed, args.drop]
 
 
@@ -165,52 +158,37 @@ class Regressor(Trainer):
     def finalize_model(self, sorted_model):
         return self._finalize_model(sorted_model)
 
+def write_results(training_output, sorted_results, top_params, sheet_name):
+    write_excel(training_output / "training_results.xlsx", sorted_results, sheet_name)
+    write_excel(training_output / f"top_hyperparameters.xlsx", top_params, sheet_name)
 
-def run(output_path, best_model, features,  sorted_results, sorted_models, top_params, strategy="holdout", 
-        plot_holdout=("learning", "confusion_matrix", "class_report"), 
-        plot_kfold=()):
-    for key, value in features.items():
-        if strategy == "holdout":
-            sorted_results, sorted_models, top_params = self.setup_holdout(value, plot_holdout)
-            write_excel(output_path / "training_results.xlsx", sorted_results, key)
-            write_excel(output_path / f"top_{best_model}_hyperparameters.xlsx", top_params, key)
-        elif strategy == "kfold":
-            sorted_results, sorted_models, top_params = self.setup_kfold(value, plot_kfold)
-            write_excel(output_path / "training_results.xlsx", sorted_results, f"{key}")
-            write_excel(output_path / f"top_{best_model}_hyperparameters.xlsx", top_params, f"{key}")
-        else:
-            raise ValueError("strategy should be either holdout or kfold")
-        
-    return sorted_results, sorted_models, top_params
 
 def main():
     label, training_output, trial_time, num_thread, scaler, excel, kfold, outliers, \
-        precision_weight, recall_weight, report_weight, difference_weight, r2_weight, strategy, problem, seed, \
-    best_model, drop = arg_parse()
+        difference_weight, r2_weight, strategy, seed, best_model, drop = arg_parse()
+    
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
-
+    training_output = Path(training_output)
     if len(outliers) > 0 and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = [x.strip() for x in out.readlines()]
-    feature = DataParser(label, excel)
-    experiment = PycaretInterface(problem, feature.label, seed, budget_time=trial_time, best_model=best_model)
 
-    if problem == "classification":
-        ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight, report_weight=report_weight, 
-                            difference_weight=difference_weight)
-        training = Classifier(experiment, training_output, num_split, test_size,
-                                outliers, scaler, ranking_dict, drop)
-    elif problem == "regression":
-        ranking_dict = dict(R2_weight=r2_weight, difference_weight=difference_weight)
-        training = Regressor(experiment, training_output, num_split, test_size, outliers, scaler, ranking_dict, drop)
+    
+    feature = DataParser(label, excel)
+    experiment = PycaretInterface("regression", feature.label, seed, budget_time=trial_time, best_model=best_model)
+
+    ranking_dict = dict(R2_weight=r2_weight, difference_weight=difference_weight)
+    training = Regressor(experiment, training_output, num_split, test_size, outliers, scaler, ranking_dict, drop)
     
     if strategy == "holdout":
         sorted_results, sorted_models, top_params = training.run_holdout(feature)
     elif strategy == "kfold":
         sorted_results, sorted_models, top_params = training.run_kfold(feature)
 
-    write_excel(output_path / "training_results.xlsx", sorted_results, f"{key}")
-    write_excel(output_path / f"top_{best_model}_hyperparameters.xlsx", top_params, f"{key}")
+    write_results(training_output, sorted_results, top_params, strategy)
+
+    
+
 
 if __name__ == "__main__":
     # Run this if this file is executed from command line but not if is imported as API
