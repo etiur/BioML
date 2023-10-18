@@ -1,18 +1,13 @@
-from typing import Iterable
 from sklearn.model_selection import train_test_split, ShuffleSplit
-import pandas as pd
-from BioML import features
 from BioML.utilities import write_excel
 from pathlib import Path
 import argparse
-import numpy as np
 from .base import PycaretInterface, Trainer, DataParser
-import time
-from dataclasses import dataclass, field
+import pandas as pd
 
 
 def arg_parse():
-    parser = argparse.ArgumentParser(description="Train the models")
+    parser = argparse.ArgumentParser(description="Train Regression models")
 
     parser.add_argument("-o", "--training_output", required=False,
                         help="The path where to save the models training results",
@@ -66,12 +61,11 @@ def arg_parse():
             args.seed, args.drop]
 
 
-
 class Regressor(Trainer):
-    def __init__(self, model: PycaretInterface, training_output="training_results", num_splits=5, test_size=0.2,
+    def __init__(self, model: PycaretInterface, output="training_results", num_splits=5, test_size=0.2,
                  outliers=(), scaler="robust", ranking_params=None, drop=("tr", "kr", "ransac", "ard", "ada", "lightgbm")):
 
-        super().__init__(model, training_output, num_splits, test_size, outliers, scaler)
+        super().__init__(model, output, num_splits, test_size, outliers, scaler)
         
         ranking_dict = dict(R2_weight=0.8, difference_weight=1.2)
         if isinstance(ranking_params, dict):
@@ -150,7 +144,26 @@ class Regressor(Trainer):
         sorted_results, sorted_models, top_params = self.setup_kfold(feature.features, feature.label, skf, plot, feature.with_split)
         return sorted_results, sorted_models, top_params
     
+    def retune_best_models(self, sorted_models: dict, optimize: str = "RMSE", num_iter: int = 5):
+        if "split" in list(sorted_models)[0]:
+            new_models = {}
+            new_results = {}
+            new_params = {}
+            for key, sorted_model_by_split in sorted_models.items():
+                new_results[key], new_models[key], new_params[key] = self._retune_best_models(sorted_model_by_split, optimize, num_iter)
+            return pd.concat(new_results, axis=1), new_models, pd.concat(new_params)
+        return self._retune_best_models(sorted_models, optimize, num_iter)
     
+    def stack_models(self, sorted_models: dict, optimize="RMSE", probability_theshold: float = 0.5, meta_model=None):
+
+        return self._stack_models(sorted_models, optimize, probability_theshold, meta_model=meta_model)
+    
+    def create_majority_model(self, sorted_models: dict, optimize: str = "RMSE", probability_theshold: float = 0.5, weights=None):
+    
+        return self._create_majority_model(sorted_models, optimize, probability_theshold, weights)
+    
+    def finalize_model(self, sorted_model):
+        return self._finalize_model(sorted_model)
 
 
 def run(output_path, best_model, features,  sorted_results, sorted_models, top_params, strategy="holdout", 

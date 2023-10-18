@@ -1,14 +1,69 @@
 import pandas as pd
 from .base import PycaretInterface, Trainer, DataParser
 from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
+import argparse
+
+def arg_parse():
+    parser = argparse.ArgumentParser(description="Train classification models")
+
+    parser.add_argument("-o", "--training_output", required=False,
+                        help="The path where to save the models training results",
+                        default="training_results")
+    parser.add_argument("-l", "--label", required=True,
+                        help="The path to the labels of the training set in a csv format")
+    parser.add_argument("-n", "--num_thread", required=False, default=50, type=int,
+                        help="The number of threads to search for the hyperparameter space")
+    parser.add_argument("-s", "--scaler", required=False, default="robust", choices=("robust", "standard", "minmax"),
+                        help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
+    parser.add_argument("-e", "--excel", required=False,
+                        help="The file to where the selected or training features are saved in excel format",
+                        default="training_features/selected_features.xlsx")
+    parser.add_argument("-k", "--kfold_parameters", required=False,
+                        help="The parameters for the kfold in num_split:test_size format", default="5:0.2")
+    parser.add_argument("-ot", "--outliers", nargs="+", required=False, default=(),
+                        help="A list of outliers if any, the name should be the same as in the excel file with the "
+                             "filtered features, you can also specify the path to a file in plain text format, each "
+                             "record should be in a new line")
+    parser.add_argument("-bu", "--budget_time", required=False, default=None, type=float,
+                        help="The time budget for the training in minutes, should be > 0 or None")
+    parser.add_argument("-pw", "--precision_weight", required=False, default=1.2, type=float,
+                        help="Weights to specify how relevant is the precision for the ranking of the different "
+                             "features")
+    parser.add_argument("-rw", "--recall_weight", required=False, default=0.8, type=float,
+                        help="Weights to specify how relevant is the recall for the ranking of the different features")
+
+    parser.add_argument("-rpw", "--report_weight", required=False, default=0.6, type=float,
+                        help="Weights to specify how relevant is the f1, precision and recall for the ranking of the "
+                             "different features with respect to MCC which is a more general measures of "
+                             "the performance of a model")
+    parser.add_argument("-dw", "--difference_weight", required=False, default=1.2, type=float,
+                        help="How important is to have similar training and test metrics")
+    parser.add_argument("-r2", "--r2_weight", required=False, default=0.8, type=float,
+                        help="The weights for the R2 score")
+    parser.add_argument("-st", "--strategy", required=False, choices=("holdout", "kfold"), default="holdout",
+                        help="The spliting strategy to use")
+    parser.add_argument("-pr", "--problem", required=False, choices=("classification", "regression"), 
+                        default="classification", help="Classification or Regression problem")
+    parser.add_argument("-be", "--best_model", required=False, default=3, type=int,
+                        help="The number of best models to select, it affects the analysis and the save hyperparameters")
+    parser.add_argument("--seed", required=False, default=None, type=int, help="The seed for the random state")
+
+    parser.add_argument("-d", "--drop", nargs="+", required=False, default=(), help="The models to drop")
+
+    args = parser.parse_args()
+
+    return [args.label, args.training_output, args.budget_time, args.num_thread, args.scaler,
+            args.excel, args.kfold_parameters, args.outliers, args.precision_weight, args.recall_weight,
+            args.report_weight, args.difference_weight, args.r2_weight, args.strategy, args.problem, args.best_model,
+            args.seed, args.drop]
 
 
 class Classifier(Trainer):
-    def __init__(self, model: PycaretInterface, training_output="training_results", num_splits=5, test_size=0.2,
+    def __init__(self, model: PycaretInterface, output="training_results", num_splits=5, test_size=0.2,
                  outliers: tuple[str, ...]=(), scaler="robust",  ranking_params: dict[str, float]=None,  
                  drop: tuple[str] = ("ada", "gpc", "lightgbm")):
         # initialize the Trainer class
-        super().__init__(model, training_output, num_splits, test_size, outliers, scaler)
+        super().__init__(model, output, num_splits, test_size, outliers, scaler)
         # change the ranking parameters
         ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
                             difference_weight=1.2)
@@ -97,4 +152,25 @@ class Classifier(Trainer):
         skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.experiment.seed)
         sorted_results, sorted_models, top_params = self.setup_kfold(feature.features, feature.label, skf, plot, feature.with_split)
         return sorted_results, sorted_models, top_params
+    
+    def retune_best_models(self, sorted_models: dict, optimize: str = "MCC", num_iter: int = 5):
+        if "split" in list(sorted_models)[0]:
+            new_models = {}
+            new_results = {}
+            new_params = {}
+            for key, sorted_model_by_split in sorted_models.items():
+                new_results[key], new_models[key], new_params[key] = self._retune_best_models(sorted_model_by_split, optimize, num_iter)
+            return pd.concat(new_results, axis=1), new_models, pd.concat(new_params)
+        return self._retune_best_models(sorted_models, optimize, num_iter)
+    
+    def stack_models(self, sorted_models: dict, optimize="MCC", probability_theshold: float = 0.5, meta_model=None):
+
+        return self._stack_models(sorted_models, optimize, probability_theshold, meta_model=meta_model)
+    
+    def create_majority_model(self, sorted_models: dict, optimize: str = "MCC", probability_theshold: float = 0.5, weights=None):
+    
+        return self._create_majority_model(sorted_models, optimize, probability_theshold, weights)
+    
+    def finalize_model(self, sorted_model):
+        return self._finalize_model(sorted_model)
     

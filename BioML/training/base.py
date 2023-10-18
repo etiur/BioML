@@ -1,13 +1,18 @@
 from dataclasses import dataclass, field
+from json import load
 import pandas as pd
-from typing import Iterable
+from typing import Iterable, Callable
 import numpy as np
 from pathlib import Path
 import time
 from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
+
+from BioML import predict
 from ..utilities import Log, scale
 from sklearn.metrics import average_precision_score
+from pycaret.internal.meta_estimators import CustomProbabilityThresholdClassifier
+from sklearn.ensemble import StackingClassifier, StackingRegressor, VotingClassifier, VotingRegressor
 
 
 @dataclass
@@ -72,7 +77,7 @@ class PycaretInterface:
     objective: str
     label_name: str
     seed: None | int = None
-    verbose: bool = False
+    #verbose: bool = False
     budget_time: None | int
     log = Log("model_training")
     best_model: int = 3
@@ -100,7 +105,7 @@ class PycaretInterface:
         self.log.info("PycaretInterface parameters")
         self.log.info(f"Budget time: {self.budget_time}")
         self.log.info(f"Label name: {self.label_name}")
-        self.log.info(f"Best model: {self.best_model}")
+        self.log.info(f"The number of models to select: {self.best_model}")
     
     @property
     def plots(self):
@@ -171,8 +176,7 @@ class PycaretInterface:
         for m in self.final_models:
             model =self.model.create_model(m, return_train_score=True, verbose=False)
             model_results = self.model.pull(pop=True)
-            if not self.verbose:
-                model_results = model_results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
+            model_results = model_results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
             returned_models[m] = model
             results[m] = model_results
             runtime_train = time.time()
@@ -216,7 +220,7 @@ class PycaretInterface:
         params_dict = stacked_models.get_params()
         return pd.Series(params_dict["final_estimator"].get_params())
 
-    def get_params_multiple(self, sorted_models):
+    def get_best_params_multiple(self, sorted_models: dict):
         model_params = {}
         for ind, (name, model) in enumerate(sorted_models.items(), 1):
             if ind > self.best_model:
@@ -239,13 +243,15 @@ class PycaretInterface:
         params = self.get_params(name, tuned_model)
         return tuned_model, tuned_results, params
     
-    def stack_models(self, estimator_dict: dict, optimize="MCC", fold=5, probability_threshold=0.5):
+    def stack_models(self, estimator_dict: dict, optimize="MCC", fold=5, probability_threshold=0.5, meta_model=None):
         self.log.info("----------Stacking the best models--------------")
         self.log.info(f"fold: {fold}")
         self.log.info(f"probability_threshold: {probability_threshold}")
         self.log.info(f"optimize: {optimize}")
-        stacked_models = self.model.stack_models(list(estimator_dict.values()), optimize=optimize, return_train_score=True, 
-                                                 verbose=False, fold=fold, probability_threshold=probability_threshold)
+        stacked_models = self.model.stack_models(list(estimator_dict.values())[:self.best_model], optimize=optimize, 
+                                                 return_train_score=True,  verbose=False, fold=fold, 
+                                                 probability_threshold=probability_threshold, meta_model_fold=fold, 
+                                                 meta_model=meta_model)
         results = self.model.pull(pop=True)
         stacked_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
         params = self.get_params_stacked(stacked_models)
@@ -257,17 +263,87 @@ class PycaretInterface:
         self.log.info(f"probability_threshold: {probability_threshold}")
         self.log.info(f"optimize: {optimize}")
         self.log.info(f"weights: {weights}")
-        majority_model = self.model.blend_models(list(estimator_dict.values()), optimize=optimize, verbose=False,
-                                                 return_train_score=True, fold=fold, probability_threshold=probability_threshold,
-                                                 weights=weights)
+        majority_model = self.model.blend_models(list(estimator_dict.values())[:self.best_model], optimize=optimize, 
+                                                 verbose=False, return_train_score=True, fold=fold, 
+                                                 probability_threshold=probability_threshold, weights=weights)
         
         results = self.model.pull(pop=True)
         majority_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
         return majority_model, majority_results
+    
+    def check_drift(self, input_data, target_data, filename=None):
+        self.log.info("----------Checking for data drift--------------")
+        self.model.check_drift(input_data, target_data, filename=filename)
+        return filename
+    
+    def finalize_model(self, model):
+        self.log.info("----------Finalizing the model by training it with all the data including test set--------------")
+        finalized = self.model.finalize_model(model)
+        return finalized
+    
+    def evaluate_model(self, model, save: bool | str =False):
+        """
+        Evaluate the mode by plotting the learning curve
+
+        Parameters
+        ----------
+        model : pycaret.classification.Classifier or pycaret.regression.Regressor
+            The model to evaluate.
+        save : bool | str, optional
+            Save the plots, by default False
+        """
+        self.model.plot_model(model, "learning", save=save)
+
+    def predict(self, estimador, target_data=None):
+        """
+        Predict with teh new data or if not specified predict on the holdout data.
+
+        Parameters
+        ----------
+        estimador : Any
+            The trained model.
+        target_data : pd.DataFrame, optional
+            The data to predict, by default None
+
+        Returns
+        -------
+        pd.DataFrame, pd.Series
+            The predictions are incorporated into the target data dataframe
+        
+        """
+        pred = self.model.predict_model(estimador, data=target_data)
+        if target_data is not None:
+            results = self.model.pull(pop=True)
+            return pred, results
+        return pred
+    
+    def save(self, model, filename: str):
+        """
+        Save the model
+
+        Parameters
+        ----------
+        model : Any
+            The trained model.
+        filename : str
+            The name of the file to save the model.
+        """
+        self.model.save_model(model, filename)
+    
+    def load_model(self, filename: str):
+        """
+        Load the model
+
+        Parameters
+        ----------
+        filename : str
+            The name of the file to load the model.
+        """
+        self.model.load_model(filename)
 
 
 class Trainer:
-    def __init__(self, model: PycaretInterface, training_output: str="training_results", num_splits: int=5, 
+    def __init__(self, model: PycaretInterface, output: str="training_results", num_splits: int=5, 
                  test_size: float=0.2, outliers: tuple[str, ...]=(), scaler: str="robust"):
         
         """
@@ -294,7 +370,7 @@ class Trainer:
         self.test_size = test_size
         self.scaler = scaler
         self.outliers = outliers
-        self.output_path = Path(training_output)  # for the model results
+        self.output_path = Path(output)  # for the model results
         self.output_path.mkdir(parents=True, exist_ok=True)
         self.experiment = model
         self.log.info(f"Test_size: {test_size}")
@@ -303,7 +379,8 @@ class Trainer:
         self.log.info(f"Number of kfolds: {self.num_splits}")
         self.log.info(f"The output path: {self.output_path}")
     
-    def return_train_test(self, train_index, test_index, features = None, strategy="holdout", split_index=None):
+    def return_train_test(self, train_index: pd.DataFrame | np.ndarray, test_index: pd.DataFrame | np.ndarray, 
+                          features: pd.DataFrame | np.ndarray = None, strategy: str="holdout", split_index: int | None=None):
         # split and filter
         if self.with_split:
             feat_subset = features.loc[:, f"split_{split_index}"]  # each split different features and different fold of
@@ -326,8 +403,37 @@ class Trainer:
 
         return transformed_x, test_x
 
-    def rank_results(self, results, returned_models, scoring_function):
+    def rank_results(self, results: dict[str, pd.DataFrame], returned_models:dict[str], 
+                     scoring_function: Callable):
+        """
+        Rank the results based on the scores obtained from the scoring function.
 
+        Parameters
+        ----------
+        results : dict
+            A dictionary containing the results obtained from the models.
+        returned_models : dict
+            A dictionary containing the models that returned the results.
+        scoring_function : Callable
+            A function that takes in the results and returns a score.
+
+        Returns
+        -------
+        pandas.DataFrame, dict
+            A concatenated dataframe of the sorted results and a dictionary of the sorted models.
+
+        Examples
+        --------
+        >>> results = {'model1': [1, 2, 3], 'model2': [4, 5, 6], 'model3': [7, 8, 9]}
+        >>> returned_models = {'model1': 'Model A', 'model2': 'Model B', 'model3': 'Model C'}
+        >>> def scoring_function(x):
+        ...     return sum(x)
+        >>> rank_results(results, returned_models, scoring_function)
+        (   0  1  2
+        model3  7  8  9
+        model2  4  5  6
+        model1  1  2  3, {'model3': 'Model C', 'model2': 'Model B', 'model1': 'Model A'})
+        """
         scores = {}
         for key, value in results.items():
             score_dataframe = scoring_function(value)
@@ -352,7 +458,7 @@ class Trainer:
     def analyse_models(self, transformed_x, test_x, scoring_fn):
         results, returned_models = self.train(transformed_x, test_x)
         sorted_results, sorted_models = self.rank_results(results, returned_models, scoring_fn)
-        top_params = self.experiment.get_params_multiple(sorted_models)
+        top_params = self.experiment.get_best_params_multiple(sorted_models)
 
         return sorted_results, sorted_models, top_params
 
@@ -419,7 +525,7 @@ class Trainer:
                 self.experiment.plots = plot
                 self.experiment.plot_best_models(self.output_path, sorted_models, split_ind=ind)
 
-        return pd.concat(res, axis=1), mod, top_params
+        return pd.concat(res, axis=1), mod, pd.concat(top_params)
     
     def setup_holdout(self, X_train, X_test, scoring_fn, plot=()):
         transformed_x, test_x = self._scale(X_train, X_test)
@@ -429,7 +535,7 @@ class Trainer:
             self.experiment.plot_best_models(sorted_models)
         return sorted_results, sorted_models, top_params
     
-    def retune_best_models(self, sorted_models, optimize="MCC", num_iter=5):
+    def _retune_best_models(self, sorted_models:dict, optimize: str="MCC", num_iter: int=5):
         new_models = {}
         new_results = {}
         new_params = {}
@@ -441,10 +547,107 @@ class Trainer:
             new_results[key] = results
             new_params[key] = params
 
-        return new_models, pd.concat(new_results), pd.concat(new_params)
+        return pd.concat(new_results), new_models, pd.concat(new_params)
     
-    def stack_best_models(self, sorted_models):
+    def _stack_models(self, sorted_models: dict, optimize="MCC",  probability_theshold: float=0.5, meta_model=None):
         self.log.info("--------Stacking the best models--------")
-        stacked_models = self.experiment.stack_models(estimator_list=list(sorted_models.values())[:self.experiment.best_model])
-        results = self.experiment.pull(pop=True)
-        return stacked_models, results
+        if "split" in list(sorted_models)[0]:
+            new_models = {}
+            new_results = {}
+            new_params = {}
+            for key, sorted_model_by_split in sorted_models.items():
+                new_models[key], new_results[key], new_params[key] = self.experiment.stack_models(sorted_model_by_split, 
+                                                      optimize=optimize, fold=self.num_splits,
+                                                      probability_threshold=probability_theshold, meta_model=meta_model)
+                
+            return pd.concat(new_results, axis=1), new_models, pd.concat(new_params)
+        
+        stacked_models, stacked_results, params = self.experiment.stack_models(sorted_models, optimize=optimize, fold=self.num_splits, 
+                                                      probability_threshold=probability_theshold, meta_model=meta_model)
+        
+        return stacked_results, stacked_models, params
+    
+    def _create_majority_model(self, sorted_models: dict, optimize: str="MCC", probability_theshold: float=0.5, 
+                               weights: Iterable[float] | None =None):
+        self.log.info("--------Creating an ensemble model--------")
+        if "split" in list(sorted_models)[0]:
+            new_models = {}
+            new_results = {}
+            for key, sorted_model_by_split in sorted_models.items():
+                new_models[key], new_results[key] = self.experiment.create_majority(sorted_model_by_split, optimize=optimize, fold=self.num_splits, 
+                                                        probability_threshold=probability_theshold, weights=weights)
+            return pd.concat(new_results, axis=1), new_models
+        
+        ensemble_model, ensemble_results = self.experiment.create_majority(sorted_models, optimize=optimize, fold=self.num_splits, 
+                                                        probability_threshold=probability_theshold, weights=weights)
+        
+        return ensemble_results, ensemble_model
+    
+    def _finalize_model(self, sorted_model):
+        """
+        Finalize the model by training it with all the data including the test set.
+
+        Parameters
+        ----------
+        sorted_model : Any
+            The model or models to finalize.
+
+        Returns
+        -------
+        Any
+            The finalized models
+
+        Raises
+        ------
+        TypeError
+            The model should be a list of models, a dictionary of models or a model
+        """
+        match sorted_model:
+            case [*list_models]:
+                final = []
+                for mod in list_models:
+                    final.append(self.experiment.finalize_model(mod))
+                return final
+            
+            case {**dict_models} if "split" in list(dict_models)[0]:
+                final = {}
+                for key, value in dict_models.items():
+                    if isinstance(value, dict):
+                        if key not in final:
+                            final[key] = {}
+                        for model_name, mod in list(value.items())[:self.experiment.best_model]:
+                            final[key][model_name] = self.experiment.finalize_model(mod)
+                    elif isinstance(value, (CustomProbabilityThresholdClassifier, VotingRegressor, 
+                                            VotingClassifier, StackingRegressor, StackingClassifier)):
+                        final[key] = self.experiment.finalize_model(value)
+                return final
+            
+            case {**dict_models}:
+                final = {}
+                for model_name, mod in list(dict_models.items())[:self.experiment.best_model]:
+                    final[model_name] = self.experiment.finalize_model(mod)
+                return final
+            
+            case CustomProbabilityThresholdClassifier(model) | VotingRegressor(model) | VotingClassifier(model) | StackingRegressor(model) | StackingClassifier(model):
+                final = self.experiment.finalize_model(model)
+                return final
+            
+            case _:
+                raise TypeError("The model should be a list of models, a dictionary of models or a model")
+            
+    def _save_model(self, model, filename):
+        """
+        Save the model
+
+        Parameters
+        ----------
+        model : Any
+            The trained model.
+        filename : str
+            The name of the file to save the model.
+        """
+        model_output = self.output_path / "models"
+        self.experiment.save(model, model_output/filename)
+            
+            
+
