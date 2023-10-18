@@ -1,7 +1,8 @@
 import pandas as pd
-from .base import PycaretInterface, Trainer, DataParser
+from .base import PycaretInterface, Trainer, DataParser, write_results
 from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
 import argparse
+from pathlib import Path
 
 def arg_parse():
     parser = argparse.ArgumentParser(description="Train classification models")
@@ -48,12 +49,15 @@ def arg_parse():
 
     parser.add_argument("-d", "--drop", nargs="+", required=False, default=(), help="The models to drop")
 
+    parser.add_argument("--tune", action="store_true", required=False, default=False, 
+                        help="If to tune the best models")
+
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.budget_time, args.num_thread, args.scaler,
             args.excel, args.kfold_parameters, args.outliers, args.precision_weight, args.recall_weight,
             args.report_weight, args.difference_weight, args.strategy, args.best_model,
-            args.seed, args.drop]
+            args.seed, args.drop, args.tune]
 
 
 class Classifier(Trainer):
@@ -143,7 +147,7 @@ class Classifier(Trainer):
 
         Returns
         -------
-        dict[tuple(dict[pd.DataFrame], dict[models]))]
+        tuple[pd.DataFrame, dict[str, models], pd.Series]
             A dictionary with the sorted results and sorted models from pycaret organized by split index or kfold index
         """
         self.log.info("------ Running kfold -----")
@@ -172,3 +176,43 @@ class Classifier(Trainer):
     def finalize_model(self, sorted_model):
         return self._finalize_model(sorted_model)
     
+    def save_model(self, sorted_models, filename: str | dict[str, str] | None = None):
+        return self._save_model(sorted_models, filename)
+
+def main():
+    label, training_output, budget_time, num_thread, scaler, excel, kfold, outliers, \
+    precision_weight, recall_weight, report_weight, difference_weight, strategy, best_model, \
+    seed, drop, tune = arg_parse()
+    
+    num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
+    training_output = Path(training_output)
+    if len(outliers) > 0 and Path(outliers[0]).exists():
+        with open(outliers) as out:
+            outliers = [x.strip() for x in out.readlines()]
+
+    
+    feature = DataParser(label, excel)
+    experiment = PycaretInterface("classification", feature.label, seed, budget_time=budget_time, best_model=best_model)
+
+    ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight,
+                        difference_weight=difference_weight, report_weight=report_weight)
+    training = Classifier(experiment, training_output, num_split, test_size, outliers, scaler, ranking_dict, drop)
+    
+    if strategy == "holdout":
+        sorted_results, sorted_models, top_params = training.run_holdout(feature)
+    elif strategy == "kfold":
+        sorted_results, sorted_models, top_params = training.run_kfold(feature)
+
+    write_results(training_output/"not_tuned", sorted_results, top_params, strategy)
+    if tune:
+        sorted_results, sorted_models, top_params = training.retune_best_models(sorted_models)
+        write_results(training_output/"tuned", sorted_results, top_params, strategy)
+    stack_results, stack_model, stack_params = training.stack_models(sorted_models)
+    write_results(training_output/"stacked", stack_results, stack_params, strategy)
+    majority_results, majority_models,  = training.create_majority_model(sorted_models)
+    write_results(training_output/"majority", majority_results, sheet_name=strategy)
+
+
+if __name__ == "__main__":
+    # Run this if this file is executed from command line but not if is imported as API
+    main()

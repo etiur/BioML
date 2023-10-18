@@ -1,8 +1,7 @@
 from sklearn.model_selection import train_test_split, ShuffleSplit
-from BioML.utilities import write_excel
 from pathlib import Path
 import argparse
-from .base import PycaretInterface, Trainer, DataParser
+from .base import PycaretInterface, Trainer, DataParser, write_results
 import pandas as pd
 
 
@@ -29,11 +28,6 @@ def arg_parse():
                              "record should be in a new line")
     parser.add_argument("-bu", "--budget_time", required=False, default=None, type=float,
                         help="The time budget for the training in minutes, should be > 0 or None")
-
-    parser.add_argument("-rpw", "--report_weight", required=False, default=0.6, type=float,
-                        help="Weights to specify how relevant is the f1, precision and recall for the ranking of the "
-                             "different features with respect to MCC which is a more general measures of "
-                             "the performance of a model")
     parser.add_argument("-dw", "--difference_weight", required=False, default=1.2, type=float,
                         help="How important is to have similar training and test metrics")
     parser.add_argument("-r2", "--r2_weight", required=False, default=0.8, type=float,
@@ -45,13 +39,20 @@ def arg_parse():
     parser.add_argument("--seed", required=False, default=None, type=int, help="The seed for the random state")
 
     parser.add_argument("-d", "--drop", nargs="+", required=False, default=(), help="The models to drop")
-
+    parser.add_argument("--tune", action="store_true", required=False, default=False, 
+                        help="If to tune the best models")
+    
+    parser.add_argument("-se", "--select", required=False, default=None, 
+                        help="what model to chose", choices=("stacked", "majority", "best"))
+    parser.add_argument("-i", "--index", required=False, default=None, type=int, 
+                        help="which one of the best models to choose, starting from 0, only use when select = best")
+    
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.budget_time, args.num_thread, args.scaler,
-            args.excel, args.kfold_parameters, args.outliers, args.report_weight, 
+            args.excel, args.kfold_parameters, args.outliers,
             args.difference_weight, args.r2_weight, args.strategy, args.best_model,
-            args.seed, args.drop]
+            args.seed, args.drop, args.tune, args.select, args.index]
 
 
 class Regressor(Trainer):
@@ -157,15 +158,17 @@ class Regressor(Trainer):
     
     def finalize_model(self, sorted_model):
         return self._finalize_model(sorted_model)
+    
+    def save_model(self, sorted_models, filename: str | dict[str, str] | None = None):
+        return self._save_model(sorted_models, filename)
+    
 
-def write_results(training_output, sorted_results, top_params, sheet_name):
-    write_excel(training_output / "training_results.xlsx", sorted_results, sheet_name)
-    write_excel(training_output / f"top_hyperparameters.xlsx", top_params, sheet_name)
+
 
 
 def main():
     label, training_output, trial_time, num_thread, scaler, excel, kfold, outliers, \
-        difference_weight, r2_weight, strategy, seed, best_model, drop = arg_parse()
+        difference_weight, r2_weight, strategy, seed, best_model, drop, tune = arg_parse()
     
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     training_output = Path(training_output)
@@ -178,16 +181,22 @@ def main():
     experiment = PycaretInterface("regression", feature.label, seed, budget_time=trial_time, best_model=best_model)
 
     ranking_dict = dict(R2_weight=r2_weight, difference_weight=difference_weight)
-    training = Regressor(experiment, training_output, num_split, test_size, outliers, scaler, ranking_dict, drop)
+    training = Regressor(experiment, training_output, num_split, test_size, outliers, scaler, 
+                         ranking_dict, drop)
     
     if strategy == "holdout":
         sorted_results, sorted_models, top_params = training.run_holdout(feature)
     elif strategy == "kfold":
         sorted_results, sorted_models, top_params = training.run_kfold(feature)
 
-    write_results(training_output, sorted_results, top_params, strategy)
-
-    
+    write_results(training_output/"not_tuned", sorted_results, top_params, strategy)
+    if tune:
+        sorted_results, sorted_models, top_params = training.retune_best_models(sorted_models)
+        write_results(training_output/"tuned", sorted_results, top_params, strategy)
+    stack_results, stack_model, stack_params = training.stack_models(sorted_models)
+    write_results(training_output/"stacked", stack_results, stack_params, strategy)
+    majority_results, majority_models,  = training.create_majority_model(sorted_models)
+    write_results(training_output/"majority", majority_results, sheet_name=strategy)
 
 
 if __name__ == "__main__":

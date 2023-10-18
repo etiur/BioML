@@ -9,7 +9,12 @@ from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
 from ..utilities import Log, scale
 from sklearn.metrics import average_precision_score
+from ..utilities import write_excel
 
+def write_results(training_output, sorted_results, top_params=None, *, sheet_name=None):
+    write_excel(training_output / "training_results.xlsx", sorted_results, sheet_name)
+    if top_params is not None:
+        write_excel(training_output / f"top_hyperparameters.xlsx", top_params, sheet_name)
 
 @dataclass
 class DataParser:
@@ -239,12 +244,12 @@ class PycaretInterface:
         params = self.get_params(name, tuned_model)
         return tuned_model, tuned_results, params
     
-    def stack_models(self, estimator_dict: dict, optimize="MCC", fold=5, probability_threshold=0.5, meta_model=None):
+    def stack_models(self, estimator_list: list, optimize="MCC", fold=5, probability_threshold=0.5, meta_model=None):
         self.log.info("----------Stacking the best models--------------")
         self.log.info(f"fold: {fold}")
         self.log.info(f"probability_threshold: {probability_threshold}")
         self.log.info(f"optimize: {optimize}")
-        stacked_models = self.model.stack_models(list(estimator_dict.values())[:self.best_model], optimize=optimize, 
+        stacked_models = self.model.stack_models(estimator_list, optimize=optimize, 
                                                  return_train_score=True,  verbose=False, fold=fold, 
                                                  probability_threshold=probability_threshold, meta_model_fold=fold, 
                                                  meta_model=meta_model)
@@ -253,13 +258,13 @@ class PycaretInterface:
         params = self.get_params_stacked(stacked_models)
         return stacked_models, stacked_results, params
     
-    def create_majority(self, estimator_dict: dict, optimize="MCC", fold=5, probability_threshold=0.5, weights=None):
+    def create_majority(self, estimator_list: list, optimize="MCC", fold=5, probability_threshold=0.5, weights=None):
         self.log.info("----------Creating a majority voting model--------------")
         self.log.info(f"fold: {fold}")
         self.log.info(f"probability_threshold: {probability_threshold}")
         self.log.info(f"optimize: {optimize}")
         self.log.info(f"weights: {weights}")
-        majority_model = self.model.blend_models(list(estimator_dict.values())[:self.best_model], optimize=optimize, 
+        majority_model = self.model.blend_models(estimator_list, optimize=optimize, 
                                                  verbose=False, return_train_score=True, fold=fold, 
                                                  probability_threshold=probability_threshold, weights=weights)
         
@@ -552,13 +557,14 @@ class Trainer:
             new_results = {}
             new_params = {}
             for key, sorted_model_by_split in sorted_models.items():
-                new_models[key], new_results[key], new_params[key] = self.experiment.stack_models(sorted_model_by_split, 
+                new_models[key], new_results[key],
+                new_params[key] = self.experiment.stack_models(list(sorted_model_by_split.values())[:self.experiment.best_model], 
                                                       optimize=optimize, fold=self.num_splits,
                                                       probability_threshold=probability_theshold, meta_model=meta_model)
                 
             return pd.concat(new_results, axis=1), new_models, pd.concat(new_params)
         
-        stacked_models, stacked_results, params = self.experiment.stack_models(sorted_models, optimize=optimize, fold=self.num_splits, 
+        stacked_models, stacked_results, params = self.experiment.stack_models(list(sorted_models.values())[:self.experiment.best_model], optimize=optimize, fold=self.num_splits, 
                                                       probability_threshold=probability_theshold, meta_model=meta_model)
         
         return stacked_results, stacked_models, params
@@ -570,16 +576,16 @@ class Trainer:
             new_models = {}
             new_results = {}
             for key, sorted_model_by_split in sorted_models.items():
-                new_models[key], new_results[key] = self.experiment.create_majority(sorted_model_by_split, optimize=optimize, fold=self.num_splits, 
+                new_models[key], new_results[key] = self.experiment.create_majority(list(sorted_model_by_split.values())[:self.experiment.best_model], optimize=optimize, fold=self.num_splits, 
                                                         probability_threshold=probability_theshold, weights=weights)
             return pd.concat(new_results, axis=1), new_models
         
-        ensemble_model, ensemble_results = self.experiment.create_majority(sorted_models, optimize=optimize, fold=self.num_splits, 
+        ensemble_model, ensemble_results = self.experiment.create_majority(list(sorted_models.values())[:self.experiment.best_model], optimize=optimize, fold=self.num_splits, 
                                                         probability_threshold=probability_theshold, weights=weights)
         
         return ensemble_results, ensemble_model
     
-    def _finalize_model(self, sorted_model):
+    def _finalize_model(self, sorted_model, index: int | None = None):
         """
         Finalize the model by training it with all the data including the test set.
 
@@ -605,29 +611,28 @@ class Trainer:
                     final.append(self.experiment.finalize_model(mod))
                 return final
             
-            case {**dict_models} if "split" in list(dict_models)[0]:
+            case {**dict_models} if "split" in list(dict_models)[0]: # for kfold models, kfold stacked or majority models
                 final = {}
                 for key, value in dict_models.items():
                     if isinstance(value, dict):
-                        if key not in final:
-                            final[key] = {}
-                        for model_name, mod in list(value.items())[:self.experiment.best_model]:
-                            final[key][model_name] = self.experiment.finalize_model(mod)
+                        model_name, mod = list(value.items())[index]
+                        final[key][model_name] = self.experiment.finalize_model(mod)
                     else:
                         final[key] = self.experiment.finalize_model(value)
                 return final
             
-            case {**dict_models}:
+            case {**dict_models}: # for holdout models
                 final = {}
-                for model_name, mod in list(dict_models.items())[:self.experiment.best_model]:
-                    final[model_name] = self.experiment.finalize_model(mod)
+                model_name, mod = list(dict_models.items())[index]
+                final[model_name] = self.experiment.finalize_model(mod)
                 return final
             
             case model:
                 final = self.experiment.finalize_model(model)
                 return final
             
-    def _save_model(self, sorted_models, filename: str | dict[str, str] | None=None):
+    def _save_model(self, sorted_models, filename: str | dict[str, str] | None=None, 
+                    index:int | None=None):
         """
         Save the model
 
@@ -640,11 +645,11 @@ class Trainer:
         """
         model_output = self.output_path / "models"
         match sorted_models:
-            case {**models} if "split" in list(models)[0]:
+            case {**models} if "split" in list(models)[0]: # for kfold models, kfold stacked or majority models 
                 for key, value in models.items():
                     if isinstance(value, dict):
-                        for model_name, mod in value.items():
-                            self.experiment.save(mod, model_output/key/model_name)
+                        model_name, mod = list(value.items())[index]
+                        self.experiment.save(mod, model_output/key/model_name)
                     else:
                         self.experiment.save(value, model_output/filename[key])
             case {**models}:
