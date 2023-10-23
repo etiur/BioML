@@ -3,6 +3,7 @@ from .base import PycaretInterface, Trainer, DataParser, write_results
 from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
 import argparse
 from pathlib import Path
+from collections import defaultdict
 
 def arg_parse():
     parser = argparse.ArgumentParser(description="Train classification models")
@@ -44,12 +45,12 @@ def arg_parse():
                         help="The spliting strategy to use")
 
     parser.add_argument("-be", "--best_model", required=False, default=3, type=int,
-                        help="The number of best models to select, it affects the analysis and the save hyperparameters")
+                        help="The number of best models to select, it affects the analysis and the saved hyperparameters")
     parser.add_argument("--seed", required=False, default=None, type=int, help="The seed for the random state")
 
     parser.add_argument("-d", "--drop", nargs="+", required=False, default=(), help="The models to drop")
 
-    parser.add_argument("--tune", action="store_true", required=False, default=False, 
+    parser.add_argument("--tune", action="store_false", required=False, default=False, 
                         help="If to tune the best models")
 
     args = parser.parse_args()
@@ -189,7 +190,6 @@ def main():
     if len(outliers) > 0 and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = [x.strip() for x in out.readlines()]
-
     
     feature = DataParser(label, excel)
     experiment = PycaretInterface("classification", feature.label, seed, budget_time=budget_time, best_model=best_model)
@@ -203,14 +203,24 @@ def main():
     elif strategy == "kfold":
         sorted_results, sorted_models, top_params = training.run_kfold(feature)
 
-    write_results(training_output/"not_tuned", sorted_results, top_params, strategy)
+    # saving the results in a dictionary and writing it into excel files
+    results = defaultdict(dict)
+    results["not_tuned"][strategy] = sorted_results, sorted_models, top_params
+    results["not_tuned"]["stacked"] = training.stack_models(sorted_models)
+    results["not_tuned"]["majority"] = training.create_majority_model(sorted_models)
+
     if tune:
-        sorted_results, sorted_models, top_params = training.retune_best_models(sorted_models)
-        write_results(training_output/"tuned", sorted_results, top_params, strategy)
-    stack_results, stack_model, stack_params = training.stack_models(sorted_models)
-    write_results(training_output/"stacked", stack_results, stack_params, strategy)
-    majority_results, majority_models,  = training.create_majority_model(sorted_models)
-    write_results(training_output/"majority", majority_results, sheet_name=strategy)
+        sorted_result_tune, sorted_models_tune, top_params_tune = training.retune_best_models(sorted_models)
+        results["tuned"][strategy] = sorted_result_tune, sorted_models_tune, top_params_tune
+        results["tuned"]["stacked"] = training.stack_models(sorted_models_tune)
+        results["tuned"]["majority"] = training.create_majority_model(sorted_models_tune)
+
+    for tune_status, result_dict in results.items():
+        for key, value in result_dict.items():
+            if len(value) == 2:
+                write_results(training_output/f"{tune_status}", value[0], sheet_name=key)
+            elif len(value) == 3:
+                write_results(training_output/f"{tune_status}", value[0], value[2], sheet_name=key)
 
 
 if __name__ == "__main__":

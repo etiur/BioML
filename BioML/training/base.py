@@ -11,7 +11,7 @@ from ..utilities import Log, scale
 from sklearn.metrics import average_precision_score
 from ..utilities import write_excel
 
-def write_results(training_output, sorted_results, top_params=None, *, sheet_name=None):
+def write_results(training_output, sorted_results, top_params=None, sheet_name=None):
     write_excel(training_output / "training_results.xlsx", sorted_results, sheet_name)
     if top_params is not None:
         write_excel(training_output / f"top_hyperparameters.xlsx", top_params, sheet_name)
