@@ -46,13 +46,14 @@ def arg_parse():
 class GenerateModel(Trainer):
     def __init__(self, model: PycaretInterface, selected_models: tuple[str] | str | dict[str, tuple[str, ...]], num_splits=5, 
                  test_size=0.2, outliers: tuple[str, ...]=(), scaler="robust", model_output="models",
-                 problem="classification"):
+                 problem="classification", optimize="MCC"):
         super().__init__(model, num_splits=num_splits, test_size=test_size, outliers=outliers, 
                          scaler=scaler)
 
         self.model_output = Path(model_output)
         self.selected_models = selected_models
         self.problem = problem
+        self.optimize = optimize
     
     def run_holdout(self, feature: DataParser):
         """
@@ -109,11 +110,11 @@ class GenerateModel(Trainer):
                                                                      selected=self.selected_models)
         return sorted_models
 
-    def stack_models(self, sorted_models: dict, optimize="MCC", probability_theshold: float | None = None, meta_model=None):
-        return self._stack_models(sorted_models, optimize, probability_theshold, meta_model)
+    def stack_models(self, sorted_models: dict, meta_model=None):
+        return self._stack_models(sorted_models, self.optimize, meta_model)
     
-    def create_majority_model(self, sorted_models: dict, optimize: str = "MCC", probability_theshold: float | None = None, weights: Iterable[float] | None = None):
-        return self._create_majority_model(sorted_models, optimize, probability_theshold, weights)
+    def create_majority_model(self, sorted_models: dict, weights: Iterable[float] | None = None):
+        return self._create_majority_model(sorted_models, self.optimize, weights=weights)
 
     def finalize_model(self, sorted_model, index: int | dict[str, int] | None = None):
         """
@@ -175,7 +176,7 @@ class GenerateModel(Trainer):
         filename : str, dict[str, str]
             The name of the file to save the model.
         """
-        
+
         match sorted_models:
             case {**models} if "split" in list(models)[0]: # for kfold models, kfold stacked or majority models 
                 for split_ind, value in models.items():

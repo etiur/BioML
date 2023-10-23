@@ -289,29 +289,27 @@ class PycaretInterface:
         params = self.get_params(name, tuned_model)
         return tuned_model, tuned_results, params
     
-    def stack_models(self, estimator_list: list, optimize="MCC", fold=5, probability_threshold: float | None=None, meta_model=None):
+    def stack_models(self, estimator_list: list, optimize="MCC", fold=5, meta_model=None):
         self.log.info("----------Stacking the best models--------------")
         self.log.info(f"fold: {fold}")
-        self.log.info(f"probability_threshold: {probability_threshold}")
         self.log.info(f"optimize: {optimize}")
         stacked_models = self.model.stack_models(estimator_list, optimize=optimize, 
                                                  return_train_score=True,  verbose=False, fold=fold, 
-                                                 probability_threshold=probability_threshold, meta_model_fold=fold, 
+                                                 meta_model_fold=fold, 
                                                  meta_model=meta_model)
         results = self.model.pull(pop=True)
         stacked_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
         params = self.get_params_stacked(stacked_models)
         return stacked_models, stacked_results, params
     
-    def create_majority(self, estimator_list: list, optimize="MCC", fold=5, probability_threshold: float | None=None, weights=None):
+    def create_majority(self, estimator_list: list, optimize="MCC", fold=5, weights=None):
         self.log.info("----------Creating a majority voting model--------------")
         self.log.info(f"fold: {fold}")
-        self.log.info(f"probability_threshold: {probability_threshold}")
         self.log.info(f"optimize: {optimize}")
         self.log.info(f"weights: {weights}")
         majority_model = self.model.blend_models(estimator_list, optimize=optimize, 
                                                  verbose=False, return_train_score=True, fold=fold, 
-                                                 probability_threshold=probability_threshold, weights=weights)
+                                                 weights=weights)
         
         results = self.model.pull(pop=True)
         majority_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
@@ -340,8 +338,7 @@ class PycaretInterface:
         """
         self.model.plot_model(model, "learning", save=save)
 
-    def predict(self, estimador, target_data: pd.DataFrame|None=None, 
-                probability_threshold: float | None=None) -> pd.DataFrame:
+    def predict(self, estimador, target_data: pd.DataFrame|None=None) -> pd.DataFrame:
         """
         Predict with teh new data or if not specified predict on the holdout data.
 
@@ -359,7 +356,7 @@ class PycaretInterface:
         
         """
         pred = self.model.predict_model(estimador, data=target_data, 
-                                        probability_threshold=probability_threshold, verbose=False)
+                                        verbose=False)
         if target_data is None or self.label_name in target_data.columns:
             results = self.model.pull(pop=True)
             return results
@@ -602,7 +599,7 @@ class Trainer:
 
         return pd.concat(new_results), new_models, pd.concat(new_params)
     
-    def _stack_models(self, sorted_models: dict, optimize="MCC",  probability_theshold: None|float=None, meta_model=None):
+    def _stack_models(self, sorted_models: dict, optimize="MCC", meta_model=None):
         self.log.info("--------Stacking the best models--------")
         if "split" in list(sorted_models)[0]:
             new_models = {}
@@ -612,16 +609,16 @@ class Trainer:
                 new_models[key], new_results[key],
                 new_params[key] = self.experiment.stack_models(list(sorted_model_by_split.values())[:self.experiment.best_model], 
                                                       optimize=optimize, fold=self.num_splits,
-                                                      probability_threshold=probability_theshold, meta_model=meta_model)
+                                                      meta_model=meta_model)
                 
             return pd.concat(new_results, axis=1), new_models, pd.concat(new_params)
         
         stacked_models, stacked_results, params = self.experiment.stack_models(list(sorted_models.values())[:self.experiment.best_model], optimize=optimize, fold=self.num_splits, 
-                                                      probability_threshold=probability_theshold, meta_model=meta_model)
+                                                      meta_model=meta_model)
         
         return stacked_results, stacked_models, params
     
-    def _create_majority_model(self, sorted_models: dict, optimize: str="MCC", probability_theshold: None|float=None, 
+    def _create_majority_model(self, sorted_models: dict, optimize: str="MCC", 
                                weights: Iterable[float] | None =None):
         self.log.info("--------Creating an ensemble model--------")
         if "split" in list(sorted_models)[0]:
@@ -629,21 +626,21 @@ class Trainer:
             new_results = {}
             for key, sorted_model_by_split in sorted_models.items():
                 new_models[key], new_results[key] = self.experiment.create_majority(list(sorted_model_by_split.values())[:self.experiment.best_model], optimize=optimize, fold=self.num_splits, 
-                                                        probability_threshold=probability_theshold, weights=weights)
+                                                        weights=weights)
             return pd.concat(new_results, axis=1), new_models
         
         ensemble_model, ensemble_results = self.experiment.create_majority(list(sorted_models.values())[:self.experiment.best_model], optimize=optimize, fold=self.num_splits, 
-                                                        probability_threshold=probability_theshold, weights=weights)
+                                                        weights=weights)
         
         return ensemble_results, ensemble_model
     
-    def _predict_on_test_set(self, sorted_models: dict | list, name: str, probability_threshold=None) -> pd.DataFrame:
+    def _predict_on_test_set(self, sorted_models: dict | list, name: str) -> pd.DataFrame:
         match sorted_models:
             case [*list_models]:
                 final = []
                 # it keeps the original sorted order
                 for mod in list_models:
-                    result = self.experiment.predict(mod, probability_threshold=probability_threshold)
+                    result = self.experiment.predict(mod)
                     result.index = [f"Test-results-{name}"]
                     final.append(result)
                 return pd.concat(final)
@@ -654,12 +651,12 @@ class Trainer:
                     if isinstance(mod, dict):
                         results_by_split = []
                         for model in list(mod.values())[:self.experiment.best_model]:
-                            result = self.experiment.predict(model, probability_threshold=probability_threshold)
+                            result = self.experiment.predict(model)
                             result.index = [f"Test-results-{name}"]
                             results_by_split.append(result)
                         final[f"split_{split_ind}"] = pd.concat(results_by_split)
                     else:
-                        result = self.experiment.predict(mod, probability_threshold=probability_threshold)
+                        result = self.experiment.predict(mod)
                         result.index = [f"Test-results-{name}"]
                         final[f"split_{split_ind}"] = result
 
@@ -668,13 +665,13 @@ class Trainer:
             case {**dict_models}: # for single models
                 final = []
                 for model in list(dict_models.values())[:self.experiment.best_model]:
-                    result = self.experiment.predict(model, probability_threshold=probability_threshold)
+                    result = self.experiment.predict(model)
                     result.index = [f"Test-results-{name}"]
                     final.append(result)
                 return pd.concat(final)
 
             case mod:
-                result = self.experiment.predict(mod, probability_threshold=probability_threshold)
+                result = self.experiment.predict(mod)
                 result.index = [f"Test-results-{name}"]
                 return result
            

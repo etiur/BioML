@@ -46,22 +46,30 @@ def arg_parse():
                         help="The number of best models to select, it affects the analysis and the saved hyperparameters")
     parser.add_argument("--seed", required=False, default=None, type=int, help="The seed for the random state")
 
-    parser.add_argument("-d", "--drop", nargs="+", required=False, default=(), help="The models to drop")
+    parser.add_argument("-d", "--drop", nargs="+", required=False, default=("ada", "gpc", "lightgbm"),
+                        choices=('lr','knn','nb','dt','svm','rbfsvm','gpc','mlp','ridge','rf','qda','ada','gbc',
+                                'lda','et','xgboost','lightgbm','catboost','dummy'), 
+                        help="The models to drop")
 
     parser.add_argument("--tune", action="store_false", required=False, default=False, 
                         help="If to tune the best models")
+    parser.add_argument("-p", "--plot", nargs="+", required=False, default=("learning", "confusion_matrix", "class_report"),
+                        help="The plots to save", choices=("learning", "confusion_matrix", "class_report", "pr", "auc"))
+    parser.add_argument("-op", "--optimize", required=False, default="MCC", choices=("MCC", "Prec.", "Recall", "F1", "AUC", "Accuracy", 
+                                                                                     "Average Precision Score"),
+                        help="The metric to optimize for retuning the best models")
 
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.budget_time, args.scaler, args.excel, args.kfold_parameters, 
             args.outliers, args.precision_weight, args.recall_weight, args.report_weight, args.difference_weight, 
-            args.strategy, args.best_model, args.seed, args.drop, args.tune]
+            args.strategy, args.best_model, args.seed, args.drop, args.tune, args.plot, args.optimize]
 
 
 class Classifier(Trainer):
     def __init__(self, model: PycaretInterface, output="training_results", num_splits=5, test_size=0.2,
                  outliers: tuple[str, ...]=(), scaler="robust",  ranking_params: dict[str, float]=None,  
-                 drop: tuple[str] = ("ada", "gpc", "lightgbm")):
+                 drop: tuple[str] = ("ada", "gpc", "lightgbm"), optimize="MCC"):
         # initialize the Trainer class
         super().__init__(model, output, num_splits, test_size, outliers, scaler)
         # change the ranking parameters
@@ -77,13 +85,14 @@ class Classifier(Trainer):
         self.rec_weight = ranking_dict["recall_weight"]
         self.report_weight = ranking_dict["report_weight"]
         self.difference_weight = ranking_dict["difference_weight"]
+        self.optimize = optimize
     
     def _calculate_score_dataframe(self, dataframe):
         cv_train = dataframe.loc[("CV-Train", "Mean")]
         cv_val = dataframe.loc[("CV-Val", "Mean")]
 
-        mcc = ((cv_train["MCC"] + cv_val["MCC"])
-                - self.difference_weight * abs(cv_val["MCC"] - cv_val["MCC"] ))
+        mcc = ((cv_train[self.optimize] + cv_val[self.optimize])
+                - self.difference_weight * abs(cv_val[self.optimize] - cv_val[self.optimize] ))
         
         prec = ((cv_train["Prec."] + cv_val["Prec."])
                 - self.difference_weight * abs(cv_val["Prec."] - cv_train["Prec."]))
@@ -152,23 +161,23 @@ class Classifier(Trainer):
         sorted_results, sorted_models, top_params = self.setup_kfold(feature.features, feature.label, skf, plot, feature.with_split, drop=self.drop)
         return sorted_results, sorted_models, top_params
     
-    def retune_best_models(self, sorted_models: dict, optimize: str = "MCC", num_iter: int = 5):
+    def retune_best_models(self, sorted_models: dict, num_iter: int = 5):
         if "split" in list(sorted_models)[0]:
             new_models = {}
             new_results = {}
             new_params = {}
             for key, sorted_model_by_split in sorted_models.items():
-                new_results[key], new_models[key], new_params[key] = self._retune_best_models(sorted_model_by_split, optimize, num_iter)
+                new_results[key], new_models[key], new_params[key] = self._retune_best_models(sorted_model_by_split, self.optimize, num_iter)
             return pd.concat(new_results, axis=1), new_models, pd.concat(new_params)
-        return self._retune_best_models(sorted_models, optimize, num_iter)
+        return self._retune_best_models(sorted_models, self.optimize, num_iter)
     
-    def stack_models(self, sorted_models: dict, optimize="MCC", probability_theshold: None|float = None, meta_model=None):
+    def stack_models(self, sorted_models: dict, meta_model=None):
 
-        return self._stack_models(sorted_models, optimize, probability_theshold, meta_model=meta_model)
+        return self._stack_models(sorted_models, self.optimize, meta_model=meta_model)
     
-    def create_majority_model(self, sorted_models: dict, optimize: str = "MCC", probability_theshold: None|float = None, weights=None):
+    def create_majority_model(self, sorted_models: dict, weights=None):
     
-        return self._create_majority_model(sorted_models, optimize, probability_theshold, weights)
+        return self._create_majority_model(sorted_models, self.optimize, weights)
     
     def finalize_model(self, sorted_model):
         return self._finalize_model(sorted_model)
@@ -176,14 +185,14 @@ class Classifier(Trainer):
     def save_model(self, sorted_models, filename: str | dict[str, str] | None = None):
         return self._save_model(sorted_models, filename)
     
-    def predict_on_test_set(self, sorted_models: dict | list, name: str, probability_threshold=None) -> pd.DataFrame:
-        return self._predict_on_test_set(sorted_models, name, probability_threshold)
+    def predict_on_test_set(self, sorted_models: dict | list, name: str) -> pd.DataFrame:
+        return self._predict_on_test_set(sorted_models, name)
 
 
 def main():
     label, training_output, budget_time, scaler, excel, kfold, outliers, \
     precision_weight, recall_weight, report_weight, difference_weight, strategy, best_model, \
-    seed, drop, tune = arg_parse()
+    seed, drop, tune,  plot, optimize = arg_parse()
     
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     training_output = Path(training_output)
@@ -196,10 +205,10 @@ def main():
 
     ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight,
                         difference_weight=difference_weight, report_weight=report_weight)
-    training = Classifier(experiment, training_output, num_split, test_size, outliers, scaler, ranking_dict, drop)
+    training = Classifier(experiment, training_output, num_split, test_size, outliers, scaler, ranking_dict, drop, optimize=optimize)
     
     if strategy == "holdout":
-        sorted_results, sorted_models, top_params = training.run_holdout(feature)
+        sorted_results, sorted_models, top_params = training.run_holdout(feature, plot)
     elif strategy == "kfold":
         sorted_results, sorted_models, top_params = training.run_kfold(feature)
 

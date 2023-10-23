@@ -39,21 +39,29 @@ def arg_parse():
                         help="The number of best models to select, it affects the analysis and the save hyperparameters")
     parser.add_argument("--seed", required=False, default=None, type=int, help="The seed for the random state")
 
-    parser.add_argument("-d", "--drop", nargs="+", required=False, default=(), help="The models to drop")
+    parser.add_argument("-d", "--drop", nargs="+", required=False, default=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), 
+                        choices=(['lr','lasso','ridge','en','lar','llar','omp','br','ard','par','ransac',
+                                  'tr','huber','kr','svm','knn','dt','rf','et','ada','gbr','mlp','xgboost',
+                                  'lightgbm','catboost','dummy']), help="The models to drop")
     parser.add_argument("--tune", action="store_true", required=False, default=False, 
                         help="If to tune the best models")
-    
+    parser.add_argument("-op", "--optimize", required=False, default="RMSE", 
+                        choices=("RMSE", "R2", "MSE", "MAE", "RMSLE", "MAPE"), help="The metric to optimize")
+    parser.add_argument("-p", "--plot", nargs="+", required=False, default=("residuals", "error", "learning"),
+                        help="The plots to show")
+
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.budget_time, args.scaler,
             args.excel, args.kfold_parameters, args.outliers,
             args.difference_weight, args.r2_weight, args.strategy, args.best_model,
-            args.seed, args.drop, args.tune]
+            args.seed, args.drop, args.tune, args.plot, args.optimize]
 
 
 class Regressor(Trainer):
     def __init__(self, model: PycaretInterface, output="training_results", num_splits=5, test_size=0.2,
-                 outliers=(), scaler="robust", ranking_params=None, drop=("tr", "kr", "ransac", "ard", "ada", "lightgbm")):
+                 outliers=(), scaler="robust", ranking_params=None, drop=("tr", "kr", "ransac", "ard", "ada", "lightgbm"),
+                 optimize="RMSE"):
 
         super().__init__(model, output, num_splits, test_size, outliers, scaler)
         
@@ -67,13 +75,14 @@ class Regressor(Trainer):
         self.drop = drop
         self.difference_weight = ranking_dict["difference_weight"]
         self.R2_weight = ranking_dict["R2_weight"]
+        self.optimize = optimize
 
     def _calculate_score_dataframe(self, dataframe):
         cv_train = dataframe.loc[("CV-Train", "Mean")]
         cv_val = dataframe.loc[("CV-Val", "Mean")]
 
-        rmse = ((cv_train["RMSE"] + cv_val["RMSE"])
-                - self.difference_weight * abs(cv_val["RMSE"] - cv_val["RMSE"] ))
+        rmse = ((cv_train[self.optimize] + cv_val[self.optimize])
+                - self.difference_weight * abs(cv_val[self.optimize] - cv_val[self.optimize] ))
         
         r2 = ((cv_train["R2"] + cv_val["R2"])
                 - self.difference_weight * abs(cv_val["R2"] - cv_train["R2"]))
@@ -91,7 +100,7 @@ class Regressor(Trainer):
         feature : pd.DataFrame
             A dataframe containing the training samples and the features
         plot : bool, optional
-            Plot the plots relevant to the models, by default 1,2,3
+            Plot the plots relevant to the models, by default all of them
                 1. residuals: Plots the difference (predicted-actual value) vs predicted value for train and test
                 2. error: Plots the actual values vs predicted values
                 3. learning: learning curve
@@ -134,23 +143,23 @@ class Regressor(Trainer):
         sorted_results, sorted_models, top_params = self.setup_kfold(feature.features, feature.label, skf, plot, feature.with_split, drop=self.drop)
         return sorted_results, sorted_models, top_params
     
-    def retune_best_models(self, sorted_models: dict, optimize: str = "RMSE", num_iter: int = 5):
+    def retune_best_models(self, sorted_models: dict, num_iter: int = 5):
         if "split" in list(sorted_models)[0]:
             new_models = {}
             new_results = {}
             new_params = {}
             for key, sorted_model_by_split in sorted_models.items():
-                new_results[key], new_models[key], new_params[key] = self._retune_best_models(sorted_model_by_split, optimize, num_iter)
+                new_results[key], new_models[key], new_params[key] = self._retune_best_models(sorted_model_by_split, self.optimize, num_iter)
             return pd.concat(new_results, axis=1), new_models, pd.concat(new_params)
-        return self._retune_best_models(sorted_models, optimize, num_iter)
+        return self._retune_best_models(sorted_models, self.optimize, num_iter)
     
-    def stack_models(self, sorted_models: dict, optimize="RMSE", probability_theshold: None|float = None, meta_model=None):
+    def stack_models(self, sorted_models: dict, meta_model=None):
 
-        return self._stack_models(sorted_models, optimize, probability_theshold, meta_model=meta_model)
+        return self._stack_models(sorted_models, self.optimize, meta_model=meta_model)
     
-    def create_majority_model(self, sorted_models: dict, optimize: str = "RMSE", probability_theshold: None|float = None, weights=None):
+    def create_majority_model(self, sorted_models: dict, weights=None):
     
-        return self._create_majority_model(sorted_models, optimize, probability_theshold, weights)
+        return self._create_majority_model(sorted_models, self.optimize, weights)
     
     def finalize_model(self, sorted_model):
         return self._finalize_model(sorted_model)
@@ -158,13 +167,13 @@ class Regressor(Trainer):
     def save_model(self, sorted_models, filename: str | dict[str, str] | None = None):
         return self._save_model(sorted_models, filename)
     
-    def predict_on_test_set(self, sorted_models: dict | list, name: str, probability_threshold=None) -> pd.DataFrame:
-        return self._predict_on_test_set(sorted_models, name, probability_threshold)
+    def predict_on_test_set(self, sorted_models: dict | list, name: str) -> pd.DataFrame:
+        return self._predict_on_test_set(sorted_models, name)
     
 
 def main():
     label, training_output, trial_time, scaler, excel, kfold, outliers, \
-        difference_weight, r2_weight, strategy, seed, best_model, drop, tune = arg_parse()
+        difference_weight, r2_weight, strategy, seed, best_model, drop, tune, plot, optimize = arg_parse()
     
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     training_output = Path(training_output)
@@ -178,10 +187,10 @@ def main():
 
     ranking_dict = dict(R2_weight=r2_weight, difference_weight=difference_weight)
     training = Regressor(experiment, training_output, num_split, test_size, outliers, scaler, 
-                         ranking_dict, drop)
+                         ranking_dict, drop, optimize)
     
     if strategy == "holdout":
-        sorted_results, sorted_models, top_params = training.run_holdout(feature)
+        sorted_results, sorted_models, top_params = training.run_holdout(feature, plot)
     elif strategy == "kfold":
         sorted_results, sorted_models, top_params = training.run_kfold(feature)
 
@@ -196,6 +205,7 @@ def main():
         results["tuned"][strategy] = sorted_result_tune, sorted_models_tune, top_params_tune
         results["tuned"]["stacked"] = training.stack_models(sorted_models_tune)
         results["tuned"]["majority"] = training.create_majority_model(sorted_models_tune)
+
 
 
     for tune_status, result_dict in results.items():
