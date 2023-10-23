@@ -1,7 +1,7 @@
 import argparse
 import pandas as pd
 from sklearn.feature_selection import VarianceThreshold
-from BioML.utilities import scale, analyse_composition, write_excel, Log
+from ..utilities import scale, write_excel, Log
 from pathlib import Path
 # Multiprocess instead of Multiprocessing solves the pickle problem in Windows (might be different in linux)
 # but it has its own errors. Use multiprocessing.get_context('fork') seems to solve the problem but only available
@@ -17,7 +17,7 @@ import time
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, ShuffleSplit
 from typing import Iterable
 from dataclasses import dataclass
-import BioML.features.methods as methods
+import methods
 from sklearn.ensemble import RandomForestClassifier as rfc
 from sklearn.ensemble import RandomForestRegressor as rfr
 
@@ -223,53 +223,6 @@ class DataReader:
 
 
 class FeatureSelection:
-    """
-    Class for selecting features from a dataset using different filter methods.
-    
-    Parameters:
-
-    label : The label values.
-
-    features : The a pandas DataFrame with the feature values.
-
-    excel_file: Path to output Excel file to save selected features. 
-    
-    num_thread: Number of threads for parallel execution. 
-    
-    scaler: Name of scaler to use before feature selection.
-    
-    num_split: Number of folds for KFold cross-validation.
-    
-    test_size: Test set size for HoldOut validation.  
-    
-    num_filters: Number of filters to apply for feature selection.
-    
-    seed: Random seed for reproducibility.
-
-    
-    Attributes:
-    
-    num_thread: Threads for parallelism.
-    
-    scaler: Chosen scaler.
-    
-    num_splits: Number of KFold splits. 
-    
-    test_size: HoldOut test set size.
-    
-    excel_file: Output Excel file path.
-    
-    num_filters: Number of filters to apply.
-    
-    seed: Random seed.
-    
-    Methods:
-    
-    feature_set_kfold: KFold feature selection.
-    
-    feature_set_holdout: HoldOut feature selection.
-    
-    """
     def __init__(self, features: pd.DataFrame, label: pd.Series, excel_file: str | Path, scaler: str="robust",
                  num_thread: int =10, num_split: int=5, test_size: float=0.2, 
                  num_filters: int=10, seed: int | None=None):
@@ -515,7 +468,7 @@ class FeatureClassification(FeatureSelection):
                             "filter_unsupervised": filter_unsupervised, "regression_filters":()}
 
         self.log.info("Classification Problem")
-        self.log.info(f"Using {len(filter_names)+len(multivariate)+len(filter_unsupervised)} 
+        self.log.info(f"Using {len(filter_names)+len(multivariate)+len(filter_unsupervised)} \
                       filters: {filter_names}, {filter_unsupervised} and {multivariate}")
 
     @property

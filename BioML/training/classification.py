@@ -1,4 +1,3 @@
-from typing import Iterable
 import pandas as pd
 from .base import PycaretInterface, Trainer, DataParser, write_results
 from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
@@ -14,8 +13,6 @@ def arg_parse():
                         default="training_results")
     parser.add_argument("-l", "--label", required=True,
                         help="The path to the labels of the training set in a csv format")
-    parser.add_argument("-n", "--num_thread", required=False, default=50, type=int,
-                        help="The number of threads to search for the hyperparameter space")
     parser.add_argument("-s", "--scaler", required=False, default="robust", choices=("robust", "standard", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
     parser.add_argument("-e", "--excel", required=False,
@@ -56,10 +53,9 @@ def arg_parse():
 
     args = parser.parse_args()
 
-    return [args.label, args.training_output, args.budget_time, args.num_thread, args.scaler,
-            args.excel, args.kfold_parameters, args.outliers, args.precision_weight, args.recall_weight,
-            args.report_weight, args.difference_weight, args.strategy, args.best_model,
-            args.seed, args.drop, args.tune]
+    return [args.label, args.training_output, args.budget_time, args.scaler, args.excel, args.kfold_parameters, 
+            args.outliers, args.precision_weight, args.recall_weight, args.report_weight, args.difference_weight, 
+            args.strategy, args.best_model, args.seed, args.drop, args.tune]
 
 
 class Classifier(Trainer):
@@ -76,8 +72,7 @@ class Classifier(Trainer):
                 if key not in ranking_dict:
                     raise KeyError(f"The key {key} is not found in the ranking params use theses keys: {', '.join(ranking_dict.keys())}")
                 ranking_dict[key] = value
-
-        self.experiment.final_models = [x for x in self.experiment.final_models if x not in drop]
+        self.drop = drop
         self.pre_weight = ranking_dict["precision_weight"]
         self.rec_weight = ranking_dict["recall_weight"]
         self.report_weight = ranking_dict["report_weight"]
@@ -127,7 +122,7 @@ class Classifier(Trainer):
         self.log.info("------ Running holdout -----")
         X_train, X_test = train_test_split(feature.features, test_size=self.test_size, random_state=self.experiment.seed, 
                                            stratify=feature.features[feature.label])
-        sorted_results, sorted_models, top_params = self.setup_holdout(X_train, X_test, self._calculate_score_dataframe, plot)
+        sorted_results, sorted_models, top_params = self.setup_holdout(X_train, X_test, self._calculate_score_dataframe, plot, drop=self.drop)
         return sorted_results, sorted_models, top_params
 
     def run_kfold(self, feature: DataParser, plot=()):
@@ -154,7 +149,7 @@ class Classifier(Trainer):
         """
         self.log.info("------ Running kfold -----")
         skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.experiment.seed)
-        sorted_results, sorted_models, top_params = self.setup_kfold(feature.features, feature.label, skf, plot, feature.with_split)
+        sorted_results, sorted_models, top_params = self.setup_kfold(feature.features, feature.label, skf, plot, feature.with_split, drop=self.drop)
         return sorted_results, sorted_models, top_params
     
     def retune_best_models(self, sorted_models: dict, optimize: str = "MCC", num_iter: int = 5):
@@ -181,18 +176,18 @@ class Classifier(Trainer):
     def save_model(self, sorted_models, filename: str | dict[str, str] | None = None):
         return self._save_model(sorted_models, filename)
     
-    def predict_on_test_set(self, sorted_models: dict | list, name: str) -> pd.DataFrame:
-        return self._predict_on_test_set(sorted_models, name)
+    def predict_on_test_set(self, sorted_models: dict | list, name: str, probability_threshold=None) -> pd.DataFrame:
+        return self._predict_on_test_set(sorted_models, name, probability_threshold)
 
 
 def main():
-    label, training_output, budget_time, num_thread, scaler, excel, kfold, outliers, \
+    label, training_output, budget_time, scaler, excel, kfold, outliers, \
     precision_weight, recall_weight, report_weight, difference_weight, strategy, best_model, \
     seed, drop, tune = arg_parse()
     
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     training_output = Path(training_output)
-    if len(outliers) > 0 and Path(outliers[0]).exists():
+    if len(outliers) == 1 and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = [x.strip() for x in out.readlines()]
     

@@ -1,6 +1,4 @@
 from dataclasses import dataclass, field
-from json import load
-import stat
 import pandas as pd
 from typing import Iterable, Callable
 import numpy as np
@@ -93,8 +91,6 @@ class PycaretInterface:
         elif self.objective == "regression":
             self.model = RegressionExperiment()
             self._plots = ["residuals", "error", "learning"]
-        mod = self.models.models()
-        self._final_models = mod.index.to_list()
         if not self.seed:
             self.seed = int(time.time())
         self.log.info(f"Seed: {self.seed}")
@@ -137,19 +133,69 @@ class PycaretInterface:
     @property
     def final_models(self):
         """
-        The models to be used for classification
+        The models to be used for classification or regression use one of the keys
+        ---------------Classification models---------------
+        {'lr': 'Logistic Regression',
+        'knn': 'K Neighbors Classifier',
+        'nb': 'Naive Bayes',
+        'dt': 'Decision Tree Classifier',
+        'svm': 'SVM - Linear Kernel',
+        'rbfsvm': 'SVM - Radial Kernel',
+        'gpc': 'Gaussian Process Classifier',
+        'mlp': 'MLP Classifier',
+        'ridge': 'Ridge Classifier',
+        'rf': 'Random Forest Classifier',
+        'qda': 'Quadratic Discriminant Analysis',
+        'ada': 'Ada Boost Classifier',
+        'gbc': 'Gradient Boosting Classifier',
+        'lda': 'Linear Discriminant Analysis',
+        'et': 'Extra Trees Classifier',
+        'xgboost': 'Extreme Gradient Boosting',
+        'lightgbm': 'Light Gradient Boosting Machine',
+        'catboost': 'CatBoost Classifier',
+        'dummy': 'Dummy Classifier'}
+    
+        -----------Regression models-----------------------
+        {'lr': 'Linear Regression',
+        'lasso': 'Lasso Regression',
+        'ridge': 'Ridge Regression',
+        'en': 'Elastic Net',
+        'lar': 'Least Angle Regression',
+        'llar': 'Lasso Least Angle Regression',
+        'omp': 'Orthogonal Matching Pursuit',
+        'br': 'Bayesian Ridge',
+        'ard': 'Automatic Relevance Determination',
+        'par': 'Passive Aggressive Regressor',
+        'ransac': 'Random Sample Consensus',
+        'tr': 'TheilSen Regressor',
+        'huber': 'Huber Regressor',
+        'kr': 'Kernel Ridge',
+        'svm': 'Support Vector Regression',
+        'knn': 'K Neighbors Regressor',
+        'dt': 'Decision Tree Regressor',
+        'rf': 'Random Forest Regressor',
+        'et': 'Extra Trees Regressor',
+        'ada': 'AdaBoost Regressor',
+        'gbr': 'Gradient Boosting Regressor',
+        'mlp': 'MLP Regressor',
+        'xgboost': 'Extreme Gradient Boosting',
+        'lightgbm': 'Light Gradient Boosting Machine',
+        'catboost': 'CatBoost Regressor',
+        'dummy': 'Dummy Regressor'}
         """
+        mod = self.model.models()
+        self._final_models = mod.index.to_list()
         return self._final_models
     
     @final_models.setter
     def final_models(self, value) -> list[str]:
         self._final_models = self._check_value(value, self.mod.index.to_list(), "models")
 
-    def setup_training(self, X_train, X_test):
+    def setup_training(self, X_train, X_test, fold):
         if self.objective == "classification":
             self.model.setup(data=X_train, target=self.label_name, normalize=False, preprocess=False, 
                          log_experiment=False, experiment_name="Classification", 
-                        session_id = self.seed, fold_shuffle=True, fold=10, test_data=X_test)
+                        session_id = self.seed, fold_shuffle=True, fold=fold, test_data=X_test)
         
             self.model.add_metric("averagePre", "Average Precision Score", average_precision_score, 
                                    average="weighted", target="pred_proba", multiclass=False)
@@ -157,8 +203,8 @@ class PycaretInterface:
         elif self.objective == "regression":
             self.model.setup(data=X_train, target=self.label_name, normalize=False, preprocess=False, 
                              log_experiment=False, experiment_name="Regression", 
-                             session_id = self.seed, fold_shuffle=True, 
-                             fold=10, test_data=X_test)
+                             session_id = self.seed, fold_shuffle=True,
+                             fold=fold, test_data=X_test)
 
         return self.model
 
@@ -448,17 +494,20 @@ class Trainer:
 
         return pd.concat(sorted_results), sorted_models
     
-    def train(self, X_train, X_test):
+    def train(self, X_train, X_test, drop: tuple[str, ...] | None=None, selected_models: str | tuple[str, ...] | None=None):
 
         # To access the transformed data
-        self.experiment.setup_training(X_train, X_test)
-        
+        self.experiment.setup_training(X_train, X_test, self.num_splits)
+        if drop:
+            self.experiment.final_models = [x for x in self.experiment.final_models if x not in drop]   
+        if selected_models:
+            self.experiment.final_models = selected_models
         results, returned_models = self.experiment.train()
         
         return results, returned_models
     
-    def analyse_models(self, transformed_x, test_x, scoring_fn):
-        results, returned_models = self.train(transformed_x, test_x)
+    def analyse_models(self, transformed_x, test_x, scoring_fn, drop=None, selected=None):
+        results, returned_models = self.train(transformed_x, test_x, drop, selected)
         sorted_results, sorted_models = self.rank_results(results, returned_models, scoring_fn)
         top_params = self.experiment.get_best_params_multiple(sorted_models)
 
@@ -488,7 +537,8 @@ class Trainer:
 
         return transformed_x, test_x
     
-    def setup_kfold(self, feature, label_name, split_function, scoring_fn, plot=(), with_split=False):
+    def setup_kfold(self, feature, label_name, split_function, scoring_fn, plot=(), with_split=False, 
+                    drop=None, selected=None):
         """
         A function that splits the data into kfolds of training and test sets and then trains the models
         using cross-validation but only on the training data. We are getting the performance 
@@ -518,7 +568,7 @@ class Trainer:
         for ind, (train_index, test_index) in enumerate(split_function.split(feature, feature[label_name])):
             transformed_x, test_x = self._scale(feature, train_index, test_index, strategy="kfold", split_index=ind,
                                                 with_split=with_split)
-            sorted_results, sorted_models, top_params = self.analyse_models(transformed_x, test_x, scoring_fn)
+            sorted_results, sorted_models, top_params = self.analyse_models(transformed_x, test_x, scoring_fn, drop, selected)
 
             res[f"split_{ind}"] = sorted_results
             top_params[f"split_{ind}"] = top_params
@@ -530,9 +580,9 @@ class Trainer:
 
         return pd.concat(res, axis=1), mod, pd.concat(top_params)
     
-    def setup_holdout(self, X_train, X_test, scoring_fn, plot=()):
+    def setup_holdout(self, X_train, X_test, scoring_fn, plot=(), drop=None, selected=None):
         transformed_x, test_x = self._scale(X_train, X_test)
-        sorted_results, sorted_models, top_params = self.analyse_models(transformed_x, test_x, scoring_fn)
+        sorted_results, sorted_models, top_params = self.analyse_models(transformed_x, test_x, scoring_fn, drop, selected)
         if plot:
             self.experiment.plots = plot
             self.experiment.plot_best_models(sorted_models)
@@ -587,13 +637,13 @@ class Trainer:
         
         return ensemble_results, ensemble_model
     
-    def _predict_on_test_set(self, sorted_models: dict | list, name: str) -> pd.DataFrame:
+    def _predict_on_test_set(self, sorted_models: dict | list, name: str, probability_threshold=None) -> pd.DataFrame:
         match sorted_models:
             case [*list_models]:
                 final = []
                 # it keeps the original sorted order
                 for mod in list_models:
-                    result = self.experiment.predict(mod)
+                    result = self.experiment.predict(mod, probability_threshold=probability_threshold)
                     result.index = [f"Test-results-{name}"]
                     final.append(result)
                 return pd.concat(final)
@@ -604,12 +654,12 @@ class Trainer:
                     if isinstance(mod, dict):
                         results_by_split = []
                         for model in list(mod.values())[:self.experiment.best_model]:
-                            result = self.experiment.predict(model)
+                            result = self.experiment.predict(model, probability_threshold=probability_threshold)
                             result.index = [f"Test-results-{name}"]
                             results_by_split.append(result)
                         final[f"split_{split_ind}"] = pd.concat(results_by_split)
                     else:
-                        result = self.experiment.predict(mod)
+                        result = self.experiment.predict(mod, probability_threshold=probability_threshold)
                         result.index = [f"Test-results-{name}"]
                         final[f"split_{split_ind}"] = result
 
@@ -618,91 +668,17 @@ class Trainer:
             case {**dict_models}: # for single models
                 final = []
                 for model in list(dict_models.values())[:self.experiment.best_model]:
-                    result = self.experiment.predict(model)
+                    result = self.experiment.predict(model, probability_threshold=probability_threshold)
                     result.index = [f"Test-results-{name}"]
                     final.append(result)
                 return pd.concat(final)
 
             case mod:
-                result = self.experiment.predict(mod)
+                result = self.experiment.predict(mod, probability_threshold=probability_threshold)
                 result.index = [f"Test-results-{name}"]
                 return result
            
-    def _finalize_model(self, sorted_model, index: int | dict[str, int] | None = None):
-        """
-        Finalize the model by training it with all the data including the test set.
 
-        Parameters
-        ----------
-        sorted_model : Any
-            The model or models to finalize.
-
-        Returns
-        -------
-        Any
-            The finalized models
-
-        Raises
-        ------
-        TypeError
-            The model should be a list of models, a dictionary of models or a model
-        """
-        match sorted_model:
-            case [*list_models]:
-                final = []
-                for mod in list_models:
-                    final.append(self.experiment.finalize_model(mod))
-                return final
-            
-            case {**dict_models} if "split" in list(dict_models)[0]: # for kfold models, kfold stacked or majority models
-                final = {}
-                for split_ind, value in dict_models.items():
-                    if isinstance(value, dict):
-                        model_name, mod = list(value.items())[index[split_ind]]
-                        if split_ind not in final:
-                            final[split_ind] = {}
-                        final[split_ind][model_name] = self.experiment.finalize_model(mod)
-                    else:
-                        final[split_ind] = self.experiment.finalize_model(value)
-                return final
-            
-            case {**dict_models}: # for holdout models
-                final = {}
-                model_name, mod = list(dict_models.items())[index]
-                final[model_name] = self.experiment.finalize_model(mod)
-                return final
-            
-            case model:
-                final = self.experiment.finalize_model(model)
-                return final
-            
-    def _save_model(self, sorted_models, filename: str | dict[str, int] | None=None, 
-                    index:int | dict[str, int] |None=None):
-        """
-        Save the model
-
-        Parameters
-        ----------
-        model : Any
-            The trained model.
-        filename : str, dict[str, str]
-            The name of the file to save the model.
-        """
-        model_output = self.output_path / "models"
-        match sorted_models:
-            case {**models} if "split" in list(models)[0]: # for kfold models, kfold stacked or majority models 
-                for split_ind, value in models.items():
-                    if isinstance(value, dict):
-                        model_name, mod = list(value.items())[index[split_ind]]
-                        self.experiment.save(mod, model_output/str(split_ind)/model_name)
-                    else:
-                        self.experiment.save(value, model_output/filename[split_ind])
-            case {**models}: #
-                for model_name, mod in models.items():
-                    self.experiment.save(mod, model_output/model_name)
-            
-            case other:
-                self.experiment.save(other, model_output/filename)
 
             
             
