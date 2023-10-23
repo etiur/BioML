@@ -166,11 +166,11 @@ class Classifier(Trainer):
             return pd.concat(new_results, axis=1), new_models, pd.concat(new_params)
         return self._retune_best_models(sorted_models, optimize, num_iter)
     
-    def stack_models(self, sorted_models: dict, optimize="MCC", probability_theshold: float = 0.5, meta_model=None):
+    def stack_models(self, sorted_models: dict, optimize="MCC", probability_theshold: None|float = None, meta_model=None):
 
         return self._stack_models(sorted_models, optimize, probability_theshold, meta_model=meta_model)
     
-    def create_majority_model(self, sorted_models: dict, optimize: str = "MCC", probability_theshold: float = 0.5, weights=None):
+    def create_majority_model(self, sorted_models: dict, optimize: str = "MCC", probability_theshold: None|float = None, weights=None):
     
         return self._create_majority_model(sorted_models, optimize, probability_theshold, weights)
     

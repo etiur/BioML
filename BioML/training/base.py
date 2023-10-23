@@ -131,7 +131,7 @@ class PycaretInterface:
         return self._plots
     
     @plots.setter
-    def plots(self, value):
+    def plots(self, value) -> list[str]:
         self._plots = self._check_value(value, self._plots, "plots")
 
     @property
@@ -243,7 +243,7 @@ class PycaretInterface:
         params = self.get_params(name, tuned_model)
         return tuned_model, tuned_results, params
     
-    def stack_models(self, estimator_list: list, optimize="MCC", fold=5, probability_threshold=0.5, meta_model=None):
+    def stack_models(self, estimator_list: list, optimize="MCC", fold=5, probability_threshold: float | None=None, meta_model=None):
         self.log.info("----------Stacking the best models--------------")
         self.log.info(f"fold: {fold}")
         self.log.info(f"probability_threshold: {probability_threshold}")
@@ -257,7 +257,7 @@ class PycaretInterface:
         params = self.get_params_stacked(stacked_models)
         return stacked_models, stacked_results, params
     
-    def create_majority(self, estimator_list: list, optimize="MCC", fold=5, probability_threshold=0.5, weights=None):
+    def create_majority(self, estimator_list: list, optimize="MCC", fold=5, probability_threshold: float | None=None, weights=None):
         self.log.info("----------Creating a majority voting model--------------")
         self.log.info(f"fold: {fold}")
         self.log.info(f"probability_threshold: {probability_threshold}")
@@ -294,7 +294,7 @@ class PycaretInterface:
         """
         self.model.plot_model(model, "learning", save=save)
 
-    def predict(self, estimador, target_data=None):
+    def predict(self, estimador, target_data=None, probability_threshold=None):
         """
         Predict with teh new data or if not specified predict on the holdout data.
 
@@ -311,7 +311,7 @@ class PycaretInterface:
             The predictions are incorporated into the target data dataframe
         
         """
-        pred = self.model.predict_model(estimador, data=target_data)
+        pred = self.model.predict_model(estimador, data=target_data, probability_threshold=probability_threshold)
         if target_data is not None:
             results = self.model.pull(pop=True)
             return pred, results
@@ -550,7 +550,7 @@ class Trainer:
 
         return pd.concat(new_results), new_models, pd.concat(new_params)
     
-    def _stack_models(self, sorted_models: dict, optimize="MCC",  probability_theshold: float=0.5, meta_model=None):
+    def _stack_models(self, sorted_models: dict, optimize="MCC",  probability_theshold: None|float=None, meta_model=None):
         self.log.info("--------Stacking the best models--------")
         if "split" in list(sorted_models)[0]:
             new_models = {}
@@ -569,7 +569,7 @@ class Trainer:
         
         return stacked_results, stacked_models, params
     
-    def _create_majority_model(self, sorted_models: dict, optimize: str="MCC", probability_theshold: float=0.5, 
+    def _create_majority_model(self, sorted_models: dict, optimize: str="MCC", probability_theshold: None|float=None, 
                                weights: Iterable[float] | None =None):
         self.log.info("--------Creating an ensemble model--------")
         if "split" in list(sorted_models)[0]:
