@@ -294,7 +294,8 @@ class PycaretInterface:
         """
         self.model.plot_model(model, "learning", save=save)
 
-    def predict(self, estimador, target_data=None, probability_threshold=None):
+    def predict(self, estimador, target_data: pd.DataFrame|None=None, 
+                probability_threshold: float | None=None) -> pd.DataFrame:
         """
         Predict with teh new data or if not specified predict on the holdout data.
 
@@ -311,10 +312,11 @@ class PycaretInterface:
             The predictions are incorporated into the target data dataframe
         
         """
-        pred = self.model.predict_model(estimador, data=target_data, probability_threshold=probability_threshold)
-        if target_data is not None:
+        pred = self.model.predict_model(estimador, data=target_data, 
+                                        probability_threshold=probability_threshold, verbose=False)
+        if target_data is None or self.label_name in target_data.columns:
             results = self.model.pull(pop=True)
-            return pred, results
+            return results
         return pred
     
     def save(self, model, filename: str):
@@ -585,7 +587,38 @@ class Trainer:
         
         return ensemble_results, ensemble_model
     
-    def _finalize_model(self, sorted_model, index: int | None = None):
+    def _predict_on_test_set(self, sorted_models: dict | list, name: str) -> pd.DataFrame:
+        match sorted_models:
+            case [*list_models]:
+                final = []
+                # it keeps the original sorted order
+                for mod in list_models:
+                    result = self.experiment.predict(mod)
+                    result.index = [f"Test-results-{name}"]
+                    final.append(result)
+                return pd.concat(final)
+            case {**dict_models} if "split" in list(dict_models)[0]: # for kfold models, kfold stacked or majority models:
+                final = {}
+                for split_ind, mod in dict_models.items():
+                    if isinstance(mod, dict):
+                        results_by_split = []
+                        for model in list(mod.values())[:self.experiment.best_model]:
+                            result = self.experiment.predict(model)
+                            result.index = [f"Test-results-{name}"]
+                            results_by_split.append(result)
+                        final[f"split_{split_ind}"] = pd.concat(results_by_split)
+                    else:
+                        result = self.experiment.predict(mod)
+                        result.index = [f"Test-results-{name}"]
+                        final[f"split_{split_ind}"] = result
+
+                return pd.concat(final)
+            case mod:
+                result = self.experiment.predict(mod)
+                result.index = [f"Test-results-{name}"]
+                return result
+           
+    def _finalize_model(self, sorted_model, index: int | dict[str, int] | None = None):
         """
         Finalize the model by training it with all the data including the test set.
 
@@ -613,12 +646,14 @@ class Trainer:
             
             case {**dict_models} if "split" in list(dict_models)[0]: # for kfold models, kfold stacked or majority models
                 final = {}
-                for key, value in dict_models.items():
+                for split_ind, value in dict_models.items():
                     if isinstance(value, dict):
-                        model_name, mod = list(value.items())[index]
-                        final[key][model_name] = self.experiment.finalize_model(mod)
+                        model_name, mod = list(value.items())[index[split_ind]]
+                        if split_ind not in final:
+                            final[split_ind] = {}
+                        final[split_ind][model_name] = self.experiment.finalize_model(mod)
                     else:
-                        final[key] = self.experiment.finalize_model(value)
+                        final[split_ind] = self.experiment.finalize_model(value)
                 return final
             
             case {**dict_models}: # for holdout models
@@ -631,8 +666,8 @@ class Trainer:
                 final = self.experiment.finalize_model(model)
                 return final
             
-    def _save_model(self, sorted_models, filename: str | dict[str, str] | None=None, 
-                    index:int | None=None):
+    def _save_model(self, sorted_models, filename: str | dict[str, int] | None=None, 
+                    index:int | dict[str, int] |None=None):
         """
         Save the model
 
@@ -646,13 +681,13 @@ class Trainer:
         model_output = self.output_path / "models"
         match sorted_models:
             case {**models} if "split" in list(models)[0]: # for kfold models, kfold stacked or majority models 
-                for key, value in models.items():
+                for split_ind, value in models.items():
                     if isinstance(value, dict):
-                        model_name, mod = list(value.items())[index]
-                        self.experiment.save(mod, model_output/key/model_name)
+                        model_name, mod = list(value.items())[index[split_ind]]
+                        self.experiment.save(mod, model_output/str(split_ind)/model_name)
                     else:
-                        self.experiment.save(value, model_output/filename[key])
-            case {**models}:
+                        self.experiment.save(value, model_output/filename[split_ind])
+            case {**models}: #
                 for model_name, mod in models.items():
                     self.experiment.save(mod, model_output/model_name)
             

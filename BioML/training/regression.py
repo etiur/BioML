@@ -163,6 +163,9 @@ class Regressor(Trainer):
     def save_model(self, sorted_models, filename: str | dict[str, str] | None = None):
         return self._save_model(sorted_models, filename)
     
+    def predict_on_test_set(self, sorted_models: dict | list, name: str) -> pd.DataFrame:
+        return self._predict_on_test_set(sorted_models, name)
+    
 
 def main():
     label, training_output, trial_time, num_thread, scaler, excel, kfold, outliers, \

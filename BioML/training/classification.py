@@ -1,3 +1,4 @@
+from typing import Iterable
 import pandas as pd
 from .base import PycaretInterface, Trainer, DataParser, write_results
 from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
@@ -179,6 +180,9 @@ class Classifier(Trainer):
     
     def save_model(self, sorted_models, filename: str | dict[str, str] | None = None):
         return self._save_model(sorted_models, filename)
+    
+    def predict_on_test_set(self, sorted_models: dict | list, name: str) -> pd.DataFrame:
+        return self._predict_on_test_set(sorted_models, name)
 
 
 def main():
