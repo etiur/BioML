@@ -597,6 +597,7 @@ class Trainer:
                     result.index = [f"Test-results-{name}"]
                     final.append(result)
                 return pd.concat(final)
+            
             case {**dict_models} if "split" in list(dict_models)[0]: # for kfold models, kfold stacked or majority models:
                 final = {}
                 for split_ind, mod in dict_models.items():
@@ -613,6 +614,15 @@ class Trainer:
                         final[f"split_{split_ind}"] = result
 
                 return pd.concat(final)
+            
+            case {**dict_models}: # for single models
+                final = []
+                for model in list(dict_models.values())[:self.experiment.best_model]:
+                    result = self.experiment.predict(model)
+                    result.index = [f"Test-results-{name}"]
+                    final.append(result)
+                return pd.concat(final)
+
             case mod:
                 result = self.experiment.predict(mod)
                 result.index = [f"Test-results-{name}"]
