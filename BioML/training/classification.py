@@ -180,6 +180,7 @@ class Classifier(Trainer):
     def save_model(self, sorted_models, filename: str | dict[str, str] | None = None):
         return self._save_model(sorted_models, filename)
 
+
 def main():
     label, training_output, budget_time, num_thread, scaler, excel, kfold, outliers, \
     precision_weight, recall_weight, report_weight, difference_weight, strategy, best_model, \

@@ -164,9 +164,6 @@ class Regressor(Trainer):
         return self._save_model(sorted_models, filename)
     
 
-
-
-
 def main():
     label, training_output, trial_time, num_thread, scaler, excel, kfold, outliers, \
         difference_weight, r2_weight, strategy, seed, best_model, drop, tune = arg_parse()

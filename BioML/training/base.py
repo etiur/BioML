@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from json import load
+import stat
 import pandas as pd
 from typing import Iterable, Callable
 import numpy as np
@@ -108,21 +109,30 @@ class PycaretInterface:
         self.log.info(f"Label name: {self.label_name}")
         self.log.info(f"The number of models to select: {self.best_model}")
     
+    @staticmethod
+    def _check_value(value, element_list, element_name):
+        if isinstance(value, (list, np.ndarray, tuple, set)):
+            test = list(set(value).difference(element_list))
+            if test:
+                raise ValueError(f"the {element_name} should be one of the following: {element_list} and not {test}")
+        elif isinstance(value, str):
+            if value not in element_list:
+                raise ValueError(f"the {element_name} should be one of the following: {element_list} and not {value}")
+            value = [value]
+        else:
+            raise TypeError(f"the {element_name} should be a string or an array of strings")
+        return value
+
     @property
     def plots(self):
+        """
+        The plots that should be saved
+        """
         return self._plots
     
     @plots.setter
     def plots(self, value):
-        if isinstance(value, (list, np.ndarray, tuple, set)):
-            test = list(set(value).difference(self._plots))
-            if test:
-                raise ValueError(f"the plots should be one of the following: {self._plots} and not {test}")
-        elif isinstance(value, str):
-            if value not in self._plots:
-                raise ValueError(f"the plots should be one of the following: {self._plots} and not {value}")
-            value = [value]
-        self._plots = value
+        self._plots = self._check_value(value, self._plots, "plots")
 
     @property
     def final_models(self):
@@ -133,18 +143,7 @@ class PycaretInterface:
     
     @final_models.setter
     def final_models(self, value) -> list[str]:
-        if isinstance(value, (list, np.ndarray, tuple, set)):
-            test = list(set(value).difference(self.mod.index.to_list()))
-            if test:
-                raise ValueError(f"the models should be one of the following: {self.mod.index.to_list()} and not {test}")
-        elif isinstance(value, str):
-            if value not in self.mod.index.to_list():
-                raise ValueError(f"the models should be one of the following: {self.mod.index.to_list()} and not {value}")
-            value = [value]
-        else:
-            raise TypeError("the models should be a list or a string")
-        
-        self._final_models = value
+        self._final_models = self._check_value(value, self.mod.index.to_list(), "models")
 
     def setup_training(self, X_train, X_test):
         if self.objective == "classification":
@@ -490,7 +489,8 @@ class Trainer:
     def setup_kfold(self, feature, label_name, split_function, scoring_fn, plot=(), with_split=False):
         """
         A function that splits the data into kfolds of training and test sets and then trains the models
-        using cross-validation but only on the training data. It is a nested cross-validation
+        using cross-validation but only on the training data. We are getting the performance 
+        of using different hold-outs.
 
         Parameters
         ----------
@@ -515,7 +515,7 @@ class Trainer:
 
         for ind, (train_index, test_index) in enumerate(split_function.split(feature, feature[label_name])):
             transformed_x, test_x = self._scale(feature, train_index, test_index, strategy="kfold", split_index=ind,
-                                                 with_split=with_split)
+                                                with_split=with_split)
             sorted_results, sorted_models, top_params = self.analyse_models(transformed_x, test_x, scoring_fn)
 
             res[f"split_{ind}"] = sorted_results
