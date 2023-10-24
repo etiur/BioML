@@ -1,3 +1,4 @@
+from typing import Iterable
 import pandas as pd
 
 from BioML import features
@@ -73,7 +74,7 @@ def arg_parse():
 
 class Classifier:
     def __init__(self, ranking_params: dict[str, float]=None, drop: tuple[str] = ("ada", "gpc", "lightgbm"), 
-                 selected=None):
+                 selected: Iterable[str] | None=None, test_size: float=0.2):
 
         # change the ranking parameters
         ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
@@ -83,6 +84,7 @@ class Classifier:
                 if key not in ranking_dict:
                     raise KeyError(f"The key {key} is not found in the ranking params use theses keys: {', '.join(ranking_dict.keys())}")
                 ranking_dict[key] = value
+        self.test_size = test_size
         self.drop = drop
         self.pre_weight = ranking_dict["precision_weight"]
         self.rec_weight = ranking_dict["recall_weight"]
@@ -131,7 +133,6 @@ class Classifier:
         pd.DataFrame
          
         """
-        self.log.info("------ Running holdout -----")
         X_train, X_test, y_train, y_test = train_test_split(feature.features, feature.label, test_size=self.test_size, random_state=self.experiment.seed, 
                                                             stratify=feature.label)
         transformed_x, test_x = feature.scale(X_train, X_test)
@@ -158,11 +159,11 @@ def main():
     feature = DataParser(excel, label, outliers=outliers, scaler=scaler)
     experiment = PycaretInterface("classification", feature.label, seed, budget_time=budget_time, best_model=best_model, 
                                   output_path=training_output)
-    training = Trainer(experiment, num_split, test_size)
+    training = Trainer(experiment, num_split)
     ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight,
                         difference_weight=difference_weight, report_weight=report_weight)
     
-    classifier = Classifier(experiment, ranking_dict, drop, selected=selected)
+    classifier = Classifier(experiment, ranking_dict, drop, selected=selected, test_size=test_size)
 
     results = generate_training_results(classifier, training, feature, plot, optimize, tune, strategy)
 

@@ -542,7 +542,7 @@ class PycaretInterface:
 
 
 class Trainer:
-    def __init__(self, model: PycaretInterface, num_splits: int=5, test_size: float=0.2):
+    def __init__(self, model: PycaretInterface, num_splits: int=5):
         
         """
         Initialize a Trainer object with the given parameters.
@@ -551,22 +551,13 @@ class Trainer:
         ----------
         model : PycaretInterface
             The model to use for training.
-        training_output : str, optional
-            The path to the directory where the training results will be saved. Defaults to "training_results".
         num_splits : int, optional
             The number of splits to use in cross-validation. Defaults to 5.
-        test_size : float, optional
-            The proportion of the dataset to include in the test split. Defaults to 0.2.
-        outliers : tuple[str, ...], optional
-            The list of outliers to remove from the training and test sets. Defaults to ().
         """
         self.log = Log("model_training")
         self.log.info("Reading the features")
         self.num_splits = num_splits
-        self.test_size = test_size
         self.experiment = model
-        self.log.info(f"Test_size: {test_size}")
-        self.log.info(f"Outliers: {', '.join(self.outliers)}")
         self.log.info(f"Number of kfolds: {self.num_splits}")
 
     def rank_results(self, results: dict[str, pd.DataFrame], returned_models:dict[str], 
@@ -735,8 +726,8 @@ class Trainer:
         """
         self.log.info("--------Stacking the best models--------")
   
-        stacked_models, stacked_results, params = self.experiment.stack_models(list(sorted_models.values())[:self.experiment.best_model], optimize=optimize, fold=self.num_splits, 
-                                                      meta_model=meta_model)
+        stacked_models, stacked_results, params = self.experiment.stack_models(list(sorted_models.values())[:self.experiment.best_model], optimize=optimize, 
+                                                                               fold=self.num_splits, meta_model=meta_model)
         
         return stacked_results, stacked_models, params
     
@@ -761,8 +752,8 @@ class Trainer:
         """
         self.log.info("--------Creating an ensemble model--------")
         
-        ensemble_model, ensemble_results = self.experiment.create_majority(list(sorted_models.values())[:self.experiment.best_model], optimize=optimize, fold=self.num_splits, 
-                                                        weights=weights)
+        ensemble_model, ensemble_results = self.experiment.create_majority(list(sorted_models.values())[:self.experiment.best_model], optimize=optimize,
+                                                                           fold=self.num_splits, weights=weights)
         
         return ensemble_results, ensemble_model
     

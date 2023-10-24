@@ -62,7 +62,8 @@ def arg_parse():
 
 
 class Regressor:
-    def __init__(self, ranking_params=None, drop=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), selected=None):
+    def __init__(self, ranking_params=None, drop=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), selected=None, 
+                 test_size: float = 0.2):
         
         ranking_dict = dict(R2_weight=0.8, difference_weight=1.2)
         if isinstance(ranking_params, dict):
@@ -70,7 +71,7 @@ class Regressor:
                 if key not in ranking_dict:
                     raise KeyError(f"The key {key} is not  found in the ranking params use theses keys: {', '.join(ranking_dict.keys())}")
                 ranking_dict[key] = value
-
+        self.test_size = test_size
         self.drop = drop
         self.difference_weight = ranking_dict["difference_weight"]
         self.R2_weight = ranking_dict["R2_weight"]
@@ -112,7 +113,6 @@ class Regressor:
             A dictionary with the sorted models from pycaret
          
         """
-        self.log.info("------ Running holdout -----")
         X_train, X_test, y_train, y_test = train_test_split(feature.features, feature.label, test_size=self.test_size, random_state=self.experiment.seed)
         transformed_x, test_x = feature.scale(X_train, X_test)
         transformed_x, test_x = feature.process(X_train, X_test, y_train, y_test)
@@ -138,8 +138,8 @@ def main():
                                   output_path=training_output)
 
     ranking_dict = dict(R2_weight=r2_weight, difference_weight=difference_weight)
-    training = Trainer(experiment, num_split, test_size)
-    regressor = Regressor(ranking_dict, drop, selected=selected)
+    training = Trainer(experiment, num_split)
+    regressor = Regressor(ranking_dict, drop, selected=selected, test_size=test_size)
     
     results = generate_training_results(regressor, training, feature, plot, optimize, tune, strategy)
 
