@@ -1,5 +1,5 @@
 from typing import Iterable
-from .base import PycaretInterface, Trainer, DataParser, write_results
+from .base import PycaretInterface,  DataParser
 from pathlib import Path
 import argparse
 import pandas as pd
@@ -7,18 +7,15 @@ from collections import defaultdict
 import joblib
 from ..utilities import write_excel
 from sklearn.model_selection import StratifiedShuffleSplit, train_test_split, ShuffleSplit
+from .classification import Classifier
+from .regression import Regressor
 
 
 def arg_parse():
     parser = argparse.ArgumentParser(description="Generate the models from the ensemble")
 
-    parser.add_argument("-e", "--excel", required=False,
-                        help="The file to where the selected features are saved in excel format",
-                        default="training_features/selected_features.xlsx")
-    parser.add_argument("-hp", "--hyperparameter_path", required=False, help="Path to the hyperparameter file",
-                        default="training_results/hyperparameters.xlsx")
-    parser.add_argument("-n", "--num_thread", required=False, default=10, type=int,
-                        help="The number of threads to use for the parallelization of outlier detection")
+    parser.add_argument("-i", "--training_features", required=True,
+                        help="The file to where the features for the training are in excel or csv format")
     parser.add_argument("-sc", "--scaler", default="robust", choices=("robust", "standard", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
     parser.add_argument("-l", "--label", required=True,
@@ -26,30 +23,35 @@ def arg_parse():
     parser.add_argument("-o", "--model_output", required=False,
                         help="The directory for the generated models",
                         default="models")
-    parser.add_argument("-s", "--sheets", required=False, nargs="+",
-                        help="Names or index of the selected sheets for both features and hyperparameters and the "
-                             "index of the models in this format-> sheet (name, index):index model1,index model2 "
-                             "without the spaces. If only index or name of the sheets, it is assumed that all kfold models "
-                             "are selected. It is possible to have kfold indices in one sheet and in another ones "
-                             "without")
     parser.add_argument("-ot", "--outliers", nargs="+", required=False, default=(),
                         help="A list of outliers if any, the name should be the same as in the excel file with the "
                              "filtered features, you can also specify the path to a file in plain text format, each "
                              "record should be in a new line")
+    parser.add_argument("-s", "--selected_models", nargs="+", required=True, 
+                        help="The models to use, can be regression or classification")
+    parser.add_argument("-p", "--problem", required=False, 
+                        default="classification", choices=("classification", "regression"), help="The problem type")
+    parser.add_argument("-op", "--optimize", required=False, 
+                        default="MCC", choices=("MCC", "Prec.", "Recall", "F1", "AUC", "Accuracy", "Average Precision Score", 
+                                                "RMSE", "R2", "MSE", "MAE", "RMSLE", "MAPE"), 
+                        help="The metric to optimize")
+    parser.add_argument("-st", "--strategy", required=False, choices=("holdout", "kfold"), default="holdout",
+                        help="The spliting strategy to use")
+    parser.add_argument("-m", "--model_strategy", help=f"The strategy to use for the model, choices are majority, stacking or simple:[model_index], model index should be an integer", default="majority")
 
     args = parser.parse_args()
 
-    return [args.excel, args.label, args.scaler, args.hyperparameter_path, args.model_output, args.num_thread,
-            args.outliers, args.sheets]
+    return [args.training_features, args.label, args.scaler, args.model_output,
+            args.outliers, args.selected_models, args.problem, args.optimize, args.strategy, 
+            args.model_strategy]
 
 
-class GenerateModel(Trainer):
-    def __init__(self, model: PycaretInterface, selected_models: tuple[str] | str | dict[str, tuple[str, ...]], num_splits=5, 
+class GenerateModel:
+    def __init__(self, model: PycaretInterface, trainer: Regressor | Classifier, selected_models: tuple[str] | str | dict[str, tuple[str, ...]], num_splits=5, 
                  test_size=0.2, outliers: tuple[str, ...]=(), scaler="robust", model_output="models",
                  problem="classification", optimize="MCC"):
-        super().__init__(model, num_splits=num_splits, test_size=test_size, outliers=outliers, 
-                         scaler=scaler)
-
+        
+        self.trainer = trainer
         self.model_output = Path(model_output)
         self.selected_models = selected_models
         self.problem = problem

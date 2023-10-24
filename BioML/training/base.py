@@ -534,50 +534,7 @@ class Trainer:
 
         return transformed_x, test_x
     
-    def setup_kfold(self, feature, label_name, split_function, scoring_fn, plot=(), with_split=False, 
-                    drop=None, selected=None):
-        """
-        A function that splits the data into kfolds of training and test sets and then trains the models
-        using cross-validation but only on the training data. We are getting the performance 
-        of using different hold-outs.
-
-        Parameters
-        ----------
-        feature : pd.DataFrame
-            A dataframe containing the training samples and the features
-        plot : bool, optional
-            Plot the plots relevant to the models, by default None
-                1. learning: learning curve
-                2. pr: Precision recall curve
-                3. auc: the ROC curve
-                4. confusion_matrix 
-                5. class_report: read classification_report from sklearn.metrics
-
-        Returns
-        -------
-        tuple(pd.DataFrame, dict[str, list[models]], pd.DataFrame)
-            A tuple with the sorted results, sorted models from pycaret organized by split index or kfold index and the parameters
-        """
-        res = {}
-        top_params = {}
-        mod = {}
-
-        for ind, (train_index, test_index) in enumerate(split_function.split(feature, feature[label_name])):
-            transformed_x, test_x = self._scale(feature, train_index, test_index, strategy="kfold", split_index=ind,
-                                                with_split=with_split)
-            sorted_results, sorted_models, top_params = self.analyse_models(transformed_x, test_x, scoring_fn, drop, selected)
-
-            res[f"split_{ind}"] = sorted_results
-            top_params[f"split_{ind}"] = top_params
-            mod[f"split_{ind}"] = sorted_models
-
-            if plot:
-                self.experiment.plots = plot
-                self.experiment.plot_best_models(self.output_path, sorted_models, split_ind=ind)
-
-        return pd.concat(res, axis=1), mod, pd.concat(top_params)
-    
-    def setup_holdout(self, X_train, X_test, scoring_fn, plot=(), drop=None, selected=None):
+    def setup_training(self, X_train, X_test, scoring_fn: Callable, plot: tuple=(), drop: tuple|None=None, selected: tuple | None=None):
         transformed_x, test_x = self._scale(X_train, X_test)
         sorted_results, sorted_models, top_params = self.analyse_models(transformed_x, test_x, scoring_fn, drop, selected)
         if plot:
@@ -601,18 +558,7 @@ class Trainer:
     
     def _stack_models(self, sorted_models: dict, optimize="MCC", meta_model=None):
         self.log.info("--------Stacking the best models--------")
-        if "split" in list(sorted_models)[0]:
-            new_models = {}
-            new_results = {}
-            new_params = {}
-            for key, sorted_model_by_split in sorted_models.items():
-                new_models[key], new_results[key],
-                new_params[key] = self.experiment.stack_models(list(sorted_model_by_split.values())[:self.experiment.best_model], 
-                                                      optimize=optimize, fold=self.num_splits,
-                                                      meta_model=meta_model)
-                
-            return pd.concat(new_results, axis=1), new_models, pd.concat(new_params)
-        
+  
         stacked_models, stacked_results, params = self.experiment.stack_models(list(sorted_models.values())[:self.experiment.best_model], optimize=optimize, fold=self.num_splits, 
                                                       meta_model=meta_model)
         
@@ -621,13 +567,6 @@ class Trainer:
     def _create_majority_model(self, sorted_models: dict, optimize: str="MCC", 
                                weights: Iterable[float] | None =None):
         self.log.info("--------Creating an ensemble model--------")
-        if "split" in list(sorted_models)[0]:
-            new_models = {}
-            new_results = {}
-            for key, sorted_model_by_split in sorted_models.items():
-                new_models[key], new_results[key] = self.experiment.create_majority(list(sorted_model_by_split.values())[:self.experiment.best_model], optimize=optimize, fold=self.num_splits, 
-                                                        weights=weights)
-            return pd.concat(new_results, axis=1), new_models
         
         ensemble_model, ensemble_results = self.experiment.create_majority(list(sorted_models.values())[:self.experiment.best_model], optimize=optimize, fold=self.num_splits, 
                                                         weights=weights)
@@ -645,23 +584,6 @@ class Trainer:
                     final.append(result)
                 return pd.concat(final)
             
-            case {**dict_models} if "split" in list(dict_models)[0]: # for kfold models, kfold stacked or majority models:
-                final = {}
-                for split_ind, mod in dict_models.items():
-                    if isinstance(mod, dict):
-                        results_by_split = []
-                        for model in list(mod.values())[:self.experiment.best_model]:
-                            result = self.experiment.predict(model)
-                            result.index = [f"Test-results-{name}"]
-                            results_by_split.append(result)
-                        final[f"split_{split_ind}"] = pd.concat(results_by_split)
-                    else:
-                        result = self.experiment.predict(mod)
-                        result.index = [f"Test-results-{name}"]
-                        final[f"split_{split_ind}"] = result
-
-                return pd.concat(final)
-            
             case {**dict_models}: # for single models
                 final = []
                 for model in list(dict_models.values())[:self.experiment.best_model]:
@@ -670,7 +592,7 @@ class Trainer:
                     final.append(result)
                 return pd.concat(final)
 
-            case mod:
+            case mod: # for stacked or majority models
                 result = self.experiment.predict(mod)
                 result.index = [f"Test-results-{name}"]
                 return result

@@ -12,12 +12,11 @@ def arg_parse():
                         help="The path where to save the models training results",
                         default="training_results")
     parser.add_argument("-l", "--label", required=True,
-                        help="The path to the labels of the training set in a csv format")
+                        help="The path to the labels of the training set in a csv format or string if it is inside training features")
     parser.add_argument("-s", "--scaler", required=False, default="robust", choices=("robust", "standard", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
-    parser.add_argument("-e", "--excel", required=False,
-                        help="The file to where the selected or training features are saved in excel format",
-                        default="training_features/selected_features.xlsx")
+    parser.add_argument("-i", "--training_features", required=True,
+                        help="The file to where the training features are saved in excel or csv format")
     parser.add_argument("-k", "--kfold_parameters", required=False,
                         help="The parameters for the kfold in num_split:test_size format", default="5:0.2")
     parser.add_argument("-ot", "--outliers", nargs="+", required=False, default=(),
@@ -61,7 +60,7 @@ def arg_parse():
 
     args = parser.parse_args()
 
-    return [args.label, args.training_output, args.budget_time, args.scaler, args.excel, args.kfold_parameters, 
+    return [args.label, args.training_output, args.budget_time, args.scaler, args.training_features, args.kfold_parameters, 
             args.outliers, args.precision_weight, args.recall_weight, args.report_weight, args.difference_weight, 
             args.strategy, args.best_model, args.seed, args.drop, args.tune, args.plot, args.optimize]
 
@@ -102,7 +101,7 @@ class Classifier(Trainer):
         
         return mcc + self.report_weight * (self.pre_weight * prec + self.rec_weight * recall)
     
-    def run_holdout(self, feature: DataParser, plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report")):
+    def run_training(self, feature: DataParser, plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report")):
         """
         A function that splits the data into training and test sets and then trains the models
         using cross-validation but only on the training data
@@ -131,44 +130,10 @@ class Classifier(Trainer):
         self.log.info("------ Running holdout -----")
         X_train, X_test = train_test_split(feature.features, test_size=self.test_size, random_state=self.experiment.seed, 
                                            stratify=feature.features[feature.label])
-        sorted_results, sorted_models, top_params = self.setup_holdout(X_train, X_test, self._calculate_score_dataframe, plot, drop=self.drop)
-        return sorted_results, sorted_models, top_params
-
-    def run_kfold(self, feature: DataParser, plot=()):
-        """
-        A function that splits the data into kfolds of training and test sets and then trains the models
-        using cross-validation but only on the training data. It is a nested cross-validation
-
-        Parameters
-        ----------
-        feature : pd.DataFrame
-            A dataframe containing the training samples and the features
-        plot : bool, optional
-            Plot the plots relevant to the models, by default None
-                1. learning: learning curve
-                2. pr: Precision recall curve
-                3. auc: the ROC curve
-                4. confusion_matrix 
-                5. class_report: read classification_report from sklearn.metrics
-
-        Returns
-        -------
-        tuple[pd.DataFrame, dict[str, models], pd.Series]
-            A dictionary with the sorted results and sorted models from pycaret organized by split index or kfold index
-        """
-        self.log.info("------ Running kfold -----")
-        skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.experiment.seed)
-        sorted_results, sorted_models, top_params = self.setup_kfold(feature.features, feature.label, skf, plot, feature.with_split, drop=self.drop)
+        sorted_results, sorted_models, top_params = self.setup_training(X_train, X_test, self._calculate_score_dataframe, plot, drop=self.drop)
         return sorted_results, sorted_models, top_params
     
     def retune_best_models(self, sorted_models: dict, num_iter: int = 5):
-        if "split" in list(sorted_models)[0]:
-            new_models = {}
-            new_results = {}
-            new_params = {}
-            for key, sorted_model_by_split in sorted_models.items():
-                new_results[key], new_models[key], new_params[key] = self._retune_best_models(sorted_model_by_split, self.optimize, num_iter)
-            return pd.concat(new_results, axis=1), new_models, pd.concat(new_params)
         return self._retune_best_models(sorted_models, self.optimize, num_iter)
     
     def stack_models(self, sorted_models: dict, meta_model=None):
@@ -207,10 +172,7 @@ def main():
                         difference_weight=difference_weight, report_weight=report_weight)
     training = Classifier(experiment, training_output, num_split, test_size, outliers, scaler, ranking_dict, drop, optimize=optimize)
     
-    if strategy == "holdout":
-        sorted_results, sorted_models, top_params = training.run_holdout(feature, plot)
-    elif strategy == "kfold":
-        sorted_results, sorted_models, top_params = training.run_kfold(feature)
+    sorted_results, sorted_models, top_params = training.run_training(feature, plot)
 
     # saving the results in a dictionary and writing it into excel files
     results = defaultdict(dict)
