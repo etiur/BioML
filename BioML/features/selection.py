@@ -94,6 +94,7 @@ class DataReader:
     label: pd.Series | str | Iterable[int|float]
     features: pd.DataFrame | str | list | np.ndarray
     variance_thres: float | None = 0
+    scaler: str = "robust"
     checked_label_path: str = "labels_corrected.csv"
 
     def __post_init__(self):
@@ -220,6 +221,10 @@ class DataReader:
         
         print(f"POSSUM: {count}, iFeature: {len(col) - count}")
         return count, len(col) - count
+    
+    def scale(sefl, X_train):
+        transformed, scaler_dict = scale(self.scaler, X_train)
+        return transformed.to_numpy()
 
 
 class FeatureSelection:
@@ -331,14 +336,14 @@ class FeatureSelection:
         return pd.concat(results)
     
     def supervised_filters(self, filter_args: dict[str], X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, 
-                           split_ind: int,  feature_names: Iterable[str], output_path: Path, 
-                           plot: bool=True, plot_num_features: int=20) -> pd.DataFrame:
+                           feature_names: Iterable[str], output_path: Path, plot: bool=True, 
+                           plot_num_features: int=20) -> pd.DataFrame:
         
         results = {}
         XGBOOST = methods.xgbtree(X_train, Y_train, filter_args["xgboost"], self.seed, self.num_thread)
         shap_importance, shap_values = methods.calculate_shap_importance(XGBOOST, X_train, Y_train, feature_names)
         if plot:
-            methods.plot_shap_importance(shap_values, feature_names, output_path, split_ind, X_train, plot_num_features)
+            methods.plot_shap_importance(shap_values, feature_names, output_path, X_train, plot_num_features)
         results["xgbtree"] = shap_importance
         results["random"] = methods.random_forest(X_train, Y_train, feature_names, filter_args["random_forest"], 
                                                   self.seed, self.num_thread)
@@ -359,14 +364,13 @@ class FeatureSelection:
         -------
         None
         """
-        # TODO: Maybe change it to list(value.values())[0] so It is not a multiindex column for holdout
-        final_dict = {key: pd.concat(value, axis=1) for key, value in feature_dict.items()}
-        with pd.ExcelWriter(self.excel_file, mode="w", engine="openpyxl") as writer:
-            for key in final_dict.keys():
-                write_excel(writer, final_dict[key], key)
 
-    def generate_features(self, filter_args: dict, X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, 
-                          feature_range: Iterable[int], feature_dict: dict, split_ind: int, rfe_step: int=30, plot: bool=True,
+        with pd.ExcelWriter(self.excel_file, mode="w", engine="openpyxl") as writer:
+            for key, value in feature_dict.items():
+                write_excel(writer, value, key)
+
+    def generate_features(self, filter_args: dict, transformed: np.ndarray, Y_train: pd.Series | np.ndarray, 
+                          feature_range: Iterable[int], feature_dict: dict, rfe_step: int=30, plot: bool=True,
                           plot_num_features: int=20) -> None:
         """
         Construct a dictionary of feature sets using univariate filters and recursive feature elimination.
@@ -385,8 +389,6 @@ class FeatureSelection:
             The transformed feature data.
         Y_train : pd.Series or np.ndarray
             The training label data.
-        split_ind : int
-            The index of the current split.
         rfe_step : int, optional
             The number of features to remove at each iteration in recursive feature elimination. Defaults to 30.
 
@@ -395,13 +397,10 @@ class FeatureSelection:
         None
         """
 
-        transformed, scaler_dict = scale(self.scaler, X_train)
-        # for each split I do again feature selection and save all the features selected from different splits
-        # but with the same selector in the same dictionary
         self.log.info("filtering the features")
         univariate_features = self.parallel_filter(filter_args, transformed, Y_train, feature_range[-1],
                                                     self.features.columns)
-        supervised_features = self.supervised_filters(filter_args, transformed, Y_train, split_ind, self.features.columns, 
+        supervised_features = self.supervised_filters(filter_args, transformed, Y_train, self.features.columns, 
                                                         self.excel_file.parent, plot, plot_num_features)
         
         concatenated_features = pd.concat([univariate_features, supervised_features])
@@ -409,47 +408,13 @@ class FeatureSelection:
             print(f"generating a feature set of {num_features} dimensions")
             for filters in concatenated_features.index.unique(0):
                 feat = concatenated_features.loc[filters]
-                feature_dict[f"{filters}_{num_features}"][f"split_{split_ind}"] = self.features[feat.index[:num_features]]
+                feature_dict[f"{filters}_{num_features}"]= self.features[feat.index[:num_features]]
             rfe_results = methods.rfe_linear(transformed, Y_train, num_features, self.features.columns, rfe_step, 
                                              filter_args["RFE"])
-            feature_dict[f"rfe_{num_features}"][f"split_{split_ind}"] = self.features[rfe_results]
+            feature_dict[f"rfe_{num_features}"] = self.features[rfe_results]
 
         return feature_dict
 
-
-    def feature_set_kfold(self, filter_args: dict, split_function: ShuffleSplit | StratifiedShuffleSplit, 
-                          feature_range, rfe_step: int=30, plot: bool=True, 
-                          plot_num_features: int=20) -> None:
-        """
-        Perform feature selection using k-fold cross-validation.
-
-        Parameters
-        ----------
-        filter_args : dict
-            A dictionary containing the arguments for each filter algorithm.
-        feature_range : list[int]
-            A range of the number of features to include in each feature set.
-        rfe_step : int, optional
-            The number of features to remove at each iteration in recursive feature elimination. Defaults to 30.
-        plot : bool, optional
-            Whether to plot the feature importances. Defaults to True.
-        plot_num_features : int, optional
-            The number of features to include in the plot. Defaults to 20.
-
-        Returns
-        -------
-        featre_dict : dict[str, pd.DataFrame]
-        """
-        feature_dict = defaultdict(dict)
-        for split_index, (train_index, test_index) in enumerate(split_function.split(self.features, self.label)):
-            self.log.info(f"kfold {split_index}")
-            self.log.info("------------------------------------")
-            X_train = self.features.iloc[train_index]
-            Y_train = self.label.iloc[train_index].values.ravel()
-            self.generate_features(filter_args, X_train, Y_train, feature_range, feature_dict, split_index, rfe_step, plot,
-                                   plot_num_features)
-
-        return feature_dict
 
 class FeatureClassification(FeatureSelection):
     def __init__(self, label, excel_file, features, num_thread=10, scaler="robust", 
@@ -478,20 +443,15 @@ class FeatureClassification(FeatureSelection):
     @filter_args.setter
     def filter_args(self, value: tuple[str, Iterable[str]] | dict[str, Iterable[str]]):
         if isinstance(value, dict):
-            dif = set(value.keys()).difference(self._filter_args.keys())
-            if dif:
-                raise KeyError(f"these keys: {dif} are not valid")
-            self._filter_args = value
+            for key, val in value.items():
+                if key not in self._filter_args:
+                    raise KeyError(f"filter {key} is not a valid filter")
+                self._filter_args[key] = val
         elif isinstance(value, tuple):
             self._filter_args[value[0]] = tuple(value[1])
 
-    def construct_kfold(self, feature_range, rfe_step=30, plot=True, plot_num_features=20):
 
-        skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.seed)
-        feature_dict = self.feature_set_kfold(self.filter_args, skf, feature_range, rfe_step, plot, plot_num_features)
-        self._write_dict(feature_dict)
-
-    def construct_holdout(self, feature_range, plot=True, plot_num_features=20, rfe_step=30):
+    def construct_features(self, feature_range, plot=True, plot_num_features=20, rfe_step=30):
         """
         Perform feature selection using a holdout strategy.
 
@@ -516,7 +476,7 @@ class FeatureClassification(FeatureSelection):
         feature_dict = defaultdict(dict)
         X_train, X_test, Y_train, Y_test = train_test_split(self.features, self.label, test_size=self.test_size, 
                                                                 random_state=self.seed, stratify=self.label)
-        self.generate_features(self.filter_args, X_train, Y_train, feature_range, feature_dict, 0, rfe_step, plot,
+        self.generate_features(self.filter_args, X_train, Y_train, feature_range, feature_dict, rfe_step, plot,
                                plot_num_features)
         self._write_dict(feature_dict)
 
@@ -545,16 +505,16 @@ class FeatureRegression(FeatureSelection):
         return self._filter_args
     
     @filter_args.setter
-    def filter_args(self, value: tuple[str, Iterable[str] | Ridge | RidgeClassifier | xgb.XGBRegressor | xgb.XGBClassifier]):
-        self._filter_args[value[0]] = value[1]
+    def filter_args(self, value: tuple[str, Iterable[str]] | dict[str, Iterable[str]]):
+        if isinstance(value, dict):
+            for key, val in value.items():
+                if key not in self._filter_args:
+                    raise KeyError(f"filter {key} is not a valid filter")
+                self._filter_args[key] = val
+        elif isinstance(value, tuple):
+            self._filter_args[value[0]] = tuple(value[1])
 
-    def construct_kfold(self, feature_range, rfe_step=30, plot=True, plot_num_features=20):
-         
-         skf = ShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.seed)
-         feature_dict = self.feature_set_kfold(self.filter_args, skf, feature_range, rfe_step, plot, plot_num_features)
-         self._write_dict(feature_dict)
-
-    def construct_holdout(self, feature_range: Iterable[int], plot=True, plot_num_features=20, rfe_step=30):
+    def construct_features(self, feature_range: Iterable[int], plot=True, plot_num_features=20, rfe_step=30):
         """
         Perform feature selection using a holdout strategy.
 
@@ -579,11 +539,11 @@ class FeatureRegression(FeatureSelection):
         feature_dict = defaultdict(dict)
         X_train, X_test, Y_train, Y_test = train_test_split(self.features, self.label, test_size=self.test_size, 
                                                             random_state=self.seed)
-        self.generate_features(self.filter_args, X_train, Y_train, feature_range, feature_dict, 0, rfe_step, plot,
+        self.generate_features(self.filter_args, X_train, Y_train, feature_range, feature_dict, rfe_step, plot,
                                plot_num_features)
         self._write_dict(feature_dict)
 
-
+   
 def get_range_features(self, num_features_min: int | None=None, 
                         num_features_max: int | None=None, step_range: int | None=None) -> list:
     """
@@ -661,10 +621,9 @@ def main():
         selection = FeatureRegression(labels, excel_file, feature, num_thread, scaler,
                                       num_split, test_size, num_filters, seed)
 
-    if strategy == "holdout":
-        selection.construct_holdout(feature_range, rfe_steps, plot, plot_num_features)
-    elif strategy == "kfold":
-        selection.construct_kfold(feature_range, rfe_steps, plot, plot_num_features)
+
+    selection.construct_features(feature_range, rfe_steps, plot, plot_num_features)
+
 
    
 

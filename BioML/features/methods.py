@@ -26,17 +26,17 @@ def calculate_shap_importance(model: xgb.XGBClassifier | xgb.XGBRegressor, X_tra
         return shap_importance, shap_values
 
 
-def plot_shap_importance(shap_values, feature_names: Iterable[str], output_path: Path | None=None, split_ind: int = 0, 
+def plot_shap_importance(shap_values, feature_names: Iterable[str], output_path: Path | None=None, 
                          X_train: pd.DataFrame | np.ndarray=None, plot_num_features: int=20, dpi=500):
     shap_dir = (output_path / "shap_features")
     shap_dir.mkdir(parents=True, exist_ok=True)
     
     shap.summary_plot(shap_values, X_train, feature_names=feature_names, plot_type='bar', show=False,
                         max_display=plot_num_features)
-    plt.savefig(shap_dir / f"shap_kfold{split_ind}_top_{plot_num_features}_features.png", dpi=dpi)
+    plt.savefig(shap_dir / f"shap_top_{plot_num_features}_features.png", dpi=dpi)
     shap.summary_plot(shap_values, X_train, feature_names=feature_names, show=False,
                         max_display=plot_num_features)
-    plt.savefig(shap_dir / f"feature_influence_on_model_prediction_kfold{split_ind}.png", dpi=dpi)
+    plt.savefig(shap_dir / f"feature_influence_on_model_prediction.png", dpi=dpi)
 
 
 def univariate(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, 
