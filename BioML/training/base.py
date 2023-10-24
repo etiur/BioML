@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import warnings 
 import pandas as pd
 from typing import Iterable, Callable
 import numpy as np
@@ -20,9 +21,8 @@ def write_results(training_output, sorted_results, top_params=None, sheet_name=N
 class DataParser:
     label: pd.Series | str | Iterable[int|float]
     features: pd.DataFrame | str | list | np.ndarray
-    outliers: dict[str, tuple] = field(init=False, default_factory=lambda: defaultdict(tuple))
+    outliers: dict[str, tuple] = field(default_factory=lambda: defaultdict(tuple))
     scaler: str="robust"
-    with_split: bool = field(init=False, default=False)
     sheets: str | int = 0
 
     def __post_init__(self):
@@ -42,7 +42,7 @@ class DataParser:
             elif features.endswith(".xlsx"):
                 with pd.ExcelFile(features) as file:
                     if len(file.sheet_names) > 1:
-                        Warning(f"The excel file contains more than one sheet, only the sheet {self.sheets} will be used")
+                        warnings.warn(f"The excel file contains more than one sheet, only the sheet {self.sheets} will be used")
 
                 return pd.read_excel(features, index_col=0, engine='openpyxl', sheet_name=self.sheets)
         
