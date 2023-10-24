@@ -1,6 +1,4 @@
 from dataclasses import dataclass, filed
-from email.policy import default
-from msilib.schema import Class
 from typing import Iterable
 from attr import field
 from pycaret.classification import ClassificationExperiment
@@ -11,7 +9,7 @@ import argparse
 from scipy.spatial import distance
 from Bio import SeqIO
 from Bio.SeqIO import FastaIO
-from BioML.utilities import scale
+from .utilities import scale
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -282,13 +280,18 @@ class ApplicabilityDomain:
             fasta_neg.write_file(negative)
 
 
-def predict(label, training_features, test_features, outliers, scaler, problem="classification"):
+def predict(label, training_features, test_features, outliers, scaler, model_path, 
+            problem="classification"):
     feature = DataParser(label, training_features, outliers=outliers, scaler=scaler)
+    test_features = feature.read_features(test_features)
     if problem == "classification":
         experiment = ClassificationExperiment()
     elif problem == "regression":
         experiment = RegressionExperiment()
-    predictor = Predictor(feature.features, feature.experiment, feature.output_path)
+    transformed_x, test_x =  feature.scale(feature.features, test_features)
+    predictor = Predictor(test_x, experiment, model_path)
+    pred, probability = predictor.predicting()
+    return pred, probability
 
 
 def vote_and_filter(fasta_file, extracted_features="extracted_features/new_features.xlsx", models="models",

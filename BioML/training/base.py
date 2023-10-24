@@ -77,6 +77,12 @@ class DataParser:
         transformed_x, scaler_dict, test_x = scale(self.scaler, X_train, X_test)
 
         return transformed_x, test_x
+    
+    def process(self, X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series):
+        transformed_x, test_x = self.scale(X_train, X_test)
+        transformed_x = pd.concat([transformed_x, y_train], axis=1) 
+        test_x = pd.concat([test_x, y_test], axis=1)
+        return transformed_x, test_x
         
 
 @dataclass
