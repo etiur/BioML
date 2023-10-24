@@ -113,12 +113,14 @@ def main():
     if Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = [x.strip() for x in out.readlines()]
+    outliers = {"x_train": outliers, "x_test": outliers}
+    
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
 
     # instantiate everything to run training
-    feature = DataParser(label, training_features)
+    feature = DataParser(label, training_features, outliers=outliers, scaler=scaler)
     experiment = PycaretInterface(problem, feature.label, seed, best_model=len(selected_models))
-    training = Trainer(experiment, num_split, test_size, outliers, scaler)
+    training = Trainer(experiment, num_split, test_size)
     if problem == "classification":
         model = Classifier(drop=None, selected=selected_models)
     elif problem == "regression":

@@ -72,7 +72,6 @@ def arg_parse():
 class Classifier:
     def __init__(self, ranking_params: dict[str, float]=None, drop: tuple[str] = ("ada", "gpc", "lightgbm"), 
                  selected=None):
-        # initialize the Trainer class
 
         # change the ranking parameters
         ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
@@ -133,7 +132,8 @@ class Classifier:
         self.log.info("------ Running holdout -----")
         X_train, X_test = train_test_split(feature.features, test_size=self.test_size, random_state=self.experiment.seed, 
                                            stratify=feature.features[feature.label])
-        sorted_results, sorted_models, top_params = trainer.setup_training(X_train, X_test, self._calculate_score_dataframe, plot, drop=self.drop,
+        transformed_x, test_x = feature.scale(X_train, X_test) 
+        sorted_results, sorted_models, top_params = trainer.setup_training(transformed_x, test_x, self._calculate_score_dataframe, plot, drop=self.drop,
                                                                         selected=self.selected)
         return sorted_results, sorted_models, top_params
     
@@ -149,6 +149,8 @@ def main():
     if len(outliers) == 1 and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = [x.strip() for x in out.readlines()]
+
+    outliers = {"x_train": outliers, "x_test": outliers}
     
     feature = DataParser(label, excel)
     experiment = PycaretInterface("classification", feature.label, seed, budget_time=budget_time, best_model=best_model, 

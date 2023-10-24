@@ -20,7 +20,10 @@ def write_results(training_output, sorted_results, top_params=None, sheet_name=N
 class DataParser:
     label: pd.Series | str | Iterable[int|float]
     features: pd.DataFrame | str | list | np.ndarray
+    outliers: dict[str, tuple] = field(init=False, default_factory=lambda: defaultdict(tuple))
+    scaler: str="robust"
     with_split: bool = field(init=False, default=False)
+    sheets: str | int = 0
 
     def __post_init__(self):
         self.features = self.read_features(self.features)
@@ -34,43 +37,48 @@ class DataParser:
         # concatenate features and labels
         if isinstance(features, str):
             if features.endswith(".csv"):
-                return {"model 1": pd.read_csv(f"{features}", index_col=0)} # the first column should contain the sample names
+                return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
 
             elif features.endswith(".xlsx"):
                 with pd.ExcelFile(features) as file:
-                    sheet_names = file.sheet_names
-                f = pd.read_excel(features, index_col=0, header=[0, 1], engine='openpyxl', sheet_name=sheet_names[0])
-                if "split_0" in f.columns.unique(0):
-                    self.with_split = True
-                    del f
-                    return pd.read_excel(features, index_col=0, header=[0, 1], engine='openpyxl', sheet_name=sheet_names)
+                    if len(file.sheet_names) > 1:
+                        Warning(f"The excel file contains more than one sheet, only the sheet {self.sheets} will be used")
+
+                return pd.read_excel(features, index_col=0, engine='openpyxl', sheet_name=self.sheets)
         
-                return pd.read_excel(features, index_col=0, engine='openpyxl', sheet_name=sheet_names)
-                
+            
         elif isinstance(features, pd.DataFrame):
-            return {"model 1": features}
+            return features
         elif isinstance(features, (list, np.ndarray)):
-            return {"model 1": pd.DataFrame(features)}
+            return pd.DataFrame(features)
 
         self.log.error("features should be a csv or excel file, an array or a pandas DataFrame")
         raise TypeError("features should be a csv or excel file, an array or a pandas DataFrame")
         
-    
     def read_labels(self, label):
         if isinstance(label, pd.Series):
             label.index.name = "target"
             return label
-
+        
         elif isinstance(label, str):
             if Path(label).exists() and Path(label).suffix == ".csv":
                 label = pd.read_csv(label, index_col=0)
                 label.index.name = "target"
                 return label    
-            elif label in list(self.features.values())[0].columns:
+            elif label in self.features.columns:
                 return label
                     
         self.log.error("label should be a csv file, a pandas Series or inside features")
         raise TypeError("label should be a csv file, a pandas Series or inside features")
+    
+    def scale(self, X_train, X_test):
+        #remove outliers
+        X_train = X_train.loc[[x for x in X_train.index if x not in self.outliers["x_train"]]]
+        X_test = X_test.loc[[x for x in X_test.index if x not in self.outliers["x_test"]]]
+
+        transformed_x, scaler_dict, test_x = scale(self.scaler, X_train, X_test)
+
+        return transformed_x, test_x
         
 
 @dataclass
@@ -363,8 +371,12 @@ class PycaretInterface:
             The predictions are incorporated into the target data dataframe
         
         """
-        pred = self.model.predict_model(estimador, data=target_data, 
+        if self.objective == "classification":
+            pred = self.model.predict_model(estimador, data=target_data, 
                                         verbose=False, raw_score=True)
+        else:
+            pred = self.model.predict_model(estimador, data=target_data, 
+                                            verbose=False)
         if target_data is None or self.label_name in target_data.columns:
             results = self.model.pull(pop=True)
             return results
@@ -397,7 +409,7 @@ class PycaretInterface:
 
 class Trainer:
     def __init__(self, model: PycaretInterface, num_splits: int=5, 
-                 test_size: float=0.2, outliers: tuple[str, ...]=(), scaler: str="robust"):
+                 test_size: float=0.2):
         
         """
         Initialize a Trainer object with the given parameters.
@@ -414,44 +426,15 @@ class Trainer:
             The proportion of the dataset to include in the test split. Defaults to 0.2.
         outliers : tuple[str, ...], optional
             The list of outliers to remove from the training and test sets. Defaults to ().
-        scaler : str, optional
-            The type of scaler to use for feature scaling. Defaults to "robust".
         """
         self.log = Log("model_training")
         self.log.info("Reading the features")
         self.num_splits = num_splits
         self.test_size = test_size
-        self.scaler = scaler
-        self.outliers = outliers
         self.experiment = model
         self.log.info(f"Test_size: {test_size}")
         self.log.info(f"Outliers: {', '.join(self.outliers)}")
-        self.log.info(f"Scaler: {scaler}")
         self.log.info(f"Number of kfolds: {self.num_splits}")
-    
-    def return_train_test(self, train_index: pd.DataFrame | np.ndarray, test_index: pd.DataFrame | np.ndarray, 
-                          features: pd.DataFrame | np.ndarray = None, strategy: str="holdout", split_index: int | None=None):
-        # split and filter
-        if self.with_split:
-            feat_subset = features.loc[:, f"split_{split_index}"]  # each split different features and different fold of
-            # training and test data
-        else:
-            feat_subset = features
-
-        if strategy == "kfold":
-            X_train = feat_subset.iloc[train_index]
-            X_test = feat_subset.iloc[test_index]
-        elif strategy == "holdout":
-            X_train = train_index
-            X_test = test_index
-
-        #remove outliers
-        X_train = X_train.loc[[x for x in X_train.index if x not in self.outliers]]
-        X_test = X_test.loc[[x for x in X_test.index if x not in self.outliers]]
-
-        transformed_x, scaler_dict, test_x = scale(self.scaler, X_train, X_test)
-
-        return transformed_x, test_x
 
     def rank_results(self, results: dict[str, pd.DataFrame], returned_models:dict[str], 
                      scoring_function: Callable):
@@ -515,32 +498,8 @@ class Trainer:
 
         return sorted_results, sorted_models, top_params
 
-    def _scale(self, train_index, test_index, features = None, strategy="holdout", split_index=None, 
-               with_split=False):
-        # split and filter
-        if with_split:
-            feat_subset = features.loc[:, f"split_{split_index}"]  # each split different features and different fold of
-            # training and test data
-        else:
-            feat_subset = features
-
-        if strategy == "kfold":
-            X_train = feat_subset.iloc[train_index]
-            X_test = feat_subset.iloc[test_index]
-        elif strategy == "holdout":
-            X_train = train_index
-            X_test = test_index
-
-        #remove outliers
-        X_train = X_train.loc[[x for x in X_train.index if x not in self.outliers]]
-        X_test = X_test.loc[[x for x in X_test.index if x not in self.outliers]]
-
-        transformed_x, scaler_dict, test_x = scale(self.scaler, X_train, X_test)
-
-        return transformed_x, test_x
-    
-    def setup_training(self, X_train, X_test, scoring_fn: Callable, plot: tuple=(), drop: tuple|None=None, selected: tuple | None=None):
-        transformed_x, test_x = self._scale(X_train, X_test)
+    def setup_training(self, transformed_x, test_x, scoring_fn: Callable, plot: tuple=(), drop: tuple|None=None, 
+                       selected: tuple | None=None):
         sorted_results, sorted_models, top_params = self.analyse_models(transformed_x, test_x, scoring_fn, drop, selected)
         if plot:
             self.experiment.plots = plot

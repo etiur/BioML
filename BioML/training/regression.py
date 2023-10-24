@@ -88,7 +88,7 @@ class Regressor:
         
         return rmse + (self.R2_weight * r2)
     
-    def run_training(self, trainer: Trainer,feature: DataParser, plot=("residuals", "error", "learning")):
+    def run_training(self, trainer: Trainer, feature: DataParser, plot=("residuals", "error", "learning")):
         """
         A function that splits the data into training and test sets and then trains the models
         using cross-validation but only on the training data
@@ -113,12 +113,12 @@ class Regressor:
         """
         self.log.info("------ Running holdout -----")
         X_train, X_test = train_test_split(feature.features, test_size=self.test_size, random_state=self.experiment.seed)
-        sorted_results, sorted_models, top_params = trainer.setup_training(X_train, X_test, self._calculate_score_dataframe, plot, drop=self.drop,
-                                                                        selected=self.selected)
+        trasformed_x, test_x = feature.scale(X_train, X_test)
+        sorted_results, sorted_models, top_params = trainer.setup_training(trasformed_x, test_x, self._calculate_score_dataframe,
+                                                                           plot, drop=self.drop, selected=self.selected)
         return sorted_results, sorted_models, top_params
     
     
-
 def main():
     label, training_output, trial_time, scaler, excel, kfold, outliers, \
         difference_weight, r2_weight, strategy, seed, best_model, drop, tune, plot, optimize, selected = arg_parse()
@@ -129,8 +129,9 @@ def main():
         with open(outliers) as out:
             outliers = [x.strip() for x in out.readlines()]
 
+    outliers = {"x_train": outliers, "x_test": outliers}
     
-    feature = DataParser(label, excel)
+    feature = DataParser(label, excel, outliers=outliers, scaler=scaler)
     experiment = PycaretInterface("regression", feature.label, seed, budget_time=trial_time, best_model=best_model, 
                                   output_path=training_output)
 

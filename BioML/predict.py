@@ -1,4 +1,7 @@
-from multiprocessing import Pipe
+from dataclasses import dataclass, filed
+from email.policy import default
+from typing import Iterable
+from attr import field
 
 from yarl import cached_property
 from .training.base import DataParser, PycaretInterface, Trainer
@@ -40,26 +43,21 @@ def arg_parse():
     return [args.fasta_file, args.excel, args.scaler, args.model_output, args.prediction_threshold, args.extracted,
             args.res_dir, args.number_similar_samples]
 
-
+@dataclass
 class Predictor:
     """
     A class to perform predictions
+    Initialize the class EnsembleVoting
+
+    Parameters
+    ____________
+    extracted_out: str
+        The path to the directory where the new extracted feature files are
     """
 
-    def __init__(self, test_features: pd.DataFrame, pycaret: PycaretInterface,
-                 model_path: str | Path):
-        """
-        Initialize the class EnsembleVoting
-
-        Parameters
-        ____________
-        extracted_out: str
-            The path to the directory where the new extracted feature files are
-        """
-
-        self.test_features = test_features
-        self.model = pycaret
-        self.model_path = model_path
+    test_features: pd.DataFrame
+    model: PycaretInterface
+    model_path: str | Path
 
     @cached_property
     def loaded_model(self):
@@ -78,24 +76,19 @@ class Predictor:
         return pred, probability
 
 
-
+@ dataclass
 class ApplicabilityDomain:
     """
     A class that looks for the applicability domain
     """
-
-    def __init__(self):
-        """
-        Initialize the class
-        """
-        self.x_train = None
-        self.x_test = None
-        self.thresholds = None
-        self.test_names = None
-        self.pred = []
-        self.dataframe = None
-        self.n_insiders = []
-        self.ad_indices = []
+    x_train: pd.DataFrame = filed(default=None, init=False, repr=False)
+    x_test: pd.DataFrame = filed(default=None, init=False, repr=False)
+    thresholds: float = filed(default=None, init=False, repr=False)
+    test_names: Iterable = filed(default_factory=list, init=False, repr=False)
+    pred: list = filed(default_factory=list, init=False, repr=False)
+    dataframe: pd.DataFrame = filed(default=None, init=False, repr=False)
+    n_insiders: list =field(default_factory=list, init=False, repr=False)
+    ad_indices: list = field(default_factory=list, init=False, repr=False)
 
     def fit(self, x_train):
         """
@@ -286,6 +279,9 @@ class ApplicabilityDomain:
             fasta_neg = FastaIO.FastaWriter(neg, wrap=None)
             fasta_neg.write_file(negative)
 
+def predict(label, training_features):
+    feature = DataParser(label, training_features)
+    
 
 def vote_and_filter(fasta_file, extracted_features="extracted_features/new_features.xlsx", models="models",
                     selected_features="training_features/selected_features.xlsx", scaler="robust",
