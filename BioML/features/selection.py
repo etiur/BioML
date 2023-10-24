@@ -15,7 +15,7 @@ import random
 from multiprocessing import get_context  # https://pythonspeed.com/articles/python-multiprocessing/
 import time
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, ShuffleSplit
-from typing import Iterable
+from typing import Callable, Iterable
 from dataclasses import dataclass
 from . import methods
 from sklearn.ensemble import RandomForestClassifier as rfc
@@ -222,13 +222,13 @@ class DataReader:
         print(f"POSSUM: {count}, iFeature: {len(col) - count}")
         return count, len(col) - count
     
-    def scale(sefl, X_train):
+    def scale(self, X_train):
         transformed, scaler_dict = scale(self.scaler, X_train)
         return transformed.to_numpy()
 
 
 class FeatureSelection:
-    def __init__(self, features: pd.DataFrame, label: pd.Series, excel_file: str | Path, scaler: str="robust",
+    def __init__(self, excel_file: str | Path,
                  num_thread: int =10, num_split: int=5, test_size: float=0.2, 
                  num_filters: int=10, seed: int | None=None):
         """
@@ -236,10 +236,6 @@ class FeatureSelection:
 
         Parameters
         ----------
-        label : pd.Series 
-            The label values.
-        features : pd.DataFrame
-            The a pandas DataFrame with the feature values.
         excel_file : str or Path
             The path to the Excel file to save the selected features.
         features : pd.DataFrame or str or Iterable[list or np.ndarray]
@@ -261,10 +257,7 @@ class FeatureSelection:
         
         self.log = Log("feature_selection")
         self.log.info("Reading the features")
-        self.features = features
-        self.label = label
         self.num_thread = num_thread
-        self.scaler = scaler
         self.num_splits = num_split
         self.test_size = test_size
         self.excel_file = Path(excel_file)
@@ -280,7 +273,6 @@ class FeatureSelection:
         self.log.info("Starting feature selection and using the following parameters")    
         self.log.info(f"seed: {self.seed}")
         self.log.info(f"Features shape: {self.features.shape}")
-        self.log.info(f"Scaler: {self.scaler}")
         self.log.info(f"Variance Threshold: {self.variance_thres}")
         self.log.info(f"Kfold parameters: {self.num_splits}:{self.test_size}")
 
@@ -370,8 +362,8 @@ class FeatureSelection:
                 write_excel(writer, value, key)
 
     def generate_features(self, filter_args: dict, transformed: np.ndarray, Y_train: pd.Series | np.ndarray, 
-                          feature_range: Iterable[int], feature_dict: dict, rfe_step: int=30, plot: bool=True,
-                          plot_num_features: int=20) -> None:
+                          feature_range: Iterable[int], features: pd.DataFrame, rfe_step: int=30, plot: bool=True,
+                          plot_num_features: int=20) -> dict[str, pd.DataFrame]:
         """
         Construct a dictionary of feature sets using univariate filters and recursive feature elimination.
 
@@ -396,6 +388,7 @@ class FeatureSelection:
         -------
         None
         """
+        feature_dict = {}
 
         self.log.info("filtering the features")
         univariate_features = self.parallel_filter(filter_args, transformed, Y_train, feature_range[-1],
@@ -408,21 +401,19 @@ class FeatureSelection:
             print(f"generating a feature set of {num_features} dimensions")
             for filters in concatenated_features.index.unique(0):
                 feat = concatenated_features.loc[filters]
-                feature_dict[f"{filters}_{num_features}"]= self.features[feat.index[:num_features]]
-            rfe_results = methods.rfe_linear(transformed, Y_train, num_features, self.features.columns, rfe_step, 
+                feature_dict[f"{filters}_{num_features}"]= features[feat.index[:num_features]]
+            rfe_results = methods.rfe_linear(transformed, Y_train, num_features, features.columns, rfe_step, 
                                              filter_args["RFE"])
-            feature_dict[f"rfe_{num_features}"] = self.features[rfe_results]
+            feature_dict[f"rfe_{num_features}"] = features[rfe_results]
 
         return feature_dict
 
 
 class FeatureClassification(FeatureSelection):
-    def __init__(self, label, excel_file, features, num_thread=10, scaler="robust", 
-                 num_split=5, test_size=0.2, num_filters=10, seed=None):
+    def __init__(self, seed: int):
         
-        super().__init__(label, features, excel_file, num_thread, scaler, num_split, test_size, num_filters, seed)
-        """Subclass to perform feature selection on classification problems with a set of predefined filter methods"""
-        random.seed(self.seed)
+        """Class to perform feature selection on classification problems with a set of predefined filter methods"""
+        random.seed(seed)
         filter_names = ("FRatio", "SymmetricUncertainty", "SpearmanCorr", "PearsonCorr", "Chi2", "Anova",
                         "LaplacianScore", "InformationGain", "KendallCorr", "FechnerCorr")
         filter_names = random.sample(filter_names, self.num_filters)
@@ -451,7 +442,8 @@ class FeatureClassification(FeatureSelection):
             self._filter_args[value[0]] = tuple(value[1])
 
 
-    def construct_features(self, feature_range, plot=True, plot_num_features=20, rfe_step=30):
+    def construct_features(self, features: DataReader, selector: FeatureSelection,feature_range: list[int], 
+                           plot=True, plot_num_features=20, rfe_step=30):
         """
         Perform feature selection using a holdout strategy.
 
@@ -473,24 +465,21 @@ class FeatureClassification(FeatureSelection):
         None
         """
         
-        feature_dict = defaultdict(dict)
-        X_train, X_test, Y_train, Y_test = train_test_split(self.features, self.label, test_size=self.test_size, 
+        X_train, X_test, Y_train, Y_test = train_test_split(features.features, features.label, test_size=self.test_size, 
                                                                 random_state=self.seed, stratify=self.label)
-        self.generate_features(self.filter_args, X_train, Y_train, feature_range, feature_dict, rfe_step, plot,
+        transformed_x = features.scale(X_train)
+        feature_dict = selector.generate_features(self.filter_args, transformed_x, Y_train, 
+                                    feature_range, features.feature, rfe_step, plot,
                                plot_num_features)
-        self._write_dict(feature_dict)
+        selector._write_dict(feature_dict)
 
 
 class FeatureRegression(FeatureSelection):
     """Subclass to perform feature selection on regression problems with a set of predefined filter methods"""
 
-    def __init__(self, label, excel_file, features, num_thread=10, scaler="robust", num_split=5, 
-                 test_size=0.2, num_filters=4, seed=None):
+    def __init__(self, seed: int):
         
-        super().__init__(label, features, excel_file, num_thread, scaler, num_split, test_size, 
-                         num_filters, seed)
-        
-        random.seed(self.seed)
+        random.seed(seed)
         filter_names = ("SpearmanCorr", "PearsonCorr", "KendallCorr", "FechnerCorr")
         filter_names = random.sample(filter_names, self.num_filters)
         regression_filters = ("mutual_info", "Fscore")
@@ -514,7 +503,9 @@ class FeatureRegression(FeatureSelection):
         elif isinstance(value, tuple):
             self._filter_args[value[0]] = tuple(value[1])
 
-    def construct_features(self, feature_range: Iterable[int], plot=True, plot_num_features=20, rfe_step=30):
+    def construct_features(self, features: DataReader, selector: FeatureSelection, 
+                           feature_range: list[int], plot: bool=True, plot_num_features:int=20, 
+                           rfe_step:int=30) -> None:
         """
         Perform feature selection using a holdout strategy.
 
@@ -536,16 +527,16 @@ class FeatureRegression(FeatureSelection):
         None
         """
 
-        feature_dict = defaultdict(dict)
-        X_train, X_test, Y_train, Y_test = train_test_split(self.features, self.label, test_size=self.test_size, 
+        X_train, X_test, Y_train, Y_test = train_test_split(features.features, features.label, test_size=self.test_size, 
                                                             random_state=self.seed)
-        self.generate_features(self.filter_args, X_train, Y_train, feature_range, feature_dict, rfe_step, plot,
-                               plot_num_features)
-        self._write_dict(feature_dict)
+        transformed_x = features.scale(X_train)
+        feature_dict = selector.generate_features(self.filter_args, transformed_x, Y_train, 
+                                    feature_range, features.feature, rfe_step, plot, plot_num_features)
+        selector._write_dict(feature_dict)
 
    
 def get_range_features(self, num_features_min: int | None=None, 
-                        num_features_max: int | None=None, step_range: int | None=None) -> list:
+                        num_features_max: int | None=None, step_range: int | None=None) -> list[int]:
     """
     Get a range of features dimensions to select.
 
@@ -609,20 +600,15 @@ def main():
     feature_range = get_range_features(num_features_min, num_features_max, step)
 
     # generate the dataset
-    training_data = DataReader(label, features, variance_threshold)
-    feature = training_data.features
-    labels = training_data.labels
-
+    training_data = DataReader(label, features, variance_threshold, scaler)
+    filters = FeatureSelection(excel_file, num_thread, num_split, test_size, num_filters, seed)
     # select features
     if problem == "classification":
-        selection = FeatureClassification(labels, excel_file, feature, num_thread, scaler,
-                                          num_split, test_size, num_filters, seed)
+        selection = FeatureClassification(filters.seed)
     elif problem == "regression":
-        selection = FeatureRegression(labels, excel_file, feature, num_thread, scaler,
-                                      num_split, test_size, num_filters, seed)
+        selection = FeatureRegression(filters.seed)
 
-
-    selection.construct_features(feature_range, rfe_steps, plot, plot_num_features)
+    selection.construct_features(training_data, filters, feature_range, rfe_steps, plot, plot_num_features)
 
 
    
