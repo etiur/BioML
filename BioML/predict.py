@@ -1,47 +1,53 @@
 from dataclasses import dataclass, filed
-from typing import Iterable
 from attr import field
 from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
 from yarl import cached_property
-from .training.base import DataParser, Trainer
+from .training.base import DataParser
 import argparse
 from scipy.spatial import distance
 from Bio import SeqIO
 from Bio.SeqIO import FastaIO
-from .utilities import scale
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from collections import defaultdict
 
 
 def arg_parse():
     parser = argparse.ArgumentParser(description="Predict using the models and average the votations")
     parser.add_argument("-i", "--fasta_file", help="The fasta file path", required=True)
-    parser.add_argument("-e", "--excel", required=False,
-                        help="The file to where the selected features are saved in excel format",
-                        default="training_features/selected_features.xlsx")
+    parser.add_argument("-tr", "--training_features", required=True,
+                        help="The file to where the training features are saved in excel or csv format")
     parser.add_argument("-sc", "--scaler", default="robust", choices=("robust", "standard", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
-    parser.add_argument("-o", "--model_output", required=False,
-                        help="The directory for the generated models",
-                        default="models")
-    parser.add_argument("-va", "--prediction_threshold", required=False, default=1.0, type=float,
-                        help="Between 0.5 and 1 and determines what considers to be a positive prediction, if 1 only"
-                             "those predictions where all models agrees are considered to be positive")
-    parser.add_argument("-ne", "--extracted", required=False,
-                        help="The file where the extracted features from the new data are stored",
-                        default="extracted_features/new_features.xlsx")
+    parser.add_argument("-m", "--model_path", required=True,
+                        help="The directory for the generated models")
+    parser.add_argument("-te", "--test_features", required=True,
+                        help="The file to where the test features are saved in excel or csv format")
     parser.add_argument("-d", "--res_dir", required=False,
                         help="The file where the extracted features from the new data are stored",
                         default="prediction_results")
     parser.add_argument("-nss", "--number_similar_samples", required=False, default=1, type=int,
                         help="The number of similar training samples to filter the predictions")
+    parser.add_argument("-otr", "--outliers_train", nargs="+", required=False, default=(),
+                        help="A list of outliers if any, the name should be the same as the index of "
+                             " training features, you can also specify the path to a file in plain text format, each "
+                             "record should be in a new line")
+    parser.add_argument("-ote", "--outliers_test", nargs="+", required=False, default=(),
+                        help="A list of outliers if any, the name should be the same as the index of "
+                             " test features, you can also specify the path to a file in plain text format, each "
+                             "record should be in a new line")
+    parser.add_argument("-p", "--problem", required=False, 
+                        default="classification", choices=("classification", "regression"), help="The problem type")
+    parser.add_argument("-l", "--label", required=False, default=None,
+                        help="Use it if the lables is in the training features so it is removed, but not necessary otherwise")
+    parser.add_argument("-ad", "--applicability_domain", required=False, action="store_false", 
+                        help="If to use the applicability domain to filter the predictions")
     args = parser.parse_args()
 
-    return [args.fasta_file, args.excel, args.scaler, args.model_output, args.prediction_threshold, args.extracted,
-            args.res_dir, args.number_similar_samples]
+    return [args.fasta_file, args.training_features, args.scaler, args.model_path, args.test_features,
+             args.res_dir, args.number_similar_samples, args.outlier_train, args.outlier_test, args.problem, args.label,
+             args.applicability_domain]
 
 @dataclass
 class Predictor:
@@ -68,12 +74,9 @@ class Predictor:
         """
         Make predictions on new samples
         """
-        probability = False
-        pred = self.model.predict(self.loaded_model, self.test_features)
-        if "prediction_score" in pred.columns:
-            probability = True
+        pred = self.model.predict_model(self.loaded_model, self.test_features)
 
-        return pred, probability
+        return pred
 
 
 @ dataclass
@@ -84,11 +87,7 @@ class ApplicabilityDomain:
     x_train: pd.DataFrame = filed(default=None, init=False, repr=False)
     x_test: pd.DataFrame = filed(default=None, init=False, repr=False)
     thresholds: float = filed(default=None, init=False, repr=False)
-    test_names: Iterable = filed(default_factory=list, init=False, repr=False)
-    pred: list = filed(default_factory=list, init=False, repr=False)
-    dataframe: pd.DataFrame = filed(default=None, init=False, repr=False)
     n_insiders: list =field(default_factory=list, init=False, repr=False)
-    ad_indices: list = field(default_factory=list, init=False, repr=False)
 
     def fit(self, x_train):
         """
@@ -133,10 +132,8 @@ class ApplicabilityDomain:
         ___________
         x_test: pandas Dataframe object
         """
-        self.x_test = x_test
-        self.test_names = ["sample_{}".format(i) for i in range(self.x_test.shape[0])]
         # calculating the distance of test with each of the training samples
-        d_train_test = np.array([distance.cdist(np.array(x).reshape(1, -1), self.x_train) for x in self.x_test])
+        d_train_test = np.array([distance.cdist(np.array(x).reshape(1, -1), self.x_train) for x in x_test])
         for i in d_train_test:  # for each sample
             # saving indexes of training with distance < threshold
             idxs = [j for j, d in enumerate(i[0]) if d <= self.thresholds[j]]
@@ -144,7 +141,8 @@ class ApplicabilityDomain:
 
         return self.n_insiders
 
-    def _filter_models_vote(self, model_predictions, filtered_names, min_num=1):
+    def filter_model_predictions(self, predictions: pd.DataFrame, min_num: int=1,
+                                 path_name: str | Path = "filtered_predictions.parquet"):
         """
         Eliminate the models individual predictions of sequences that did not pass the applicability domain threshold
 
@@ -152,8 +150,6 @@ class ApplicabilityDomain:
         ----------
         model_predictions: dict[dict[np.ndarray]]
             Prediction from all the classifiers
-        filtered_names: list[str]
-            Names of the test samples after the filtering
         min_num: int
             The minimum number to be considered of the same applicability domain
 
@@ -163,177 +159,146 @@ class ApplicabilityDomain:
             The predictions of each of the models kept in the dataframe, the columns are the different model predictions
             and the rows the different sequences
         """
-        results = {}
-        for sheet, pred in model_predictions.items():
-            filtered_pred = [d[0] for x, d in enumerate(zip(pred, self.n_insiders)) if d[1] >= min_num]
-            results[sheet] = filtered_pred
+  
+        filtered_index = [f"sample_{x}" for x, similarity_score in enumerate(self.n_insiders) if similarity_score >= min_num]
+        filtered_names = [pred_index for x, (pred_index, similarity_score) in enumerate(zip(predictions.index, self.n_insiders)) if similarity_score >= min_num]
+        filtered_pred = predictions.loc[filtered_names]
+        filtered_n_insiders = pd.Series([d for s, d in enumerate(self.n_insiders) if d >= min_num], name="AD_number", index=filtered_names)
+        pred = pd.concat([filtered_pred, filtered_n_insiders], axis=1)
+        pred.index = filtered_index
+ 
+        col_name = ["prediction_score", "prediction_label", "AD_number"]
 
-        return pd.DataFrame(results, index=filtered_names)
-
-    def filter(self, prediction, model_predictions, min_num=1, path_name: str | Path= "filtered_predictions.parquet"):
-        """
-        Filter those predictions that have less than min_num training samples
-
-        Parameters
-        ___________
-        prediction: array
-            An array of the average of predictions
-        svc: dict[array]
-            The prediction of the SVC models
-        knn: dict[array]
-            The predictions of the different Knn models
-        ridge: dict[array]
-            The predictions of the different ridge models
-        index: array
-            The index of those predictions that were not unanimous between different models
-        path_name: Path | str, optional
-            The path for the csv file
-        min_num: int, optional
-            The minimun number of training samples within the AD of the test samples
-        """
-        # filter the ensemble predictions and names based on if it passed the threshold of similar samples
-        filtered_pred = [d[0] for x, d in enumerate(zip(prediction, self.n_insiders)) if d[1] >= min_num]
-        filtered_names = [d[0] for y, d in enumerate(zip(self.test_names, self.n_insiders)) if d[1] >= min_num]
-        filtered_n_insiders = [d for s, d in enumerate(self.n_insiders) if d >= min_num]
-        # Turn the different arrays into pandas Series or dataframes
-        pred = pd.Series(filtered_pred, index=filtered_names)
-        n_applicability = pd.Series(filtered_n_insiders, index=filtered_names)
-        models = self._filter_models_vote(model_predictions, filtered_names, min_num) # individual votes
-        # concatenate all the objects
-        self.pred = pd.concat([pred, n_applicability, models], axis=1)
-        self.pred.columns = ["prediction", "AD_number"] + list(models.columns)
-        self.pred.to_parquet(path_name)
-        return self.pred
-
-    def separate_negative_positive(self, fasta_file, pred=None):
-        """
-        Parameters
-        ______________
-        fasta_file: str
-            The input fasta file
-        pred: list, optional
-            The predictions
-
-        Return
-        ________
-        positive: list[Bio.SeqIO]
-        negative: list[Bio.SeqIO]
-        """
-        if pred is not None:
-            self.pred = pred
-        # separating the records according to if the prediction is positive or negative
-        self.fasta_file = Path(fasta_file)
-        if (self.fasta_file.parent / "no_short.fasta").exists():
-            self.fasta_file = self.fasta_file.parent / "no_short.fasta"
-
-        with open(self.fasta_file) as inp:
-            record = SeqIO.parse(inp, "fasta")
-            p = 0
-            positive = []
-            negative = []
-            for ind, seq in enumerate(record):
-                try:
-                    if int(self.pred.index[p].split("_")[1]) == ind:
-                        col = self.pred[self.pred.columns[2:]].iloc[p]
-                        mean = round(sum(col) / len(col), 2)
-                        col = [f"{col.index[i]}-{d}" for i, d in enumerate(col)]
-                        seq.id = f"{seq.id}-{'+'.join(col)}-###prob:{mean}###AD:{self.pred['AD_number'][p]}"
-                        if self.pred["prediction"][p] == 1:
-                            positive.append(seq)
-                        else:
-                            negative.append(seq)
-                        p += 1
-                except IndexError:
-                    break
-
-        return positive, negative
-
-    def extract(self, fasta_file, pred=None, positive_fasta="positive.fasta", negative_fasta="negative.fasta",
-                res_dir: str | Path = "results"):
-        """
-        A function to extract those test fasta sequences that passed the filter
-
-        Parameters
-        ___________
-        fasta_file: str
-            The path to the test fasta sequences
-        pred: pandas Dataframe, optional
-            Predictions
-        positive_fasta: str, optional
-            The new filtered fasta file with positive predictions
-        negative_fasta: str, optional
-            The new filtered fasta file with negative sequences
-        res_dir: Path | str, optional
-            The folder where to keep the prediction results
-        """
-        positive, negative = self.separate_negative_positive(fasta_file, pred)
-        # writing the positive and negative fasta sequences to different files
-        with open(f"{res_dir}/{positive_fasta}", "w") as pos:
-            positive = sorted(positive, reverse=True, key=lambda x: (float(x.id.split("###")[1].split(":")[1]),
-                                                             int(x.id.split("###")[2].split(":")[1].split("-")[0])))
-            fasta_pos = FastaIO.FastaWriter(pos, wrap=None)
-            fasta_pos.write_file(positive)
-        with open(f"{res_dir}/{negative_fasta}", "w") as neg:
-            negative = sorted(negative, reverse=True, key=lambda x: (float(x.id.split("###")[1].split(":")[1]),
-                                                             int(x.id.split("###")[2].split(":")[1].split("-")[0])))
-            fasta_neg = FastaIO.FastaWriter(neg, wrap=None)
-            fasta_neg.write_file(negative)
+        pred = pred.loc[:, pred.columns.str.contains("|".join(col_name))]
+        pred.to_parquet(path_name)
+        return pred
 
 
-def predict(label, training_features, test_features, outliers, scaler, model_path, 
-            problem="classification"):
-    feature = DataParser(label, training_features, outliers=outliers, scaler=scaler)
-    test_features = feature.read_features(test_features)
+def separate_negative_positive(self, pred: pd.DataFrame, fasta_file: str|Path):
+    """
+    Parameters
+    ______________
+    fasta_file: str
+        The input fasta file
+    pred: list, optional
+        The predictions
+
+    Return
+    ________
+    positive: list[Bio.SeqIO]
+    negative: list[Bio.SeqIO]
+    """
+    # separating the records according to if the prediction is positive or negative
+    fasta_file = Path(fasta_file)
+    if (fasta_file.parent / "no_short.fasta").exists():
+        fasta_file = fasta_file.parent / "no_short.fasta"
+
+    with open(self.fasta_file) as inp:
+        record = SeqIO.parse(inp, "fasta")
+        p = 0
+        positive = []
+        negative = []
+        for ind, seq in enumerate(record):
+            try:
+                if int(pred.index[p].split("_")[1]) == ind:
+                    col = pred.iloc[p]
+                    if len(col) > 2:
+                        seq.id = f"{seq.id}-###label:{col['prediction_label']}-###prob_0:{col['prediction_score_0']}-###prob_1:{col['prediction_score_1']}-###AD:{col['AD_number']}"
+                    elif len(col) == 2:
+                        seq.id = f"{seq.id}-###label:{col['prediction_label']}-###AD:{col['AD_number']}"
+                    if pred["prediction_label"].iloc[p] == 1:
+                        positive.append(seq)
+                    else:
+                        negative.append(seq)
+                    p += 1
+            except IndexError:
+                break
+
+    return positive, negative
+    
+def _sorting_function(sequence):
+    id_ = sequence.id.split("-###")
+    if len(id_) >= 5:
+        return float(id_[3].split(":")[1]), int(id_[4].split(":")[1])
+    else:
+        return int(id_[2].split(":")[1])
+
+def extract(positive_list, negative_list, positive_fasta="positive.fasta", negative_fasta="negative.fasta",
+            res_dir: str | Path = "results"):
+    """
+    A function to extract those test fasta sequences that passed the filter
+
+    Parameters
+    ___________
+    fasta_file: str
+        The path to the test fasta sequences
+    pred: pandas Dataframe, optional
+        Predictions
+    positive_fasta: str, optional
+        The new filtered fasta file with positive predictions
+    negative_fasta: str, optional
+        The new filtered fasta file with negative sequences
+    res_dir: Path | str, optional
+        The folder where to keep the prediction results
+    """
+    # writing the positive and negative fasta sequences to different files
+    with open(f"{res_dir}/{positive_fasta}", "w") as pos:
+        positive = sorted(positive_list, reverse=True, key=_sorting_function)
+        fasta_pos = FastaIO.FastaWriter(pos, wrap=None)
+        fasta_pos.write_file(positive)
+    with open(f"{res_dir}/{negative_fasta}", "w") as neg:
+        negative = sorted(negative_list, reverse=True, key=_sorting_function)
+        fasta_neg = FastaIO.FastaWriter(neg, wrap=None)
+        fasta_neg.write_file(negative)
+
+
+def predict(test_features, model_path, problem="classification"):
+
     if problem == "classification":
         experiment = ClassificationExperiment()
     elif problem == "regression":
         experiment = RegressionExperiment()
-    transformed_x, test_x =  feature.scale(feature.features, test_features)
-    predictor = Predictor(test_x, experiment, model_path)
-    pred, probability = predictor.predicting()
-    return pred, probability
+
+    predictor = Predictor(test_features, experiment, model_path)
+    pred = predictor.predicting()
+    return pred
 
 
-def vote_and_filter(fasta_file, extracted_features="extracted_features/new_features.xlsx", models="models",
-                    selected_features="training_features/selected_features.xlsx", scaler="robust",
-                    prediction_threshold=1, res_dir="prediction_results", min_num=1):
+def domain_filter(predictions, scaled_training_features, scaled_test_features,
+                  res_dir="prediction_results", min_num=1):
 
-    res_dir = Path(res_dir)
-    (res_dir / "domain").mkdir(parents=True, exist_ok=True)
-    (res_dir / "positive").mkdir(parents=True, exist_ok=True)
-    (res_dir / "negative").mkdir(parents=True, exist_ok=True)
-
-    ensemble = EnsembleVoting(extracted_features, models, selected_features, scaler)
-    # predictions
-    predictions, feature_dict = ensemble.predicting()
-    all_voting, all_index = ensemble.vote(prediction_threshold, *predictions.values())
-    # applicability domain for each of the models
-    domain_list = []
-    for key, scaled_feature in feature_dict.items():
-        domain = ApplicabilityDomain()
-        domain.fit(scaled_feature[0])
-        domain.predict(scaled_feature[1])
+    domain = ApplicabilityDomain()
+    domain.fit(scaled_training_features)
+    domain.predict(scaled_test_features)
     # return the prediction after the applicability domain filter of SVC (the filter depends on the feature space)
-        pred = domain.filter(all_voting, predictions, min_num, res_dir/"domain"/f"{key}.parquet")
-        domain.extract(fasta_file, pred, positive_fasta=f"positive/{key}.fasta",
-                       negative_fasta=f"negative/{key}.fasta", res_dir=res_dir)
-        domain_list.append(pred)
+    pred = domain.filter_model_predictions(predictions, min_num, 
+                                           path_name=res_dir/"filtered_predictions.parquet")
 
-    # Then filter again to see which sequences are within the AD of all the algorithms since it is an ensemble classifier
-    name_set = set(domain_list[0].index).intersection(*tuple(x.index for x in domain_list[1:]))
-    name_set = sorted(name_set, key=lambda x: int(x.split("_")[1]))
-    common_domain = domain_list[0].loc[name_set]
-    common_domain.to_parquet(f"{res_dir}/common_domain.parquet")
-    # the positive sequences extracted will have the AD of the SVC
-    domain.extract(fasta_file, common_domain, positive_fasta=f"common_positive.fasta",
-                       negative_fasta=f"common_negative.fasta", res_dir=res_dir)
+    return pred
+
 
 def main():
-    fasta, selected_features, scaler, model_output, prediction_threshold, extracted, res_dir, \
-        number_similar_samples = arg_parse()
-    vote_and_filter(fasta, extracted, model_output, selected_features, scaler, prediction_threshold,
-                    res_dir, number_similar_samples)
+    fasta, training_features, scaler, model_path, test_features, res_dir, number_similar_samples, \
+    outlier_train, outlier_test, problem, label, applicability_domain = arg_parse()
 
+    if outlier_test and Path(outlier_test[0]).exists():
+        with open(outlier_test) as out_test:
+            outlier_test = [x.strip() for x in out_test.readlines()]
+    
+    if outlier_train and Path(outlier_train[0]).exists():
+        with open(outlier_train) as out_train:
+            outlier_train = [x.strip() for x in out_train.readlines()]
+
+    outliers = {"x_train": outlier_train, "x_test": outlier_test}
+
+    feature = DataParser(training_features, label, outliers=outliers, scaler=scaler)
+    test_features = feature.read_features(test_features)
+    transformed_x, test_x =  feature.scale(feature.features, test_features)
+    predictions = predict(test_x, model_path, problem)
+    if applicability_domain:
+        predictions = domain_filter(fasta, predictions, transformed_x, test_x, res_dir, number_similar_samples)
+    positive, negative = separate_negative_positive(predictions, fasta)
+    extract(positive, negative, positive_fasta=f"positive.fasta", negative_fasta=f"negative.fasta", res_dir=res_dir)   
 
 if __name__ == "__main__":
     # Run this if this file is executed from command line but not if is imported as API

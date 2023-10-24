@@ -19,15 +19,16 @@ def write_results(training_output, sorted_results, top_params=None, sheet_name=N
 
 @dataclass
 class DataParser:
-    label: pd.Series | str | Iterable[int|float]
     features: pd.DataFrame | str | list | np.ndarray
+    label: pd.Series | str | Iterable[int|float] | None = None
     outliers: dict[str, tuple] = field(default_factory=lambda: defaultdict(tuple))
     scaler: str="robust"
     sheets: str | int = 0
 
     def __post_init__(self):
         self.features = self.read_features(self.features)
-        self.label = self.read_labels(self.label)
+        if self.label:
+            self.label = self.read_labels(self.label)
 
     def read_features(self, features):
         # concatenate features and labels
@@ -78,8 +79,7 @@ class DataParser:
 
         return transformed_x, test_x
     
-    def process(self, X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series):
-        transformed_x, test_x = self.scale(X_train, X_test)
+    def process(self, transformed_x: pd.DataFrame, test_x: pd.DataFrame, y_train: pd.Series, y_test: pd.Series):
         transformed_x = pd.concat([transformed_x, y_train], axis=1) 
         test_x = pd.concat([test_x, y_test], axis=1)
         return transformed_x, test_x

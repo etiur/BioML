@@ -134,6 +134,7 @@ class Classifier:
         self.log.info("------ Running holdout -----")
         X_train, X_test, y_train, y_test = train_test_split(feature.features, feature.label, test_size=self.test_size, random_state=self.experiment.seed, 
                                                             stratify=feature.label)
+        transformed_x, test_x = feature.scale(X_train, X_test)
         transformed_x, test_x = feature.process(X_train, X_test, y_train, y_test)
         sorted_results, sorted_models, top_params = trainer.setup_training(transformed_x, test_x, self._calculate_score_dataframe, plot, drop=self.drop,
                                                                         selected=self.selected)
@@ -148,13 +149,13 @@ def main():
     
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     training_output = Path(training_output)
-    if len(outliers) == 1 and Path(outliers[0]).exists():
+    if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = [x.strip() for x in out.readlines()]
 
     outliers = {"x_train": outliers, "x_test": outliers}
     
-    feature = DataParser(label, excel, outliers=outliers, scaler=scaler)
+    feature = DataParser(excel, label, outliers=outliers, scaler=scaler)
     experiment = PycaretInterface("classification", feature.label, seed, budget_time=budget_time, best_model=best_model, 
                                   output_path=training_output)
     training = Trainer(experiment, num_split, test_size)

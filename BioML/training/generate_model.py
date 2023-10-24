@@ -110,7 +110,7 @@ class GenerateModel:
 def main():
     training_features, label, scaler, model_output, outliers, selected_models, \
     problem, optimize, strategy, model_strategy, seed, kfold, tune = arg_parse()
-    if Path(outliers[0]).exists():
+    if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = [x.strip() for x in out.readlines()]
     outliers = {"x_train": outliers, "x_test": outliers}
@@ -118,7 +118,7 @@ def main():
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
 
     # instantiate everything to run training
-    feature = DataParser(label, training_features, outliers=outliers, scaler=scaler)
+    feature = DataParser(training_features, label, outliers=outliers, scaler=scaler)
     experiment = PycaretInterface(problem, feature.label, seed, best_model=len(selected_models))
     training = Trainer(experiment, num_split, test_size)
     if problem == "classification":
