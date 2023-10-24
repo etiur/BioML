@@ -335,7 +335,7 @@ class PycaretInterface:
     
     def evaluate_model(self, model, save: bool | str =False):
         """
-        Evaluate the mode by plotting the learning curve
+        Evaluate the model by plotting the learning curve
 
         Parameters
         ----------
@@ -364,7 +364,7 @@ class PycaretInterface:
         
         """
         pred = self.model.predict_model(estimador, data=target_data, 
-                                        verbose=False)
+                                        verbose=False, raw_score=True)
         if target_data is None or self.label_name in target_data.columns:
             results = self.model.pull(pop=True)
             return results

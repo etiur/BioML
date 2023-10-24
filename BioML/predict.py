@@ -1,4 +1,7 @@
-import joblib
+from multiprocessing import Pipe
+
+from yarl import cached_property
+from .training.base import DataParser, PycaretInterface, Trainer
 import argparse
 from scipy.spatial import distance
 from Bio import SeqIO
@@ -38,13 +41,13 @@ def arg_parse():
             args.res_dir, args.number_similar_samples]
 
 
-class EnsembleVoting:
+class Predictor:
     """
-    A class to perform ensemble voting
+    A class to perform predictions
     """
 
-    def __init__(self, extracted_features="extracted_features/new_features.xlsx", models="models",
-                 selected_features="training_features/selected_features.xlsx", scaler="robust"):
+    def __init__(self, test_features: pd.DataFrame, pycaret: PycaretInterface,
+                 model_path: str | Path):
         """
         Initialize the class EnsembleVoting
 
@@ -53,92 +56,27 @@ class EnsembleVoting:
         extracted_out: str
             The path to the directory where the new extracted feature files are
         """
-        self.extracted_out = Path(extracted_features)
-        self.training_features = Path(selected_features)
-        self.models_path = Path(models)
-        self.scaler = scaler
-        self.with_split = True
-        self.models_dict = self.get_models()
-        self.selected_sheets = list(self.models_dict.keys())
 
-    def _check_features(self):
-        features = pd.read_excel(self.training_features, index_col=0, header=[0, 1], engine='openpyxl')
-        if f"split_{0}" not in features.columns.unique(0):
-            self.with_split = False
+        self.test_features = test_features
+        self.model = pycaret
+        self.model_path = model_path
 
-        if self.with_split:
-            features = pd.read_excel(self.training_features, index_col=0, sheet_name=self.selected_sheets,
-                                     header=[0, 1], engine='openpyxl')
-            new_features = pd.read_excel(self.extracted_out, index_col=0, sheet_name=self.selected_sheets,
-                                         header=[0, 1], engine='openpyxl')
-        else:
-            features = pd.read_excel(self.training_features, index_col=0, sheet_name=self.selected_sheets, header=0,
-                                     engine='openpyxl')
-            new_features = pd.read_excel(self.extracted_out, index_col=0, sheet_name=self.selected_sheets, header=0,
-                                         engine='openpyxl')
-
-        return features, new_features
-
-    def get_models(self):
-        model_dict = defaultdict(dict)
-        models = self.models_path.glob("*/*.joblib")
-        for mod in models:
-            sheet = mod.parent.name[6:]
-            if sheet.isdigit():
-                sheet = int(sheet)
-            split_ind = int(mod.stem.split("_")[-1])
-            model_dict[sheet][split_ind] = joblib.load(mod)
-        return model_dict
+    @cached_property
+    def loaded_model(self):
+        return self.model.load_model(self.model_path)
+        
 
     def predicting(self):
         """
         Make predictions on new samples
         """
-        feature_dict = {}
-        predictions = {}
-        # extract the features
-        features, new_features = self._check_features()
-        for sheet, split_dict in self.models_dict.items():
-            for ind, mod in split_dict.items():
-                if self.with_split:
-                    sub_feat = features[sheet].loc[:, f"split_{ind}"]
-                    sub_new_feat = new_features[sheet].loc[:, f"split_{ind}"]
-                else:
-                    sub_feat = features[sheet]
-                    sub_new_feat = new_features[sheet]
-                old_feat_scaled, scaler_dict, new_feat_scaled = scale(self.scaler, sub_feat, sub_new_feat)
-                pred = mod.predict(new_feat_scaled)
-                print("pred", len(pred))
-                name = mod.__class__.__name__
-                predictions[f"{sheet}_{name}_{ind}"] = pred
-                feature_dict[f"{sheet}_{name}_{ind}"] = (old_feat_scaled, new_feat_scaled)
+        probability = False
+        pred = self.model.predict(self.loaded_model, self.test_features)
+        if "prediction_score" in pred.columns:
+            probability = True
 
-        return predictions, feature_dict
+        return pred, probability
 
-    @staticmethod
-    def vote(val=1, *args):
-        """
-        Hard voting for the ensembles
-
-        Parameters
-        ___________
-        args: list[arrays]
-            A list of prediction arrays
-        """
-        vote_ = []
-        index = []
-        mean = np.mean(args, axis=0)
-        for s, x in enumerate(mean):
-            if x == 1 or x == 0:
-                vote_.append(int(x))
-            elif x >= val:
-                vote_.append(1)
-                index.append(s)
-            elif x < val:
-                vote_.append(0)
-                index.append(s)
-
-        return vote_, index
 
 
 class ApplicabilityDomain:
