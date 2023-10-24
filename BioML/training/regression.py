@@ -62,11 +62,11 @@ def arg_parse():
 
 
 class Regressor(Trainer):
-    def __init__(self, model: PycaretInterface, output="training_results", num_splits=5, test_size=0.2,
+    def __init__(self, model: PycaretInterface, num_splits=5, test_size=0.2,
                  outliers=(), scaler="robust", ranking_params=None, drop=("tr", "kr", "ransac", "ard", "ada", "lightgbm"),
                  optimize="RMSE", selected=None):
 
-        super().__init__(model, output, num_splits, test_size, outliers, scaler)
+        super().__init__(model, num_splits, test_size, outliers, scaler)
         
         ranking_dict = dict(R2_weight=0.8, difference_weight=1.2)
         if isinstance(ranking_params, dict):
@@ -157,10 +157,11 @@ def main():
 
     
     feature = DataParser(label, excel)
-    experiment = PycaretInterface("regression", feature.label, seed, budget_time=trial_time, best_model=best_model)
+    experiment = PycaretInterface("regression", feature.label, seed, budget_time=trial_time, best_model=best_model, 
+                                  output_path=training_output)
 
     ranking_dict = dict(R2_weight=r2_weight, difference_weight=difference_weight)
-    training = Regressor(experiment, training_output, num_split, test_size, outliers, scaler, 
+    training = Regressor(experiment, num_split, test_size, outliers, scaler, 
                          ranking_dict, drop, optimize, selected=selected)
     
 

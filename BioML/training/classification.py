@@ -70,11 +70,11 @@ def arg_parse():
 
 
 class Classifier(Trainer):
-    def __init__(self, model: PycaretInterface, output="training_results", num_splits=5, test_size=0.2,
+    def __init__(self, model: PycaretInterface, num_splits=5, test_size=0.2,
                  outliers: tuple[str, ...]=(), scaler="robust",  ranking_params: dict[str, float]=None,  
                  drop: tuple[str] = ("ada", "gpc", "lightgbm"), selected=None, optimize="MCC"):
         # initialize the Trainer class
-        super().__init__(model, output, num_splits, test_size, outliers, scaler)
+        super().__init__(model, num_splits, test_size, outliers, scaler)
         # change the ranking parameters
         ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
                             difference_weight=1.2)
@@ -172,11 +172,12 @@ def main():
             outliers = [x.strip() for x in out.readlines()]
     
     feature = DataParser(label, excel)
-    experiment = PycaretInterface("classification", feature.label, seed, budget_time=budget_time, best_model=best_model)
+    experiment = PycaretInterface("classification", feature.label, seed, budget_time=budget_time, best_model=best_model, 
+                                  output_path=training_output)
 
     ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight,
                         difference_weight=difference_weight, report_weight=report_weight)
-    training = Classifier(experiment, training_output, num_split, test_size, outliers, scaler, ranking_dict, drop, optimize=optimize,
+    training = Classifier(experiment, num_split, test_size, outliers, scaler, ranking_dict, drop, optimize=optimize,
                           selected=selected)
     
     sorted_results, sorted_models, top_params = training.run_training(feature, plot)

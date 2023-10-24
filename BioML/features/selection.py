@@ -17,7 +17,7 @@ import time
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, ShuffleSplit
 from typing import Iterable
 from dataclasses import dataclass
-import methods
+from . import methods
 from sklearn.ensemble import RandomForestClassifier as rfc
 from sklearn.ensemble import RandomForestRegressor as rfr
 

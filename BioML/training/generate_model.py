@@ -1,12 +1,12 @@
+from re import S
 from typing import Iterable
-from .base import PycaretInterface,  DataParser
+from .base import DataParser, PycaretInterface
 from pathlib import Path
 import argparse
 import pandas as pd
-from collections import defaultdict
-import joblib
+
 from ..utilities import write_excel
-from sklearn.model_selection import StratifiedShuffleSplit, train_test_split, ShuffleSplit
+
 from .classification import Classifier
 from .regression import Regressor
 
@@ -27,7 +27,7 @@ def arg_parse():
                         help="A list of outliers if any, the name should be the same as in the excel file with the "
                              "filtered features, you can also specify the path to a file in plain text format, each "
                              "record should be in a new line")
-    parser.add_argument("-s", "--selected_models", nargs="+", required=True, 
+    parser.add_argument("-se", "--selected_models", nargs="+", required=True, 
                         help="The models to use, can be regression or classification")
     parser.add_argument("-p", "--problem", required=False, 
                         default="classification", choices=("classification", "regression"), help="The problem type")
@@ -37,51 +37,20 @@ def arg_parse():
                         help="The metric to optimize")
     parser.add_argument("-st", "--strategy", required=False, choices=("holdout", "kfold"), default="holdout",
                         help="The spliting strategy to use")
-    parser.add_argument("-m", "--model_strategy", help=f"The strategy to use for the model, choices are majority, stacking or simple:[model_index], model index should be an integer", default="majority")
-
+    parser.add_argument("-m", "--model_strategy", help=f"The strategy to use for the model, choices are majority, stacking or simple:model_index, model index should be an integer", default="majority")
+    parser.add_argument("--seed", required=True, type=int, help="The seed for the random state")
+    parser.add_argument("-k", "--kfold_parameters", required=False,
+                        help="The parameters for the kfold in num_split:test_size format", default="5:0.2")
     args = parser.parse_args()
 
     return [args.training_features, args.label, args.scaler, args.model_output,
             args.outliers, args.selected_models, args.problem, args.optimize, args.strategy, 
-            args.model_strategy]
+            args.model_strategy, args.seed, args.kfold_parameters]
 
 
 class GenerateModel:
-    def __init__(self, trainer: Regressor | Classifier, selected_models: tuple[str] | str | dict[str, tuple[str, ...]],
-                 model_output="models", problem="classification", optimize="MCC"):
-        
-        self.trainer = trainer
-        self.model_output = Path(model_output)
-        self.selected_models = selected_models
-        self.problem = problem
-        self.optimize = optimize
-    
-    def run_generate(self, feature: DataParser):
-        """
-        A function that splits the data into training and test sets and then trains the models
-        using cross-validation but only on the training data
 
-        Parameters
-        ----------
-        feature : DataParser
-            A class containing the training samples and the features
-
-        Returns
-        -------
-        pd.DataFrame
-            A dictionary with the sorted results from pycaret
-        list[models]
-            A dictionary with the sorted models from pycaret
-        pd.DataFrame
-         
-        """
-        self.log.info("------ Running holdout -----")
-        
-        sorted_results, sorted_models, top_params = self.trainer.run_training(feature, plot=())
-        return sorted_models
-
-
-    def finalize_model(self, sorted_model, index: int | dict[str, int] | None = None):
+    def finalize_model(self, sorted_model, index: int | None = None):
         """
         Finalize the model by training it with all the data including the test set.
 
@@ -95,42 +64,22 @@ class GenerateModel:
         Any
             The finalized models
 
-        Raises
-        ------
-        TypeError
-            The model should be a list of models, a dictionary of models or a model
         """
         match sorted_model:
             case [*list_models]:
-                final = []
-                for mod in list_models:
-                    final.append(self.experiment.finalize_model(mod))
-                return final
+                mod = list_models[index]
+                return self.trainer.experiment.finalize_model(mod)
             
-            case {**dict_models} if "split" in list(dict_models)[0]: # for kfold models, kfold stacked or majority models
+            case {**dict_models}: # for holdout models, it should be sorted
                 final = {}
-                for split_ind, value in dict_models.items():
-                    if isinstance(value, dict):
-                        model_name, mod = list(value.items())[index[split_ind]]
-                        if split_ind not in final:
-                            final[split_ind] = {}
-                        final[split_ind][model_name] = self.experiment.finalize_model(mod)
-                    else:
-                        final[split_ind] = self.experiment.finalize_model(value)
+                mod = list(dict_models.values())[index]
+                return self.trainer.experiment.finalize_model(mod)
+            
+            case model: # for stacked or majority models
+                final = self.trainer.experiment.finalize_model(model)
                 return final
             
-            case {**dict_models}: # for holdout models
-                final = {}
-                model_name, mod = list(dict_models.items())[index]
-                final[model_name] = self.experiment.finalize_model(mod)
-                return final
-            
-            case model:
-                final = self.experiment.finalize_model(model)
-                return final
-            
-    def save_model(self, sorted_models, filename: str | dict[str, int] | None=None, 
-                    index:int | dict[str, int] |None=None):
+    def save_model(self, model, filename: str):
         """
         Save the model
 
@@ -141,31 +90,45 @@ class GenerateModel:
         filename : str, dict[str, str]
             The name of the file to save the model.
         """
-
-        match sorted_models:
-            case {**models} if "split" in list(models)[0]: # for kfold models, kfold stacked or majority models 
-                for split_ind, value in models.items():
-                    if isinstance(value, dict):
-                        model_name, mod = list(value.items())[index[split_ind]]
-                        self.experiment.save(mod, model_output/str(split_ind)/model_name)
-                    else:
-                        self.experiment.save(value, model_output/filename[split_ind])
-            case {**models}: #
-                for model_name, mod in models.items():
-                    self.experiment.save(mod, model_output/model_name)
-            
-            case other:
-                self.experiment.save(other, model_output/filename)
+        model_output = Path(filename)
+        model_output.parent.mkdir(exist_ok=True, parents=True)
+        if model_output.suffix:
+            model_output = model_output.with_suffix("")
+        self.trainer.experiment.save(model, str(model_output))
 
 
 def main():
-    excel, label, scaler, hyperparameter_path, model_output, num_thread, outliers, sheets = arg_parse()
+    training_features, label, scaler, model_output, outliers, selected_models, \
+    problem, optimize, strategy, model_strategy, seed, kfold = arg_parse()
     if Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = [x.strip() for x in out.readlines()]
-    generate = GenerateModel(excel, hyperparameter_path, label, sheets, scaler, num_thread, outliers,
-                             model_output)
-    generate.refit_save()
+    num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
+
+    feature = DataParser(label, training_features)
+    experiment = PycaretInterface(problem, feature.label, seed, best_model=len(selected_models))
+    if problem == "classification":
+
+        training = Classifier(experiment, num_split, test_size, outliers, scaler, optimize=optimize,
+                              selected=selected_models)
+    elif problem == "regression":
+        training = Regressor(experiment, num_split, test_size, outliers, scaler, optimize=optimize,
+                             selected=selected_models)
+        
+    generate = GenerateModel()
+    sorted_results, sorted_models, top_params = training.run_training(feature, plot=())
+    if "majority" in model_strategy:
+        sorted_models = training.create_majority_model(sorted_models)
+        index = None
+    elif "stacking" in model_strategy:
+        sorted_models = training.stack_models(sorted_models)
+        index = None
+    elif "simple" in model_strategy:
+        models = sorted_models
+        index = int(model_strategy.split(":")[1])
+    final_model = generate.finalize_model(models, index)
+    generate.save_model(final_model, model_output)
+    
 
 
 if __name__ == "__main__":

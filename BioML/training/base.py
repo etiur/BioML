@@ -81,9 +81,10 @@ class PycaretInterface:
     budget_time: None | int
     log = Log("model_training")
     best_model: int = 3
+    output_path: Path | str | None= None 
     _plots: list[str] = field(init=False)
     model: ClassificationExperiment | RegressionExperiment = field(init=False)
-
+    
     def __post_init__(self):
         if self.objective == "classification":
             self.model = ClassificationExperiment()
@@ -99,11 +100,17 @@ class PycaretInterface:
                 raise ValueError("The budget time should be greater than 0")
         elif self.budget_time is not None:
             raise ValueError("The budget time should be greater than 0 or None")
+        if self.output_path is None:
+            self.output_path = Path.cwd()
+        else:
+            self.output_path = Path(self.output_path)
+
         self.log.info("------------------------------------------------------------------------------")
         self.log.info("PycaretInterface parameters")
         self.log.info(f"Budget time: {self.budget_time}")
         self.log.info(f"Label name: {self.label_name}")
         self.log.info(f"The number of models to select: {self.best_model}")
+        self.log.info(f"Output path: {self.output_path}")
     
     @staticmethod
     def _check_value(value, element_list, element_name):
@@ -238,16 +245,16 @@ class PycaretInterface:
 
         return results, returned_models
     
-    def plot_best_models(self, output_path, sorted_models, split_ind=None):
+    def plot_best_models(self, sorted_models, split_ind=None):
         
         self.log.info("Analyse the best models and plotting them")
         for ind, (name, model) in enumerate(sorted_models.items(), 1):
             if ind <= self.best_model:
                 self.log.info(f"Analyse the top {ind} model: {name}")
                 if not split_ind:
-                    plot_path = output_path / "model_plots" / name
+                    plot_path = self.output_path / "model_plots" / name
                 else:
-                    plot_path = output_path / "model_plots" / f"{name}" / f"split_{split_ind}"
+                    plot_path = self.output_path / "model_plots" / f"{name}" / f"split_{split_ind}"
                 plot_path.mkdir(parents=True, exist_ok=True)
                 for pl in self.plots:
                     self.model.plot_model(model, pl, save=plot_path)
@@ -388,7 +395,7 @@ class PycaretInterface:
 
 
 class Trainer:
-    def __init__(self, model: PycaretInterface, output: str="training_results", num_splits: int=5, 
+    def __init__(self, model: PycaretInterface, num_splits: int=5, 
                  test_size: float=0.2, outliers: tuple[str, ...]=(), scaler: str="robust"):
         
         """
@@ -415,14 +422,11 @@ class Trainer:
         self.test_size = test_size
         self.scaler = scaler
         self.outliers = outliers
-        self.output_path = Path(output)  # for the model results
-        self.output_path.mkdir(parents=True, exist_ok=True)
         self.experiment = model
         self.log.info(f"Test_size: {test_size}")
         self.log.info(f"Outliers: {', '.join(self.outliers)}")
         self.log.info(f"Scaler: {scaler}")
         self.log.info(f"Number of kfolds: {self.num_splits}")
-        self.log.info(f"The output path: {self.output_path}")
     
     def return_train_test(self, train_index: pd.DataFrame | np.ndarray, test_index: pd.DataFrame | np.ndarray, 
                           features: pd.DataFrame | np.ndarray = None, strategy: str="holdout", split_index: int | None=None):
