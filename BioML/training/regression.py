@@ -3,7 +3,6 @@ from pathlib import Path
 import argparse
 from .base import PycaretInterface, Trainer, DataParser, write_results, generate_training_results
 import pandas as pd
-from collections import defaultdict
 
 
 def arg_parse():
@@ -136,7 +135,7 @@ def main():
                                   output_path=training_output)
 
     ranking_dict = dict(R2_weight=r2_weight, difference_weight=difference_weight)
-    training = Trainer(experiment, num_split, test_size, outliers, scaler)
+    training = Trainer(experiment, num_split, test_size)
     regressor = Regressor(ranking_dict, drop, selected=selected)
     
     results = generate_training_results(regressor, training, feature, plot, optimize, tune, strategy)

@@ -408,8 +408,7 @@ class PycaretInterface:
 
 
 class Trainer:
-    def __init__(self, model: PycaretInterface, num_splits: int=5, 
-                 test_size: float=0.2):
+    def __init__(self, model: PycaretInterface, num_splits: int=5, test_size: float=0.2):
         
         """
         Initialize a Trainer object with the given parameters.
