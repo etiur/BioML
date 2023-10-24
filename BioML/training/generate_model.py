@@ -1,6 +1,6 @@
 from re import S
 from typing import Iterable
-from .base import DataParser, PycaretInterface
+from .base import DataParser, PycaretInterface, Trainer
 from pathlib import Path
 import argparse
 import pandas as pd
@@ -41,6 +41,7 @@ def arg_parse():
     parser.add_argument("--seed", required=True, type=int, help="The seed for the random state")
     parser.add_argument("-k", "--kfold_parameters", required=False,
                         help="The parameters for the kfold in num_split:test_size format", default="5:0.2")
+    
     args = parser.parse_args()
 
     return [args.training_features, args.label, args.scaler, args.model_output,
@@ -95,6 +96,20 @@ class GenerateModel:
         if model_output.suffix:
             model_output = model_output.with_suffix("")
         self.trainer.experiment.save(model, str(model_output))
+    
+    def save_by_strategy(self, sorted_models: dict, model_strategy: str, optimize: str,
+                         training: Trainer, model_file: str):
+        if "majority" in model_strategy:
+            sorted_models = training.create_majority_model(sorted_models, optimize)
+            index = None
+        elif "stacking" in model_strategy:
+            sorted_models = training.stack_models(sorted_models, optimize)
+            index = None
+        elif "simple" in model_strategy:
+            models = sorted_models
+            index = int(model_strategy.split(":")[1])
+        final_model = self.finalize_model(models, index)
+        self.save_model(final_model, model_file)
 
 
 def main():
@@ -105,29 +120,19 @@ def main():
             outliers = [x.strip() for x in out.readlines()]
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
 
+    # instantiate everything to run training
     feature = DataParser(label, training_features)
     experiment = PycaretInterface(problem, feature.label, seed, best_model=len(selected_models))
+    training = Trainer(experiment, num_split, test_size, outliers, scaler)
     if problem == "classification":
-
-        training = Classifier(experiment, num_split, test_size, outliers, scaler, optimize=optimize,
-                              selected=selected_models)
+        model = Classifier(drop=None, selected=selected_models)
     elif problem == "regression":
-        training = Regressor(experiment, num_split, test_size, outliers, scaler, optimize=optimize,
-                             selected=selected_models)
-        
+        model = Regressor(drop=None, selected=selected_models)
+    sorted_results, sorted_models, top_params = model.run_training(training, feature, plot=())
+
+    # generate the final model
     generate = GenerateModel()
-    sorted_results, sorted_models, top_params = training.run_training(feature, plot=())
-    if "majority" in model_strategy:
-        sorted_models = training.create_majority_model(sorted_models)
-        index = None
-    elif "stacking" in model_strategy:
-        sorted_models = training.stack_models(sorted_models)
-        index = None
-    elif "simple" in model_strategy:
-        models = sorted_models
-        index = int(model_strategy.split(":")[1])
-    final_model = generate.finalize_model(models, index)
-    generate.save_model(final_model, model_output)
+    generate.save_by_strategy(sorted_models, model_strategy, training, model_output)
     
 
 

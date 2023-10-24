@@ -1,7 +1,7 @@
 from sklearn.model_selection import train_test_split, ShuffleSplit
 from pathlib import Path
 import argparse
-from .base import PycaretInterface, Trainer, DataParser, write_results
+from .base import PycaretInterface, Trainer, DataParser, write_results, generate_training_results
 import pandas as pd
 from collections import defaultdict
 
@@ -61,12 +61,8 @@ def arg_parse():
             args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected]
 
 
-class Regressor(Trainer):
-    def __init__(self, model: PycaretInterface, num_splits=5, test_size=0.2,
-                 outliers=(), scaler="robust", ranking_params=None, drop=("tr", "kr", "ransac", "ard", "ada", "lightgbm"),
-                 optimize="RMSE", selected=None):
-
-        super().__init__(model, num_splits, test_size, outliers, scaler)
+class Regressor:
+    def __init__(self, ranking_params=None, drop=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), selected=None):
         
         ranking_dict = dict(R2_weight=0.8, difference_weight=1.2)
         if isinstance(ranking_params, dict):
@@ -78,7 +74,6 @@ class Regressor(Trainer):
         self.drop = drop
         self.difference_weight = ranking_dict["difference_weight"]
         self.R2_weight = ranking_dict["R2_weight"]
-        self.optimize = optimize
         self.selected = selected
 
     def _calculate_score_dataframe(self, dataframe):
@@ -94,7 +89,7 @@ class Regressor(Trainer):
         
         return rmse + (self.R2_weight * r2)
     
-    def run_training(self, feature, plot=("residuals", "error", "learning")):
+    def run_training(self, trainer: Trainer,feature: DataParser, plot=("residuals", "error", "learning")):
         """
         A function that splits the data into training and test sets and then trains the models
         using cross-validation but only on the training data
@@ -119,30 +114,10 @@ class Regressor(Trainer):
         """
         self.log.info("------ Running holdout -----")
         X_train, X_test = train_test_split(feature.features, test_size=self.test_size, random_state=self.experiment.seed)
-        sorted_results, sorted_models, top_params = self.setup_training(X_train, X_test, self._calculate_score_dataframe, plot, drop=self.drop,
+        sorted_results, sorted_models, top_params = trainer.setup_training(X_train, X_test, self._calculate_score_dataframe, plot, drop=self.drop,
                                                                         selected=self.selected)
         return sorted_results, sorted_models, top_params
     
-    def retune_best_models(self, sorted_models: dict, num_iter: int = 5):
-
-        return self._retune_best_models(sorted_models, self.optimize, num_iter)
-    
-    def stack_models(self, sorted_models: dict, meta_model=None):
-
-        return self._stack_models(sorted_models, self.optimize, meta_model=meta_model)
-    
-    def create_majority_model(self, sorted_models: dict, weights=None):
-    
-        return self._create_majority_model(sorted_models, self.optimize, weights)
-    
-    def finalize_model(self, sorted_model):
-        return self._finalize_model(sorted_model)
-    
-    def save_model(self, sorted_models, filename: str | dict[str, str] | None = None):
-        return self._save_model(sorted_models, filename)
-    
-    def predict_on_test_set(self, sorted_models: dict | list, name: str) -> pd.DataFrame:
-        return self._predict_on_test_set(sorted_models, name)
     
 
 def main():
@@ -161,24 +136,10 @@ def main():
                                   output_path=training_output)
 
     ranking_dict = dict(R2_weight=r2_weight, difference_weight=difference_weight)
-    training = Regressor(experiment, num_split, test_size, outliers, scaler, 
-                         ranking_dict, drop, optimize, selected=selected)
+    training = Trainer(experiment, num_split, test_size, outliers, scaler)
+    regressor = Regressor(ranking_dict, drop, selected=selected)
     
-
-    sorted_results, sorted_models, top_params = training.run_training(feature, plot)
-
-    # saving the results in a dictionary and writing it into excel files
-    results = defaultdict(dict)
-    results["not_tuned"][strategy] = sorted_results, sorted_models, top_params
-    results["not_tuned"]["stacked"] = training.stack_models(sorted_models)
-    results["not_tuned"]["majority"] = training.create_majority_model(sorted_models)
-
-    if tune:
-        sorted_result_tune, sorted_models_tune, top_params_tune = training.retune_best_models(sorted_models)
-        results["tuned"][strategy] = sorted_result_tune, sorted_models_tune, top_params_tune
-        results["tuned"]["stacked"] = training.stack_models(sorted_models_tune)
-        results["tuned"]["majority"] = training.create_majority_model(sorted_models_tune)
-
+    results = generate_training_results(regressor, training, feature, plot, optimize, tune, strategy)
 
     for tune_status, result_dict in results.items():
         predictions = []

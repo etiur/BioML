@@ -1,9 +1,9 @@
 import pandas as pd
-from .base import PycaretInterface, Trainer, DataParser, write_results
+from .base import PycaretInterface, Trainer, DataParser, write_results, generate_training_results
 from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
 import argparse
 from pathlib import Path
-from collections import defaultdict
+
 
 def arg_parse():
     parser = argparse.ArgumentParser(description="Train classification models")
@@ -69,12 +69,11 @@ def arg_parse():
             args.strategy, args.best_model, args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected]
 
 
-class Classifier(Trainer):
-    def __init__(self, model: PycaretInterface, num_splits=5, test_size=0.2,
-                 outliers: tuple[str, ...]=(), scaler="robust",  ranking_params: dict[str, float]=None,  
-                 drop: tuple[str] = ("ada", "gpc", "lightgbm"), selected=None, optimize="MCC"):
+class Classifier:
+    def __init__(self, ranking_params: dict[str, float]=None, drop: tuple[str] = ("ada", "gpc", "lightgbm"), 
+                 selected=None):
         # initialize the Trainer class
-        super().__init__(model, num_splits, test_size, outliers, scaler)
+
         # change the ranking parameters
         ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
                             difference_weight=1.2)
@@ -88,7 +87,6 @@ class Classifier(Trainer):
         self.rec_weight = ranking_dict["recall_weight"]
         self.report_weight = ranking_dict["report_weight"]
         self.difference_weight = ranking_dict["difference_weight"]
-        self.optimize = optimize
         self.selected = selected
     
     def _calculate_score_dataframe(self, dataframe):
@@ -106,7 +104,7 @@ class Classifier(Trainer):
         
         return mcc + self.report_weight * (self.pre_weight * prec + self.rec_weight * recall)
     
-    def run_training(self, feature: DataParser, plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report")):
+    def run_training(self, trainer: Trainer, feature: DataParser, plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report")):
         """
         A function that splits the data into training and test sets and then trains the models
         using cross-validation but only on the training data
@@ -135,29 +133,10 @@ class Classifier(Trainer):
         self.log.info("------ Running holdout -----")
         X_train, X_test = train_test_split(feature.features, test_size=self.test_size, random_state=self.experiment.seed, 
                                            stratify=feature.features[feature.label])
-        sorted_results, sorted_models, top_params = self.setup_training(X_train, X_test, self._calculate_score_dataframe, plot, drop=self.drop,
+        sorted_results, sorted_models, top_params = trainer.setup_training(X_train, X_test, self._calculate_score_dataframe, plot, drop=self.drop,
                                                                         selected=self.selected)
         return sorted_results, sorted_models, top_params
     
-    def retune_best_models(self, sorted_models: dict, num_iter: int = 5):
-        return self._retune_best_models(sorted_models, self.optimize, num_iter)
-    
-    def stack_models(self, sorted_models: dict, meta_model=None):
-
-        return self._stack_models(sorted_models, self.optimize, meta_model=meta_model)
-    
-    def create_majority_model(self, sorted_models: dict, weights=None):
-    
-        return self._create_majority_model(sorted_models, self.optimize, weights)
-    
-    def finalize_model(self, sorted_model):
-        return self._finalize_model(sorted_model)
-    
-    def save_model(self, sorted_models, filename: str | dict[str, str] | None = None):
-        return self._save_model(sorted_models, filename)
-    
-    def predict_on_test_set(self, sorted_models: dict | list, name: str) -> pd.DataFrame:
-        return self._predict_on_test_set(sorted_models, name)
 
 
 def main():
@@ -174,25 +153,13 @@ def main():
     feature = DataParser(label, excel)
     experiment = PycaretInterface("classification", feature.label, seed, budget_time=budget_time, best_model=best_model, 
                                   output_path=training_output)
-
+    training = Trainer(experiment, num_split, test_size, outliers, scaler)
     ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight,
                         difference_weight=difference_weight, report_weight=report_weight)
-    training = Classifier(experiment, num_split, test_size, outliers, scaler, ranking_dict, drop, optimize=optimize,
-                          selected=selected)
     
-    sorted_results, sorted_models, top_params = training.run_training(feature, plot)
+    classifier = Classifier(experiment, ranking_dict, drop, selected=selected)
 
-    # saving the results in a dictionary and writing it into excel files
-    results = defaultdict(dict)
-    results["not_tuned"][strategy] = sorted_results, sorted_models, top_params
-    results["not_tuned"]["stacked"] = training.stack_models(sorted_models)
-    results["not_tuned"]["majority"] = training.create_majority_model(sorted_models)
-
-    if tune:
-        sorted_result_tune, sorted_models_tune, top_params_tune = training.retune_best_models(sorted_models)
-        results["tuned"][strategy] = sorted_result_tune, sorted_models_tune, top_params_tune
-        results["tuned"]["stacked"] = training.stack_models(sorted_models_tune)
-        results["tuned"]["majority"] = training.create_majority_model(sorted_models_tune)
+    results = generate_training_results(classifier, training, feature, plot, optimize, tune, strategy)
 
     for tune_status, result_dict in results.items():
         predictions = []

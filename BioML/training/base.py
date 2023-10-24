@@ -9,6 +9,7 @@ from pycaret.regression import RegressionExperiment
 from ..utilities import Log, scale
 from sklearn.metrics import average_precision_score
 from ..utilities import write_excel
+from collections import defaultdict
 
 def write_results(training_output, sorted_results, top_params=None, sheet_name=None):
     write_excel(training_output / "training_results.xlsx", sorted_results, sheet_name)
@@ -546,7 +547,7 @@ class Trainer:
             self.experiment.plot_best_models(sorted_models)
         return sorted_results, sorted_models, top_params
     
-    def _retune_best_models(self, sorted_models:dict, optimize: str="MCC", num_iter: int=5):
+    def retune_best_models(self, sorted_models:dict, optimize: str="MCC", num_iter: int=5):
         new_models = {}
         new_results = {}
         new_params = {}
@@ -560,7 +561,7 @@ class Trainer:
 
         return pd.concat(new_results), new_models, pd.concat(new_params)
     
-    def _stack_models(self, sorted_models: dict, optimize="MCC", meta_model=None):
+    def stack_models(self, sorted_models: dict, optimize="MCC", meta_model=None):
         self.log.info("--------Stacking the best models--------")
   
         stacked_models, stacked_results, params = self.experiment.stack_models(list(sorted_models.values())[:self.experiment.best_model], optimize=optimize, fold=self.num_splits, 
@@ -568,7 +569,7 @@ class Trainer:
         
         return stacked_results, stacked_models, params
     
-    def _create_majority_model(self, sorted_models: dict, optimize: str="MCC", 
+    def create_majority_model(self, sorted_models: dict, optimize: str="MCC", 
                                weights: Iterable[float] | None =None):
         self.log.info("--------Creating an ensemble model--------")
         
@@ -577,7 +578,7 @@ class Trainer:
         
         return ensemble_results, ensemble_model
     
-    def _predict_on_test_set(self, sorted_models: dict | list, name: str) -> pd.DataFrame:
+    def predict_on_test_set(self, sorted_models: dict | list, name: str) -> pd.DataFrame:
         match sorted_models:
             case [*list_models]:
                 final = []
@@ -602,7 +603,22 @@ class Trainer:
                 return result
            
 
+def generate_training_results(model, training: Trainer, feature: DataParser, plot: tuple, optimize: str, 
+                     tune: bool=True, strategy="holdout"):
+        
+    sorted_results, sorted_models, top_params = model.run_training(training, feature, plot)
 
-            
+    # saving the results in a dictionary and writing it into excel files
+    results = defaultdict(dict)
+    results["not_tuned"][strategy] = sorted_results, sorted_models, top_params
+    results["not_tuned"]["stacked"] = training.stack_models(sorted_models, optimize)
+    results["not_tuned"]["majority"] = training.create_majority_model(sorted_models, optimize)
+
+    if tune:
+        sorted_result_tune, sorted_models_tune, top_params_tune = training.retune_best_models(sorted_models, optimize)
+        results["tuned"][strategy] = sorted_result_tune, sorted_models_tune, top_params_tune
+        results["tuned"]["stacked"] = training.stack_models(sorted_models_tune, optimize)
+        results["tuned"]["majority"] = training.create_majority_model(sorted_models_tune, optimize)            
             
 
+    return results
