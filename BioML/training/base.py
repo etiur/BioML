@@ -28,10 +28,6 @@ class DataParser:
     def __post_init__(self):
         self.features = self.read_features(self.features)
         self.label = self.read_labels(self.label)
-        if not isinstance(self.label, str):
-            for key, value in self.features.items():
-                self.features[key] = pd.concat([value, self.label], axis=1)
-            self.label = "target"
 
     def read_features(self, features):
         # concatenate features and labels
@@ -66,12 +62,14 @@ class DataParser:
                 label.index.name = "target"
                 return label    
             elif label in self.features.columns:
-                return label
+                lab = self.features[label]
+                self.features.drop(label, axis=1, inplace=True)
+                return lab
                     
         self.log.error("label should be a csv file, a pandas Series or inside features")
         raise TypeError("label should be a csv file, a pandas Series or inside features")
     
-    def scale(self, X_train, X_test):
+    def scale(self, X_train: pd.DataFrame, X_test: pd.DataFrame):
         #remove outliers
         X_train = X_train.loc[[x for x in X_train.index if x not in self.outliers["x_train"]]]
         X_test = X_test.loc[[x for x in X_test.index if x not in self.outliers["x_test"]]]

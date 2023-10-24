@@ -1,10 +1,12 @@
 from dataclasses import dataclass, filed
 from email.policy import default
+from msilib.schema import Class
 from typing import Iterable
 from attr import field
-
+from pycaret.classification import ClassificationExperiment
+from pycaret.regression import RegressionExperiment
 from yarl import cached_property
-from .training.base import DataParser, PycaretInterface, Trainer
+from .training.base import DataParser, Trainer
 import argparse
 from scipy.spatial import distance
 from Bio import SeqIO
@@ -56,7 +58,7 @@ class Predictor:
     """
 
     test_features: pd.DataFrame
-    model: PycaretInterface
+    model: RegressionExperiment | ClassificationExperiment
     model_path: str | Path
 
     @cached_property
@@ -279,9 +281,15 @@ class ApplicabilityDomain:
             fasta_neg = FastaIO.FastaWriter(neg, wrap=None)
             fasta_neg.write_file(negative)
 
-def predict(label, training_features):
-    feature = DataParser(label, training_features)
-    
+
+def predict(label, training_features, test_features, outliers, scaler, problem="classification"):
+    feature = DataParser(label, training_features, outliers=outliers, scaler=scaler)
+    if problem == "classification":
+        experiment = ClassificationExperiment()
+    elif problem == "regression":
+        experiment = RegressionExperiment()
+    predictor = Predictor(feature.features, feature.experiment, feature.output_path)
+
 
 def vote_and_filter(fasta_file, extracted_features="extracted_features/new_features.xlsx", models="models",
                     selected_features="training_features/selected_features.xlsx", scaler="robust",

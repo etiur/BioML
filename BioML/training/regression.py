@@ -1,6 +1,8 @@
 from sklearn.model_selection import train_test_split, ShuffleSplit
 from pathlib import Path
 import argparse
+
+from BioML import features
 from .base import PycaretInterface, Trainer, DataParser, write_results, generate_training_results
 import pandas as pd
 
@@ -111,8 +113,10 @@ class Regressor:
          
         """
         self.log.info("------ Running holdout -----")
-        X_train, X_test = train_test_split(feature.features, test_size=self.test_size, random_state=self.experiment.seed)
+        X_train, X_test, y_train, y_test = train_test_split(feature.features, feature.label, test_size=self.test_size, random_state=self.experiment.seed)
         trasformed_x, test_x = feature.scale(X_train, X_test)
+        transformed_x = pd.concat([transformed_x, y_train], axis=1) 
+        test_x = pd.concat([test_x, y_test], axis=1)
         sorted_results, sorted_models, top_params = trainer.setup_training(trasformed_x, test_x, self._calculate_score_dataframe,
                                                                            plot, drop=self.drop, selected=self.selected)
         return sorted_results, sorted_models, top_params
