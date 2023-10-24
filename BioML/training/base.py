@@ -603,7 +603,8 @@ class Trainer:
 
         return pd.concat(sorted_results), sorted_models
     
-    def train(self, X_train, X_test, drop: tuple[str, ...] | None=None, selected_models: str | tuple[str, ...] | None=None):
+    def train(self, X_train: pd.DataFrame, X_test: pd.DataFrame, 
+              drop: tuple[str, ...] | None=None, selected_models: str | tuple[str, ...] | None=None):
 
         # To access the transformed data
         self.experiment.setup_training(X_train, X_test, self.num_splits)
@@ -616,7 +617,7 @@ class Trainer:
         return results, returned_models
     
     def analyse_models(self, transformed_x: pd.DataFrame, test_x: pd.DataFrame, scoring_fn: Callable, drop: tuple | None=None, 
-                       selected: tuple | None=None) -> tuple[dict, dict]:
+                       selected: tuple | None=None) -> tuple[pd.DataFrame, dict, pd.Series]:
         """
         Analyze the trained models and rank them based on the specified scoring function.
 
@@ -642,37 +643,6 @@ class Trainer:
         sorted_results, sorted_models = self.rank_results(results, returned_models, scoring_fn)
         top_params = self.experiment.get_best_params_multiple(sorted_models)
 
-        return sorted_results, sorted_models, top_params
-
-    def setup_training(self, transformed_x, test_x, scoring_fn: Callable, plot: tuple=(), drop: tuple|None=None, 
-                       selected: tuple | None=None) -> tuple[pd.DataFrame, dict, pd.Series]:
-        """
-        Set up the training process
-
-        Parameters
-        ----------
-        transformed_x : pd.DataFrame
-            The transformed feature data.
-        test_x : pd.DataFrame
-            The test feature data.
-        scoring_fn : Callable
-            The scoring function to use for evaluating the models.
-        plot : tuple, optional
-            A tuple containing the plot title and axis labels. Defaults to ().
-        drop : tuple or None, optional
-            The features to drop from the feature data. Defaults to None.
-        selected : tuple or None, optional
-            The features to select from the feature data. Defaults to None.
-
-        Returns
-        -------
-        tuple[pd.DataFrame, dict, pd.Series]
-            A tuple containing the sorted results, sorted models, and top parameters.
-        """
-        sorted_results, sorted_models, top_params = self.analyse_models(transformed_x, test_x, scoring_fn, drop, selected)
-        if plot:
-            self.experiment.plots = plot
-            self.experiment.plot_best_models(sorted_models)
         return sorted_results, sorted_models, top_params
     
     def retune_best_models(self, sorted_models:dict[str, Any], optimize: str="MCC", num_iter: int=5):

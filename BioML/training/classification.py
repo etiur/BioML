@@ -133,12 +133,17 @@ class Classifier:
         pd.DataFrame
          
         """
-        X_train, X_test, y_train, y_test = train_test_split(feature.features, feature.label, test_size=self.test_size, random_state=self.experiment.seed, 
+        X_train, X_test, y_train, y_test = train_test_split(feature.features, feature.label, test_size=self.test_size, 
+                                                            random_state=trainer.experiment.seed, 
                                                             stratify=feature.label)
         transformed_x, test_x = feature.scale(X_train, X_test)
         transformed_x, test_x = feature.process(X_train, X_test, y_train, y_test)
-        sorted_results, sorted_models, top_params = trainer.setup_training(transformed_x, test_x, self._calculate_score_dataframe, plot, drop=self.drop,
-                                                                        selected=self.selected)
+        sorted_results, sorted_models, top_params = trainer.analyse_models(transformed_x, test_x, 
+                                                                           self._calculate_score_dataframe, self.drop, self.selected)
+        if plot:
+            trainer.experiment.plots = plot
+            trainer.experiment.plot_best_models(sorted_models)
+
         return sorted_results, sorted_models, top_params
     
 
