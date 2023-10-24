@@ -604,8 +604,26 @@ class Trainer:
         return pd.concat(sorted_results), sorted_models
     
     def train(self, X_train: pd.DataFrame, X_test: pd.DataFrame, 
-              drop: tuple[str, ...] | None=None, selected_models: str | tuple[str, ...] | None=None):
+              drop: tuple[str, ...] | None=None, selected_models: str | tuple[str, ...] | None=None) -> tuple[dict, dict]:
+        """
+        Train the models on the specified feature data and return the results and models.
 
+        Parameters
+        ----------
+        X_train : pd.DataFrame
+            The training feature data.
+        X_test : pd.DataFrame
+            The test feature data.
+        drop : tuple[str, ...] or None, optional
+            The features to drop from the feature data. Defaults to None.
+        selected_models : str or tuple[str, ...] or None, optional
+            The models to use for training. Defaults to None.
+
+        Returns
+        -------
+        tuple[dict, dict]
+            A tuple containing the results and models.
+        """
         # To access the transformed data
         self.experiment.setup_training(X_train, X_test, self.num_splits)
         if drop:
