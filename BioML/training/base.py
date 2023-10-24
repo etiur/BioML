@@ -217,6 +217,62 @@ class DataParser:
 
 @dataclass
 class PycaretInterface:
+    """
+    A class for interfacing with the PyCaret library for machine learning.
+
+    Attributes
+    ----------
+    objective : str
+        The objective of the machine learning model, either "classification" or "regression".
+    label_name : str
+        The name of the target variable in the dataset.
+    seed : None or int, optional
+        The random seed to use for reproducibility. Defaults to None.
+    budget_time : None or int, optional
+        The time budget for training the models in minutes. Defaults to None.
+    log : Log
+        The logger for the PycaretInterface class.
+    best_model : int, optional
+        The number of best models to select. Defaults to 3.
+    output_path : Path or str or None, optional
+        The path to save the output files. Defaults to None.
+    _plots : list of str
+        The list of plots to generate for the models.
+    model : ClassificationExperiment or RegressionExperiment
+        The PyCaret experiment object for the machine learning model.
+
+    Methods
+    -------
+    setup_training(X_train, X_test, fold)
+        Set up the training data for the machine learning models.
+    train()
+        Train the machine learning models.
+    get_best_models(results)
+        Get the best models from the training results.
+    evaluate_models(returned_models, X_test, y_test)
+        Evaluate the performance of the trained models on the test data.
+    save_models(returned_models)
+        Save the trained models to files.
+    load_models(model_names)
+        Load the trained models from files.
+    predict(X_test, model_names)
+        Generate predictions on new data using the trained models.
+    evaluate(X_test, y_test, model_names)
+        Evaluate the performance of the trained models on new data.
+    plot_best_models(sorted_models, split_ind=None)
+        Analyze the best models and plot them.
+    retune_model(name, model, optimize="MCC", num_iter=5, fold=5)
+        Retune the specified model using Optuna.
+    stack_models(estimator_list, optimize="MCC", fold=5, meta_model=None)
+        Create a stacked ensemble model from a list of models.
+    get_params(name, model)
+        Get the parameters of a trained model.
+    get_best_params_multiple(sorted_models)
+        Get the best parameters for multiple models.
+    get_params_stacked(stacked_models)
+        Get the parameters of the final estimator in a stacked ensemble model.
+
+    """
     objective: str
     label_name: str
     seed: None | int = None
@@ -341,7 +397,24 @@ class PycaretInterface:
     def final_models(self, value) -> list[str]:
         self._final_models = self._check_value(value, self.mod.index.to_list(), "models")
 
-    def setup_training(self, X_train, X_test, fold):
+    def setup_training(self,X_train: pd.DataFrame, X_test: pd.DataFrame, fold: int) -> Any:
+        """
+        Call pycaret set_up for the training.
+
+        Parameters
+        ----------
+        X_train : pd.DataFrame
+            The training data.
+        X_test : pd.DataFrame
+            The test data.
+        fold : int
+            The number of cross-validation folds to use.
+
+        Returns
+        -------
+        Any
+            The pycaret classification or regression object
+        """
         if self.objective == "classification":
             self.model.setup(data=X_train, target=self.label_name, normalize=False, preprocess=False, 
                          log_experiment=False, experiment_name="Classification", 
@@ -359,6 +432,14 @@ class PycaretInterface:
         return self.model
 
     def train(self):
+        """
+        Train the machine learning models.
+
+        Returns
+        -------
+        Tuple[dict, dict]
+            A tuple containing the results of the training and the trained models.
+        """
         self.log.info("--------------------------------------------------------")
         self.log.info(f"Training {self.objective} models")
         self.log.info(f"The models used {self.final_models}")
@@ -388,7 +469,17 @@ class PycaretInterface:
 
         return results, returned_models
     
-    def plot_best_models(self, sorted_models, split_ind=None):
+    def plot_best_models(self, sorted_models: dict[str, Any], split_ind: int | None=None):
+        """
+        Analyze the best models and plot them.
+
+        Parameters
+        ----------
+        sorted_models : dict
+            A dictionary containing the trained models sorted by performance.
+        split_ind : int, optional
+            The index of the data split to use for plotting. Defaults to None.
+        """
         
         self.log.info("Analyse the best models and plotting them")
         for ind, (name, model) in enumerate(sorted_models.items(), 1):
@@ -402,7 +493,22 @@ class PycaretInterface:
                 for pl in self.plots:
                     self.model.plot_model(model, pl, save=plot_path)
 
-    def get_params(self, name, model):
+    def get_params(self, name: str, model: Any)-> pd.Series:
+        """
+        Get the parameters of a trained model.
+
+        Parameters
+        ----------
+        name : str
+            The name of the trained model.
+        model : Any
+            The trained model.
+
+        Returns
+        -------
+        pd.Series
+            A pandas series containing the parameters of the trained model.
+        """
         if name != "catboost":
             params = model.get_params()
         else:
@@ -413,10 +519,36 @@ class PycaretInterface:
         return params
     
     def get_params_stacked(stacked_models):
+        """
+        Get the parameters of the final estimator in a stacked ensemble model.
+
+        Parameters
+        ----------
+        stacked_models : Any
+            The trained stacked ensemble model.
+
+        Returns
+        -------
+        pd.Series
+            A pandas series containing the parameters of the final estimator.
+        """
         params_dict = stacked_models.get_params()
         return pd.Series(params_dict["final_estimator"].get_params())
 
-    def get_best_params_multiple(self, sorted_models: dict):
+    def get_best_params_multiple(self, sorted_models: dict[str, Any]) -> pd.Series:
+        """
+        Get the best parameters for multiple models.
+
+        Parameters
+        ----------
+        sorted_models : dict[str, Any]
+            A dictionary containing the trained models sorted by performance.
+
+        Returns
+        -------
+        pd.Series
+            A pandas Series containing the best parameters for each model.
+        """
         model_params = {}
         for ind, (name, model) in enumerate(sorted_models.items(), 1):
             if ind > self.best_model:
@@ -426,7 +558,29 @@ class PycaretInterface:
 
         return pd.concat(model_params)
     
-    def retune_model(self, name, model, optimize="MCC", num_iter=5, fold=5):
+    def retune_model(self, name: str, model: Any, optimize: str="MCC", num_iter: int=5, 
+                     fold: int=5) -> tuple[Any, pd.DataFrame, pd.Series]:
+        """
+        Retune the specified model using Optuna.
+
+        Parameters
+        ----------
+        name : str
+            The name of the model to retune.
+        model : Any
+            The trained model to retune.
+        optimize : str, optional
+            The metric to optimize for. Defaults to "MCC".
+        num_iter : int, optional
+            The number of iterations to use for tuning. Defaults to 5.
+        fold : int, optional
+            The number of cross-validation folds to use. Defaults to 5.
+
+        Returns
+        -------
+        Tuple[Any, pd.DataFrame, pd.Series]
+            A tuple containing the retuned model, the results of the tuning, and the parameters used for tuning.
+        """
         self.log.info("---------Retuning the best models--------------")
         self.log.info(f"optimize: {optimize}")
         self.log.info(f"num_iter: {num_iter}")
@@ -439,7 +593,27 @@ class PycaretInterface:
         params = self.get_params(name, tuned_model)
         return tuned_model, tuned_results, params
     
-    def stack_models(self, estimator_list: list, optimize="MCC", fold=5, meta_model=None):
+    def stack_models(self, estimator_list: list[Any],optimize: str="MCC", fold: int=5, 
+                     meta_model: Any=None) -> tuple[Any, pd.DataFrame, pd.Series]:
+        """
+        Create a stacked ensemble model from a list of models.
+
+        Parameters
+        ----------
+        estimator_list : list[Any]
+            A list of trained models to use for the ensemble.
+        optimize : str, optional
+            The metric to optimize for. Defaults to "MCC".
+        fold : int, optional
+            The number of cross-validation folds to use. Defaults to 5.
+        meta_model : Any, optional
+            The meta model to use for stacking. Defaults to None.
+
+        Returns
+        -------
+        tuple[Any, pd.DataFrame, pd.Series]
+            A tuple containing the stacked ensemble model, the results of the ensemble, and the parameters used for training the ensemble.
+        """
         self.log.info("----------Stacking the best models--------------")
         self.log.info(f"fold: {fold}")
         self.log.info(f"optimize: {optimize}")
@@ -452,7 +626,27 @@ class PycaretInterface:
         params = self.get_params_stacked(stacked_models)
         return stacked_models, stacked_results, params
     
-    def create_majority(self, estimator_list: list, optimize="MCC", fold=5, weights=None):
+    def create_majority(self, estimator_list: list[Any], optimize: str="MCC", fold: int=5, 
+                        weights: list[float] | None=None) -> tuple[Any, pd.DataFrame]:
+        """
+        Create a majority vote ensemble model from a list of models.
+
+        Parameters
+        ----------
+        estimator_list : list[Any]
+            A list of trained models to use for the ensemble.
+        optimize : str, optional
+            The metric to optimize for. Defaults to "MCC".
+        fold : int, optional
+            The number of cross-validation folds to use. Defaults to 5.
+        weights : list[float] or None, optional
+            The weights to use for each model in the ensemble. Defaults to None.
+
+        Returns
+        -------
+        tuple[Any, pd.DataFrame]
+            A tuple containing the majority vote ensemble model and the results of the ensemble.
+        """
         self.log.info("----------Creating a majority voting model--------------")
         self.log.info(f"fold: {fold}")
         self.log.info(f"optimize: {optimize}")
@@ -465,17 +659,48 @@ class PycaretInterface:
         majority_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
         return majority_model, majority_results
     
-    def check_drift(self, input_data, target_data, filename=None):
+    def check_drift(self, input_data: pd.DataFrame, target_data: pd.DataFrame|None, 
+                    filename: str | None=None) -> str | None:
+        """
+        Check for data drift
+
+        Parameters
+        ----------
+        input_data : pd.DataFrame
+            The input data.
+        target_data : pd.DataFrame, optional
+            The target data, by default None
+        filename : str, optional
+            Where the save the report in html format
+
+        Returns
+        -------
+        str | None
+            The file name
+        """
         self.log.info("----------Checking for data drift--------------")
         self.model.check_drift(input_data, target_data, filename=filename)
         return filename
     
-    def finalize_model(self, model):
+    def finalize_model(self, model: Any):
+        """
+        Finalize the model by training it with all the data including test set
+
+        Parameters
+        ----------
+        model : Any
+            The model to finalize
+
+        Returns
+        -------
+        Any
+            The finalized model
+        """
         self.log.info("----------Finalizing the model by training it with all the data including test set--------------")
         finalized = self.model.finalize_model(model)
         return finalized
     
-    def evaluate_model(self, model, save: bool | str =False):
+    def evaluate_model(self, model: Any, save: bool | str =False) -> None:
         """
         Evaluate the model by plotting the learning curve
 
@@ -484,11 +709,11 @@ class PycaretInterface:
         model : pycaret.classification.Classifier or pycaret.regression.Regressor
             The model to evaluate.
         save : bool | str, optional
-            Save the plots, by default False
+            Save the plots, by default False but you can also indicate the path for the plot
         """
         self.model.plot_model(model, "learning", save=save)
 
-    def predict(self, estimador, target_data: pd.DataFrame|None=None) -> pd.DataFrame:
+    def predict(self, estimador: Any, target_data: pd.DataFrame|None=None) -> pd.DataFrame:
         """
         Predict with teh new data or if not specified predict on the holdout data.
 
