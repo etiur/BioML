@@ -49,6 +49,10 @@ def arg_parse():
                         choices=('lr','knn','nb','dt','svm','rbfsvm','gpc','mlp','ridge','rf','qda','ada','gbc',
                                 'lda','et','xgboost','lightgbm','catboost','dummy'), 
                         help="The models to drop")
+    parser.add_argument("-se", "--selected", nargs="+", required=False, default=None,
+                        choices=('lr','knn','nb','dt','svm','rbfsvm','gpc','mlp','ridge','rf','qda','ada','gbc',
+                                'lda','et','xgboost','lightgbm','catboost','dummy'), 
+                        help="The models to train")
 
     parser.add_argument("--tune", action="store_false", required=False, default=False, 
                         help="If to tune the best models")
@@ -62,13 +66,13 @@ def arg_parse():
 
     return [args.label, args.training_output, args.budget_time, args.scaler, args.training_features, args.kfold_parameters, 
             args.outliers, args.precision_weight, args.recall_weight, args.report_weight, args.difference_weight, 
-            args.strategy, args.best_model, args.seed, args.drop, args.tune, args.plot, args.optimize]
+            args.strategy, args.best_model, args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected]
 
 
 class Classifier(Trainer):
     def __init__(self, model: PycaretInterface, output="training_results", num_splits=5, test_size=0.2,
                  outliers: tuple[str, ...]=(), scaler="robust",  ranking_params: dict[str, float]=None,  
-                 drop: tuple[str] = ("ada", "gpc", "lightgbm"), optimize="MCC"):
+                 drop: tuple[str] = ("ada", "gpc", "lightgbm"), selected=None, optimize="MCC"):
         # initialize the Trainer class
         super().__init__(model, output, num_splits, test_size, outliers, scaler)
         # change the ranking parameters
@@ -85,6 +89,7 @@ class Classifier(Trainer):
         self.report_weight = ranking_dict["report_weight"]
         self.difference_weight = ranking_dict["difference_weight"]
         self.optimize = optimize
+        self.selected = selected
     
     def _calculate_score_dataframe(self, dataframe):
         cv_train = dataframe.loc[("CV-Train", "Mean")]
@@ -130,7 +135,8 @@ class Classifier(Trainer):
         self.log.info("------ Running holdout -----")
         X_train, X_test = train_test_split(feature.features, test_size=self.test_size, random_state=self.experiment.seed, 
                                            stratify=feature.features[feature.label])
-        sorted_results, sorted_models, top_params = self.setup_training(X_train, X_test, self._calculate_score_dataframe, plot, drop=self.drop)
+        sorted_results, sorted_models, top_params = self.setup_training(X_train, X_test, self._calculate_score_dataframe, plot, drop=self.drop,
+                                                                        selected=self.selected)
         return sorted_results, sorted_models, top_params
     
     def retune_best_models(self, sorted_models: dict, num_iter: int = 5):
@@ -157,7 +163,7 @@ class Classifier(Trainer):
 def main():
     label, training_output, budget_time, scaler, excel, kfold, outliers, \
     precision_weight, recall_weight, report_weight, difference_weight, strategy, best_model, \
-    seed, drop, tune,  plot, optimize = arg_parse()
+    seed, drop, tune,  plot, optimize, selected = arg_parse()
     
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     training_output = Path(training_output)
@@ -170,7 +176,8 @@ def main():
 
     ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight,
                         difference_weight=difference_weight, report_weight=report_weight)
-    training = Classifier(experiment, training_output, num_split, test_size, outliers, scaler, ranking_dict, drop, optimize=optimize)
+    training = Classifier(experiment, training_output, num_split, test_size, outliers, scaler, ranking_dict, drop, optimize=optimize,
+                          selected=selected)
     
     sorted_results, sorted_models, top_params = training.run_training(feature, plot)
 

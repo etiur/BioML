@@ -42,6 +42,10 @@ def arg_parse():
                         choices=('lr','lasso','ridge','en','lar','llar','omp','br','ard','par','ransac',
                                   'tr','huber','kr','svm','knn','dt','rf','et','ada','gbr','mlp','xgboost',
                                   'lightgbm','catboost','dummy'), help="The models to drop")
+    parser.add_argument("-se", "--selected", nargs="+", required=False, default=None, 
+                        choices=('lr','lasso','ridge','en','lar','llar','omp','br','ard','par','ransac',
+                                  'tr','huber','kr','svm','knn','dt','rf','et','ada','gbr','mlp','xgboost',
+                                  'lightgbm','catboost','dummy'), help="The models to select, when None almost all models are selected")
     parser.add_argument("--tune", action="store_true", required=False, default=False, 
                         help="If to tune the best models")
     parser.add_argument("-op", "--optimize", required=False, default="RMSE", 
@@ -54,13 +58,13 @@ def arg_parse():
     return [args.label, args.training_output, args.budget_time, args.scaler,
             args.excel, args.kfold_parameters, args.outliers,
             args.difference_weight, args.r2_weight, args.strategy, args.best_model,
-            args.seed, args.drop, args.tune, args.plot, args.optimize]
+            args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected]
 
 
 class Regressor(Trainer):
     def __init__(self, model: PycaretInterface, output="training_results", num_splits=5, test_size=0.2,
                  outliers=(), scaler="robust", ranking_params=None, drop=("tr", "kr", "ransac", "ard", "ada", "lightgbm"),
-                 optimize="RMSE"):
+                 optimize="RMSE", selected=None):
 
         super().__init__(model, output, num_splits, test_size, outliers, scaler)
         
@@ -75,6 +79,7 @@ class Regressor(Trainer):
         self.difference_weight = ranking_dict["difference_weight"]
         self.R2_weight = ranking_dict["R2_weight"]
         self.optimize = optimize
+        self.selected = selected
 
     def _calculate_score_dataframe(self, dataframe):
         cv_train = dataframe.loc[("CV-Train", "Mean")]
@@ -114,7 +119,8 @@ class Regressor(Trainer):
         """
         self.log.info("------ Running holdout -----")
         X_train, X_test = train_test_split(feature.features, test_size=self.test_size, random_state=self.experiment.seed)
-        sorted_results, sorted_models, top_params = self.setup_training(X_train, X_test, self._calculate_score_dataframe, plot, drop=self.drop)
+        sorted_results, sorted_models, top_params = self.setup_training(X_train, X_test, self._calculate_score_dataframe, plot, drop=self.drop,
+                                                                        selected=self.selected)
         return sorted_results, sorted_models, top_params
     
     def retune_best_models(self, sorted_models: dict, num_iter: int = 5):
@@ -141,7 +147,7 @@ class Regressor(Trainer):
 
 def main():
     label, training_output, trial_time, scaler, excel, kfold, outliers, \
-        difference_weight, r2_weight, strategy, seed, best_model, drop, tune, plot, optimize = arg_parse()
+        difference_weight, r2_weight, strategy, seed, best_model, drop, tune, plot, optimize, selected = arg_parse()
     
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     training_output = Path(training_output)
@@ -155,7 +161,7 @@ def main():
 
     ranking_dict = dict(R2_weight=r2_weight, difference_weight=difference_weight)
     training = Regressor(experiment, training_output, num_split, test_size, outliers, scaler, 
-                         ranking_dict, drop, optimize)
+                         ranking_dict, drop, optimize, selected=selected)
     
 
     sorted_results, sorted_models, top_params = training.run_training(feature, plot)

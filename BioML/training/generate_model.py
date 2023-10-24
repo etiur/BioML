@@ -47,9 +47,8 @@ def arg_parse():
 
 
 class GenerateModel:
-    def __init__(self, model: PycaretInterface, trainer: Regressor | Classifier, selected_models: tuple[str] | str | dict[str, tuple[str, ...]], num_splits=5, 
-                 test_size=0.2, outliers: tuple[str, ...]=(), scaler="robust", model_output="models",
-                 problem="classification", optimize="MCC"):
+    def __init__(self, trainer: Regressor | Classifier, selected_models: tuple[str] | str | dict[str, tuple[str, ...]],
+                 model_output="models", problem="classification", optimize="MCC"):
         
         self.trainer = trainer
         self.model_output = Path(model_output)
@@ -57,7 +56,7 @@ class GenerateModel:
         self.problem = problem
         self.optimize = optimize
     
-    def run_holdout(self, feature: DataParser):
+    def run_generate(self, feature: DataParser):
         """
         A function that splits the data into training and test sets and then trains the models
         using cross-validation but only on the training data
@@ -77,46 +76,10 @@ class GenerateModel:
          
         """
         self.log.info("------ Running holdout -----")
-        if self.problem == "classification":
-            X_train, X_test = train_test_split(feature.features, test_size=self.test_size, random_state=self.experiment.seed, 
-                                           stratify=feature.features[feature.label])
-        elif self.problem == "regression":
-            X_train, X_test = train_test_split(feature.features, test_size=self.test_size, random_state=self.experiment.seed)
         
-        sorted_results, sorted_models, top_params = self.setup_holdout(X_train, X_test, self._calculate_score_dataframe, plot=False, selected=self.selected_models)
+        sorted_results, sorted_models, top_params = self.trainer.run_training(feature, plot=())
         return sorted_models
 
-    def run_kfold(self, feature: DataParser):
-        """
-        A function that splits the data into kfolds of training and test sets and then trains the models
-        using cross-validation but only on the training data. It is a nested cross-validation
-
-        Parameters
-        ----------
-        feature : pd.DataFrame
-            A dataframe containing the training samples and the features
- 
-
-        Returns
-        -------
-        tuple[pd.DataFrame, dict[str, models], pd.Series]
-            A dictionary with the sorted results and sorted models from pycaret organized by split index or kfold index
-        """
-        self.log.info("------ Running kfold -----")
-        if self.problem == "classification":
-            skf = StratifiedShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.experiment.seed)
-        elif self.problem == "regression":
-            skf = ShuffleSplit(n_splits=self.num_splits, test_size=self.test_size, random_state=self.experiment.seed)
-
-        sorted_results, sorted_models, top_params = self.setup_kfold(feature.features, feature.label, skf, plot=False, with_split=feature.with_split,
-                                                                     selected=self.selected_models)
-        return sorted_models
-
-    def stack_models(self, sorted_models: dict, meta_model=None):
-        return self._stack_models(sorted_models, self.optimize, meta_model)
-    
-    def create_majority_model(self, sorted_models: dict, weights: Iterable[float] | None = None):
-        return self._create_majority_model(sorted_models, self.optimize, weights=weights)
 
     def finalize_model(self, sorted_model, index: int | dict[str, int] | None = None):
         """
