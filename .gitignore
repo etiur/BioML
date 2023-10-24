@@ -1,6 +1,8 @@
 tests/*.log
 tests/*.ipynb*
-
+tests/*.pyc
+tests/__pycache__
+data/*.pkl
 tests/mlruns/*
 tests/catboost_info
 .vscode
