@@ -18,16 +18,57 @@ from sklearn.linear_model import RidgeClassifier, Ridge
 
 def calculate_shap_importance(model: xgb.XGBClassifier | xgb.XGBRegressor, X_train: pd.DataFrame | np.ndarray, 
                         Y_train: pd.Series | np.ndarray, feature_names: Iterable[str]):
+    """
+    Calculates the SHAP importance values for the given XGBoost model and training data.
 
-        xgboost_explainer = shap.TreeExplainer(model, X_train, feature_names=feature_names)
-        shap_values = xgboost_explainer.shap_values(X_train, Y_train)
-        shap_importance = pd.Series(np.abs(shap_values).mean(axis=0), feature_names).sort_values(ascending=False)
-        shap_importance = shap_importance.loc[lambda x: x > 0]
-        return shap_importance, shap_values
+    Parameters
+    ----------
+    model : xgb.XGBClassifier or xgb.XGBRegressor
+    The trained XGBoost model to calculate SHAP importance for.
+    X_train : pd.DataFrame or np.ndarray
+        The training data used to train the model.
+    Y_train : pd.Series or np.ndarray
+        The target values used to train the model.
+    feature_names : Iterable[str]
+        The names of the features in the training data.
+
+    Returns
+    -------
+    Tuple[pd.Series, np.ndarray]
+        A tuple containing the SHAP importance values as a pandas Series and the SHAP values as a numpy array.
+    """
+    xgboost_explainer = shap.TreeExplainer(model, X_train, feature_names=feature_names)
+    shap_values = xgboost_explainer.shap_values(X_train, Y_train)
+    shap_importance = pd.Series(np.abs(shap_values).mean(axis=0), feature_names).sort_values(ascending=False)
+    shap_importance = shap_importance.loc[lambda x: x > 0]
+    return shap_importance, shap_values
 
 
 def plot_shap_importance(shap_values, feature_names: Iterable[str], output_path: Path | None=None, 
                          X_train: pd.DataFrame | np.ndarray=None, plot_num_features: int=20, dpi=500):
+    """
+    Plots the SHAP importance values for the given feature names.
+
+    Parameters
+    ----------
+    shap_values : np.ndarray
+        The SHAP values to plot.
+    feature_names : Iterable[str]
+        The names of the features in the SHAP values.
+    output_path : Path or None, optional
+        The output directory to save the plot in, by default None.
+    X_train : pd.DataFrame or np.ndarray, optional
+        The training data used to train the model, by default None.
+    plot_num_features : int, optional
+        The number of features to plot, by default 20.
+    dpi : int, optional
+        The resolution of the saved plot, by default 500.
+
+    Returns
+    -------
+    None
+    """
+    
     shap_dir = (output_path / "shap_features")
     shap_dir.mkdir(parents=True, exist_ok=True)
     
@@ -140,7 +181,8 @@ def unsupervised(X_train: pd.DataFrame | np.ndarray, num_features: int,
 
 
 def random_forest(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray,
-                  feature_names: Iterable[str], treemodel: rfc | rfr=rfc, seed: int=123, num_threads: int=-1) -> pd.Series:
+                  feature_names: Iterable[str], treemodel: rfc | rfr=rfc, 
+                  seed: int=123, num_threads: int=-1) -> pd.Series:
     """
     Perform feature selection using a random forest model.
 
@@ -154,6 +196,10 @@ def random_forest(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.nd
         The names of the features.
     treemodel : RandomForestClassifier o RandomForestRegressor, optional
         The random forest model to use. The default is rfc.
+    seed : int, optional
+        The random seed to use. The default is 123.
+    num_threads : int, optional
+        The number of threads to use for parallel processing. The default is -1.
 
     Returns
     -------
@@ -181,8 +227,12 @@ def xgbtree(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray,
         The training feature data.
     Y_train : pd.Series or np.ndarray
         The training label data.
-    sgboostmodel : xgb.XGBClassifier or xgb.XGBRegressor, optional
+    xgboostmodel : xgb.XGBClassifier or xgb.XGBRegressor, optional
         The type of problem to solve. Defaults to XGBClassifier.
+    seed : int, optional
+        The random seed to use. The default is 123.
+    num_threads : int, optional
+        The number of threads to use for parallel processing. The default is -1.
 
     Returns
     -------
@@ -215,8 +265,8 @@ def rfe_linear(self, X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np
         The names of the features.
     step : int, optional
         The number of features to remove at each iteration. Defaults to 30.
-    problem : str, optional
-        The type of problem to solve. Defaults to "classification".
+    ridge_model : RidgeClassifier or Ridge
+        The model for the selection, it depends on the problem, classification or regression.
 
     Returns
     -------
