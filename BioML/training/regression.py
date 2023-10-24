@@ -46,8 +46,7 @@ def arg_parse():
                         choices=('lr','lasso','ridge','en','lar','llar','omp','br','ard','par','ransac',
                                   'tr','huber','kr','svm','knn','dt','rf','et','ada','gbr','mlp','xgboost',
                                   'lightgbm','catboost','dummy'), help="The models to select, when None almost all models are selected")
-    parser.add_argument("--tune", action="store_true", required=False, default=False, 
-                        help="If to tune the best models")
+    parser.add_argument("--tune", action="store_true", required=False, help="If to tune the best models")
     parser.add_argument("-op", "--optimize", required=False, default="RMSE", 
                         choices=("RMSE", "R2", "MSE", "MAE", "RMSLE", "MAPE"), help="The metric to optimize")
     parser.add_argument("-p", "--plot", nargs="+", required=False, default=("residuals", "error", "learning"),

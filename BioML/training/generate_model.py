@@ -1,12 +1,6 @@
-from re import S
-from typing import Iterable
 from .base import DataParser, PycaretInterface, Trainer
 from pathlib import Path
 import argparse
-import pandas as pd
-
-from ..utilities import write_excel
-
 from .classification import Classifier
 from .regression import Regressor
 
@@ -38,15 +32,17 @@ def arg_parse():
     parser.add_argument("-st", "--strategy", required=False, choices=("holdout", "kfold"), default="holdout",
                         help="The spliting strategy to use")
     parser.add_argument("-m", "--model_strategy", help=f"The strategy to use for the model, choices are majority, stacking or simple:model_index, model index should be an integer", default="majority")
-    parser.add_argument("--seed", required=True, type=int, help="The seed for the random state")
+    parser.add_argument("--seed", required=True, help="The seed for the random state")
     parser.add_argument("-k", "--kfold_parameters", required=False,
                         help="The parameters for the kfold in num_split:test_size format", default="5:0.2")
+    
+    parser.add_argument("--tune", action="store_false", required=False, help="If to tune the best models")
     
     args = parser.parse_args()
 
     return [args.training_features, args.label, args.scaler, args.model_output,
             args.outliers, args.selected_models, args.problem, args.optimize, args.strategy, 
-            args.model_strategy, args.seed, args.kfold_parameters]
+            args.model_strategy, args.seed, args.kfold_parameters, args.tune]
 
 
 class GenerateModel:
@@ -97,24 +93,23 @@ class GenerateModel:
             model_output = model_output.with_suffix("")
         self.trainer.experiment.save(model, str(model_output))
     
-    def save_by_strategy(self, sorted_models: dict, model_strategy: str, optimize: str,
-                         training: Trainer, model_file: str):
+    def train_by_strategy(sorted_models: dict, model_strategy: str, training: Trainer, optimize: str):
         if "majority" in model_strategy:
-            sorted_models = training.create_majority_model(sorted_models, optimize)
+            models = training.create_majority_model(sorted_models, optimize)
             index = None
         elif "stacking" in model_strategy:
-            sorted_models = training.stack_models(sorted_models, optimize)
+            models = training.stack_models(sorted_models, optimize)
             index = None
         elif "simple" in model_strategy:
             models = sorted_models
             index = int(model_strategy.split(":")[1])
-        final_model = self.finalize_model(models, index)
-        self.save_model(final_model, model_file)
-
+    
+        return models, index
+    
 
 def main():
     training_features, label, scaler, model_output, outliers, selected_models, \
-    problem, optimize, strategy, model_strategy, seed, kfold = arg_parse()
+    problem, optimize, strategy, model_strategy, seed, kfold, tune = arg_parse()
     if Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = [x.strip() for x in out.readlines()]
@@ -129,11 +124,13 @@ def main():
     elif problem == "regression":
         model = Regressor(drop=None, selected=selected_models)
     sorted_results, sorted_models, top_params = model.run_training(training, feature, plot=())
-
+    if tune:
+        sorted_results, sorted_models, top_params = training.retune_best_models(sorted_models, optimize)
     # generate the final model
     generate = GenerateModel()
-    generate.save_by_strategy(sorted_models, model_strategy, training, model_output)
-    
+    models, index =  generate.train_by_strategy(sorted_models, model_strategy, training, optimize)
+    final_model = generate.finalize_model(models, index)
+    generate.save_model(final_model, model_output)
 
 
 if __name__ == "__main__":
