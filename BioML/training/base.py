@@ -624,7 +624,29 @@ class Trainer:
         
         return results, returned_models
     
-    def analyse_models(self, transformed_x, test_x, scoring_fn, drop=None, selected=None):
+    def analyse_models(self, transformed_x: pd.DataFrame, test_x: pd.DataFrame, scoring_fn: Callable, drop: tuple | None=None, 
+                       selected: tuple | None=None) -> tuple[dict, dict]:
+        """
+        Analyze the trained models and rank them based on the specified scoring function.
+
+        Parameters
+        ----------
+        transformed_x : pd.DataFrame
+            The transformed feature data.
+        test_x : pd.DataFrame
+            The test feature data.
+        scoring_fn : Callable
+            The scoring function to use for evaluating the models.
+        drop : tuple or None, optional
+            The features to drop from the feature data. Defaults to None.
+        selected : tuple or None, optional
+            The features to select from the feature data. Defaults to None.
+
+        Returns
+        -------
+        tuple[pd.DataFrame, dict, pd.Series]
+            A tuple containing the sorted results and sorted models.
+        """
         results, returned_models = self.train(transformed_x, test_x, drop, selected)
         sorted_results, sorted_models = self.rank_results(results, returned_models, scoring_fn)
         top_params = self.experiment.get_best_params_multiple(sorted_models)
@@ -632,14 +654,54 @@ class Trainer:
         return sorted_results, sorted_models, top_params
 
     def setup_training(self, transformed_x, test_x, scoring_fn: Callable, plot: tuple=(), drop: tuple|None=None, 
-                       selected: tuple | None=None):
+                       selected: tuple | None=None) -> tuple[pd.DataFrame, dict, pd.Series]:
+        """
+        Set up the training process
+
+        Parameters
+        ----------
+        transformed_x : pd.DataFrame
+            The transformed feature data.
+        test_x : pd.DataFrame
+            The test feature data.
+        scoring_fn : Callable
+            The scoring function to use for evaluating the models.
+        plot : tuple, optional
+            A tuple containing the plot title and axis labels. Defaults to ().
+        drop : tuple or None, optional
+            The features to drop from the feature data. Defaults to None.
+        selected : tuple or None, optional
+            The features to select from the feature data. Defaults to None.
+
+        Returns
+        -------
+        tuple[pd.DataFrame, dict, pd.Series]
+            A tuple containing the sorted results, sorted models, and top parameters.
+        """
         sorted_results, sorted_models, top_params = self.analyse_models(transformed_x, test_x, scoring_fn, drop, selected)
         if plot:
             self.experiment.plots = plot
             self.experiment.plot_best_models(sorted_models)
         return sorted_results, sorted_models, top_params
     
-    def retune_best_models(self, sorted_models:dict, optimize: str="MCC", num_iter: int=5):
+    def retune_best_models(self, sorted_models:dict[str, Any], optimize: str="MCC", num_iter: int=5):
+        """
+        Retune the best models using the specified optimization metric and number of iterations.
+
+        Parameters
+        ----------
+        sorted_models : dict[str, Any]
+            A dictionary of sorted models.
+        optimize : str, optional
+            The metric to optimize for. Defaults to "MCC".
+        num_iter : int, optional
+            The number of iterations to use for retuning. Defaults to 5.
+
+        Returns
+        -------
+        Tuple[pd.DataFrame, dict, pd.DataFrame]
+            A tuple containing the retuned model results, the retuned models, and the parameters used for retuning.
+        """
         new_models = {}
         new_results = {}
         new_params = {}
@@ -653,7 +715,24 @@ class Trainer:
 
         return pd.concat(new_results), new_models, pd.concat(new_params)
     
-    def stack_models(self, sorted_models: dict, optimize="MCC", meta_model=None):
+    def stack_models(self, sorted_models: dict[str, Any], optimize="MCC", meta_model: Any=None):
+        """
+        Create a stacked ensemble model from a dict of models.
+
+        Parameters
+        ----------
+        sorted_models : dict[str, Any]
+            A dictionary of sorted models.
+        optimize : str, optional
+            The metric to optimize for. Defaults to "MCC".
+        meta_model : Any or None, optional
+            The meta model to use for stacking. Defaults to None.
+
+        Returns
+        -------
+        Tuple[dict, Model, dict]
+            A tuple containing the stacked ensemble results, the stacked ensemble model, and the parameters used for training the stacked ensemble model.
+        """
         self.log.info("--------Stacking the best models--------")
   
         stacked_models, stacked_results, params = self.experiment.stack_models(list(sorted_models.values())[:self.experiment.best_model], optimize=optimize, fold=self.num_splits, 
@@ -661,8 +740,25 @@ class Trainer:
         
         return stacked_results, stacked_models, params
     
-    def create_majority_model(self, sorted_models: dict, optimize: str="MCC", 
-                               weights: Iterable[float] | None =None):
+    def create_majority_model(self, sorted_models: dict[str, Any], optimize: str="MCC", 
+                               weights: list[float] | None =None) -> tuple[pd.DataFrame, Any]:
+        """
+        Create a majority vote ensemble model from a dictionary of sorted models.
+
+        Parameters
+        ----------
+        sorted_models : dict
+            A dictionary of sorted models.
+        optimize : str, optional
+            The metric to optimize for. Defaults to "MCC".
+        weights : Iterable[float] or None, optional
+            The weights to use for the models. Defaults to None.
+
+        Returns
+        -------
+        tuple[pd.DataFrame, Any]
+            A tuple containing the ensemble results and the ensemble model.
+        """
         self.log.info("--------Creating an ensemble model--------")
         
         ensemble_model, ensemble_results = self.experiment.create_majority(list(sorted_models.values())[:self.experiment.best_model], optimize=optimize, fold=self.num_splits, 
@@ -671,6 +767,21 @@ class Trainer:
         return ensemble_results, ensemble_model
     
     def predict_on_test_set(self, sorted_models: dict | list, name: str) -> pd.DataFrame:
+        """
+        Generate predictions on the test set using the specified models.
+
+        Parameters
+        ----------
+        sorted_models : dict or list
+            The sorted models to use for prediction.
+        name : str
+            The name of the test set.
+
+        Returns
+        -------
+        pd.DataFrame
+            A pandas DataFrame containing the predictions on the test set.
+        """
         match sorted_models:
             case [*list_models]:
                 final = []
@@ -696,8 +807,32 @@ class Trainer:
            
 
 def generate_training_results(model, training: Trainer, feature: DataParser, plot: tuple, optimize: str, 
-                     tune: bool=True, strategy="holdout"):
-        
+                     tune: bool=True, strategy="holdout") -> dict[str, dict[str, tuple]]:
+    """
+    Generate training results for a given model, training object, and feature data.
+
+    Parameters
+    ----------
+    model : Classifier or Regressor objects
+        The model to use for training.
+    training : Trainer
+        The training object to use.
+    feature : DataParser
+        The feature data to use.
+    plot : tuple
+        A tuple containing the plot title and axis labels.
+    optimize : str
+        The metric to optimize for.
+    tune : bool, optional
+        Whether to tune the hyperparameters. Defaults to True.
+    strategy : str, optional
+        The strategy to use for training. Defaults to "holdout".
+
+    Returns
+    -------
+    dict
+        A dictionary containing the training results.
+    """    
     sorted_results, sorted_models, top_params = model.run_training(training, feature, plot)
 
     # saving the results in a dictionary and writing it into excel files
