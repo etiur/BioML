@@ -136,10 +136,10 @@ def main():
     
     feature = DataParser(excel, label,  outliers=outliers, scaler=scaler)
     experiment = PycaretInterface("regression", feature.label, seed, budget_time=trial_time, best_model=best_model, 
-                                  output_path=training_output)
+                                  output_path=training_output, optimize=optimize)
 
     ranking_dict = dict(R2_weight=r2_weight, difference_weight=difference_weight)
-    training = Trainer(experiment, num_split, optimize)
+    training = Trainer(experiment, num_split)
     regressor = Regressor(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize)
     
     results = generate_training_results(regressor, training, feature, plot, tune, strategy)

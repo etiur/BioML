@@ -120,12 +120,12 @@ def main():
 
     # instantiate everything to run training
     feature = DataParser(training_features, label, outliers=outliers, scaler=scaler)
-    experiment = PycaretInterface(problem, feature.label, seed, best_model=len(selected_models))
-    training = Trainer(experiment, num_split, optimize)
+    experiment = PycaretInterface(problem, feature.label, seed, best_model=len(selected_models), optimize=optimize, output_path=model_output)
+    training = Trainer(experiment, num_split)
     if problem == "classification":
-        model = Classifier(drop=None, selected=selected_models, test_size=test_size)
+        model = Classifier(drop=None, selected=selected_models, test_size=test_size, optimize=optimize)
     elif problem == "regression":
-        model = Regressor(drop=None, selected=selected_models, test_size=test_size)
+        model = Regressor(drop=None, selected=selected_models, test_size=test_size, optimize=optimize)
     sorted_results, sorted_models, top_params = model.run_training(training, feature, plot=())
     if tune:
         sorted_results, sorted_models, top_params = training.retune_best_models(sorted_models)

@@ -163,8 +163,8 @@ def main():
     
     feature = DataParser(excel, label, outliers=outliers, scaler=scaler)
     experiment = PycaretInterface("classification", feature.label, seed, budget_time=budget_time, best_model=best_model, 
-                                  output_path=training_output)
-    training = Trainer(experiment, num_split, optimize=optimize)
+                                  output_path=training_output, optimize=optimize)
+    training = Trainer(experiment, num_split)
     ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight,
                         difference_weight=difference_weight, report_weight=report_weight)
     

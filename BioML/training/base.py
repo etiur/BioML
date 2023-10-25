@@ -21,6 +21,8 @@ class PycaretInterface:
         The objective of the machine learning model, either "classification" or "regression".
     label_name : str
         The name of the target variable in the dataset.
+    optimize : str, optional
+        The metric to optimize for. Defaults to "MCC".
     seed : None or int, optional
         The random seed to use for reproducibility. Defaults to None.
     budget_time : None or int, optional
@@ -71,8 +73,9 @@ class PycaretInterface:
     objective: str
     label_name: str
     seed: None | int = None
+    optimize: str = "MCC"
     #verbose: bool = False
-    budget_time: None | int
+    budget_time: None | int = None
     log = Log("model_training")
     best_model: int = 3
     output_path: Path | str | None= None 
@@ -353,7 +356,7 @@ class PycaretInterface:
 
         return pd.concat(model_params)
     
-    def retune_model(self, name: str, model: Any, optimize: str="MCC", num_iter: int=5, 
+    def retune_model(self, name: str, model: Any, num_iter: int=5, 
                      fold: int=5) -> tuple[Any, pd.DataFrame, pd.Series]:
         """
         Retune the specified model using Optuna.
@@ -364,8 +367,6 @@ class PycaretInterface:
             The name of the model to retune.
         model : Any
             The trained model to retune.
-        optimize : str, optional
-            The metric to optimize for. Defaults to "MCC".
         num_iter : int, optional
             The number of iterations to use for tuning. Defaults to 5.
         fold : int, optional
@@ -377,10 +378,9 @@ class PycaretInterface:
             A tuple containing the retuned model, the results of the tuning, and the parameters used for tuning.
         """
         self.log.info("---------Retuning the best models--------------")
-        self.log.info(f"optimize: {optimize}")
         self.log.info(f"num_iter: {num_iter}")
         self.log.info(f"fold: {fold}")
-        tuned_model = self.model.tune_model(model, optimize=optimize, search_library="optuna", search_algorithm="tpe", 
+        tuned_model = self.model.tune_model(model, optimize=self.optimize, search_library="optuna", search_algorithm="tpe", 
                                             early_stopping="asha", return_train_score=True, n_iter=num_iter, fold=fold,
                                             verbose=False)
         results = self.model.pull(pop=True)
@@ -388,7 +388,7 @@ class PycaretInterface:
         params = self.get_params(name, tuned_model)
         return tuned_model, tuned_results, params
     
-    def stack_models(self, estimator_list: list[Any],optimize: str="MCC", fold: int=5, 
+    def stack_models(self, estimator_list: list[Any], fold: int=5, 
                      meta_model: Any=None) -> tuple[Any, pd.DataFrame, pd.Series]:
         """
         Create a stacked ensemble model from a list of models.
@@ -397,8 +397,6 @@ class PycaretInterface:
         ----------
         estimator_list : list[Any]
             A list of trained models to use for the ensemble.
-        optimize : str, optional
-            The metric to optimize for. Defaults to "MCC".
         fold : int, optional
             The number of cross-validation folds to use. Defaults to 5.
         meta_model : Any, optional
@@ -410,9 +408,7 @@ class PycaretInterface:
             A tuple containing the stacked ensemble model, the results of the ensemble, and the parameters used for training the ensemble.
         """
         self.log.info("----------Stacking the best models--------------")
-        self.log.info(f"fold: {fold}")
-        self.log.info(f"optimize: {optimize}")
-        stacked_models = self.model.stack_models(estimator_list, optimize=optimize, 
+        stacked_models = self.model.stack_models(estimator_list, optimize=self.optimize, 
                                                  return_train_score=True,  verbose=False, fold=fold, 
                                                  meta_model_fold=fold, 
                                                  meta_model=meta_model)
@@ -421,7 +417,7 @@ class PycaretInterface:
         params = self.get_params_stacked(stacked_models)
         return stacked_models, stacked_results, params
     
-    def create_majority(self, estimator_list: list[Any], optimize: str="MCC", fold: int=5, 
+    def create_majority(self, estimator_list: list[Any], fold: int=5, 
                         weights: list[float] | None=None) -> tuple[Any, pd.DataFrame]:
         """
         Create a majority vote ensemble model from a list of models.
@@ -430,8 +426,6 @@ class PycaretInterface:
         ----------
         estimator_list : list[Any]
             A list of trained models to use for the ensemble.
-        optimize : str, optional
-            The metric to optimize for. Defaults to "MCC".
         fold : int, optional
             The number of cross-validation folds to use. Defaults to 5.
         weights : list[float] or None, optional
@@ -444,9 +438,8 @@ class PycaretInterface:
         """
         self.log.info("----------Creating a majority voting model--------------")
         self.log.info(f"fold: {fold}")
-        self.log.info(f"optimize: {optimize}")
         self.log.info(f"weights: {weights}")
-        majority_model = self.model.blend_models(estimator_list, optimize=optimize, 
+        majority_model = self.model.blend_models(estimator_list, optimize=self.optimize, 
                                                  verbose=False, return_train_score=True, fold=fold, 
                                                  weights=weights)
         
@@ -563,7 +556,7 @@ class PycaretInterface:
 
 
 class Trainer:
-    def __init__(self, model: PycaretInterface, num_splits: int=5, optimize: str="MCC"):
+    def __init__(self, model: PycaretInterface, num_splits: int=5):
         
         """
         Initialize a Trainer object with the given parameters.
@@ -579,7 +572,6 @@ class Trainer:
         self.log.info("Reading the features")
         self.num_splits = num_splits
         self.experiment = model
-        self.optimize = optimize
         self.log.info(f"Number of kfolds: {self.num_splits}")
 
     def rank_results(self, results: dict[str, pd.DataFrame], returned_models:dict[str], 
@@ -707,7 +699,7 @@ class Trainer:
         self.log.info("--------Retuning the best models--------")
         for key, model in list(sorted_models.item())[:self.experiment.best_model]:
             self.log.info(f"Retuning {key}")
-            tuned_model, results, params =  self.experiment.retune_model(key, model, self.optimize, num_iter, fold=self.num_splits)
+            tuned_model, results, params =  self.experiment.retune_model(key, model, num_iter, fold=self.num_splits)
             new_models[key] = tuned_model
             new_results[key] = results
             new_params[key] = params
@@ -732,7 +724,7 @@ class Trainer:
         """
         self.log.info("--------Stacking the best models--------")
   
-        stacked_models, stacked_results, params = self.experiment.stack_models(list(sorted_models.values())[:self.experiment.best_model], optimize=self.optimize, 
+        stacked_models, stacked_results, params = self.experiment.stack_models(list(sorted_models.values())[:self.experiment.best_model], 
                                                                                fold=self.num_splits, meta_model=meta_model)
         
         return stacked_results, stacked_models, params
@@ -756,7 +748,7 @@ class Trainer:
         """
         self.log.info("--------Creating an ensemble model--------")
         
-        ensemble_model, ensemble_results = self.experiment.create_majority(list(sorted_models.values())[:self.experiment.best_model], optimize=self.optimize,
+        ensemble_model, ensemble_results = self.experiment.create_majority(list(sorted_models.values())[:self.experiment.best_model],
                                                                            fold=self.num_splits, weights=weights)
         
         return ensemble_results, ensemble_model
