@@ -3,7 +3,8 @@ from pathlib import Path
 import argparse
 from .base import PycaretInterface, Trainer
 import pandas as pd
-from .helper import DataParser, generate_training_results, evaluate_all_models, write_results
+from .helper import DataParser, generate_training_results, evaluate_all_models, write_results, sort_regression_prediction
+from functools import partial
 
 
 def arg_parse():
@@ -150,14 +151,14 @@ def main():
         predictions = []
         for key, value in result_dict.items():
             # get the test set prediction results
-            predictions.append(training.predict_on_test_set(value[1], key))
+            predictions.append(training.predict_on_test_set(value[1], f"{tune_status}_{key}"))
             # write the results on excel files
             if len(value) == 2:
                 write_results(training_output/f"{tune_status}", value[0], sheet_name=key)
             elif len(value) == 3:
                 write_results(training_output/f"{tune_status}", value[0], value[2], sheet_name=key)
-            
-        write_results(training_output/f"{tune_status}", pd.concat(predictions), sheet_name=f"test_results")
+        partial_sort = partial(sort_regression_prediction, optimize=optimize, R2_weight=r2_weight)    
+        write_results(training_output/f"{tune_status}", partial_sort(pd.concat(predictions)), sheet_name=f"test_results")
 
 
 if __name__ == "__main__":

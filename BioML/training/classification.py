@@ -4,7 +4,8 @@ from .base import PycaretInterface, Trainer
 from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
 import argparse
 from pathlib import Path
-from .helper import write_results, generate_training_results, evaluate_all_models, DataParser
+from .helper import write_results, generate_training_results, evaluate_all_models, DataParser, sort_classification_prediction
+from functools import partial
 
 
 def arg_parse():
@@ -176,14 +177,15 @@ def main():
         predictions = []
         for key, value in result_dict.items():
             # get the test set prediction results
-            predictions.append(training.predict_on_test_set(value[1], key))
+            predictions.append(training.predict_on_test_set(value[1], f"{tune_status}_{key}"))
             # write the results on excel files
             if len(value) == 2:
                 write_results(training_output/f"{tune_status}", value[0], sheet_name=key)
             elif len(value) == 3:
                 write_results(training_output/f"{tune_status}", value[0], value[2], sheet_name=key)
-            
-        write_results(training_output/f"{tune_status}", pd.concat(predictions), sheet_name=f"test_results")
+        partial_sort = partial(sort_classification_prediction, optimize=optimize, optimize=optimize, prec_weight=precision_weight, 
+                                   recall_weight=recall_weight, report_weight=report_weight)    
+        write_results(training_output/f"{tune_status}", partial_sort(pd.concat(predictions)), sheet_name=f"test_results")
 
 
 if __name__ == "__main__":

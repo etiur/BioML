@@ -1,6 +1,6 @@
 from ..utilities import write_excel, scale
 from pathlib import Path
-from .base import Trainer, PycaretInterface
+from .base import Trainer
 from collections import defaultdict
 from typing import Callable, Iterable
 import pandas as pd
@@ -9,7 +9,7 @@ import numpy as np
 import warnings
 
 
-@dataclass
+@dataclass(slots=True)
 class DataParser:
     """
     A class for parsing feature and label data.
@@ -195,7 +195,7 @@ def generate_training_results(model, training: Trainer, feature: DataParser, plo
 
     Parameters
     ----------
-    model : Classifier or Regressor objects
+    model : classification.Classifier or regression.Regressor objects
         The model to use for training.
     training : Trainer
         The training object to use.
@@ -278,16 +278,29 @@ def write_results(training_output: Path, sorted_results: pd.DataFrame, top_param
     -------
     None
     """
+    training_output.mkdir(exist_ok=True, parents=True)
     write_excel(training_output / "training_results.xlsx", sorted_results, sheet_name)
     if top_params is not None:
         write_excel(training_output / f"top_hyperparameters.xlsx", top_params, sheet_name)
 
-def iterate_through_excel(model, excel_file: str | Path, feature: DataParser, training: Trainer) -> pd.DataFrame:
-    with pd.ExcelFile(excel_file) as excel:
-        for i, sheet in enumerate(excel.sheet_names):
-            df = pd.read_excel(excel, sheet_name=sheet)
-            feature
+def sort_regression_prediction(dataframe: pd.DataFrame, optimize="RSME", R2_weight=0.8) -> pd.DataFrame:
+    return dataframe.loc[(dataframe[optimize] + R2_weight * dataframe["R2"]).sort_values(ascending=False).index]
+    
+def sort_classification_prediction(dataframe: pd.DataFrame, optimize="MCC", prec_weight=1.2, 
+                                   recall_weight=0.8, report_weight=0.6) -> pd.DataFrame:
+    sorted = dataframe.loc[(dataframe[optimize] + report_weight * (prec_weight * dataframe["Precision"] + 
+                    recall_weight * dataframe["Recall"])).sort_values(ascending=False).index]
+    return sorted
 
-                
-
-            results = generate_training_results(model, training, feature, ())
+def iterate_multiple_features(model, input_feature: str | pd.DataFrame , label: str | list[int | float], scaler: str, 
+                          training: Trainer, outliers: dict[str,tuple[str, ...]], training_output: Path, 
+                          sheet: int | str=0) -> pd.DataFrame:
+    
+    feature = DataParser(input_feature, label=label, scaler=scaler, sheets=sheet, outlier=outliers)
+    results = generate_training_results(model, training, feature, plot=(), tune=False)
+    for tune_status, result_dict in results.items():
+        for key, value in result_dict.items():
+            if len(value) == 2:
+                write_results(training_output/f"{tune_status}", value[0], sheet_name=sheet)
+            elif len(value) == 3:
+                write_results(training_output/f"{tune_status}", value[0], value[2], sheet_name=sheet)

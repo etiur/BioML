@@ -79,7 +79,7 @@ class Predictor:
         return pred
 
 
-@ dataclass
+@dataclass
 class ApplicabilityDomain:
     """
     A class that looks for the applicability domain

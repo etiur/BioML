@@ -775,7 +775,7 @@ class Trainer:
                 # it keeps the original sorted order
                 for mod in list_models:
                     result = self.experiment.predict(mod)
-                    result.index = [f"Test-results-{name}"]
+                    result.index = [f"{name}"]
                     final.append(result)
                 return pd.concat(final)
             
@@ -783,13 +783,13 @@ class Trainer:
                 final = []
                 for model in list(dict_models.values())[:self.experiment.best_model]:
                     result = self.experiment.predict(model)
-                    result.index = [f"Test-results-{name}"]
+                    result.index = [f"{name}"]
                     final.append(result)
                 return pd.concat(final)
 
             case mod: # for stacked or majority models
                 result = self.experiment.predict(mod)
-                result.index = [f"Test-results-{name}"]
+                result.index = [f"{name}"]
                 return result
            
 
