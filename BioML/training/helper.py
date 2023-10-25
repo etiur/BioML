@@ -2,11 +2,12 @@ from ..utilities import write_excel, scale
 from pathlib import Path
 from .base import Trainer
 from collections import defaultdict
-from typing import Callable, Iterable, Any, Iterator
+from typing import Callable, Iterable, Protocol, Iterator
 import pandas as pd
 from dataclasses import dataclass, field
 import numpy as np
 import warnings
+
 
 
 @dataclass(slots=True)
@@ -339,7 +340,7 @@ def sort_classification_prediction(dataframe: pd.DataFrame, optimize="MCC", prec
 
 def iterate_multiple_features(iterator: Iterator, model, label: str | list[int | float], scaler: str, 
                               training: Trainer, outliers: dict[str,tuple[str, ...]],
-                              training_output: Path, sorting_function: Callable) -> None:
+                              training_output: Path) -> None:
     
     """
     Iterates over multiple input features and generates training results for each feature.
@@ -371,13 +372,16 @@ def iterate_multiple_features(iterator: Iterator, model, label: str | list[int |
         feature = DataParser(input_feature, label=label, scaler=scaler, sheets=sheet, outlier=outliers)
         sorted_results, sorted_models, top_params = model.run_training(training, feature, plot=())
         index = sorted_results.index.unique(0)[:training.experiment.best_model]
-        performance_list.append((sheet, sorted_results.loc[index]))
-    performance_list = sorting_function(performance_list)
-    for sheet, performance in performance_list:
+        score = 0
+        for i in index:
+            score += model._calculate_score_dataframe(sorted_results.loc[i])
+        performance_list.append((sheet, sorted_results.loc[index], score))
+    performance_list.sort(key=lambda x: x[2], reverse=True)
+    for sheet, performance, score in performance_list:
         write_results(training_output, performance, sheet_name=sheet)
     
 
-def iterate_excel(excel_file):
+def iterate_excel(excel_file: str | Path):
     """
     Iterates over the sheets of an Excel file and yields a tuple of the sheet data and sheet name.
 
