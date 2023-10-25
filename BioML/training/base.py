@@ -711,6 +711,7 @@ class PycaretInterface:
         save : bool | str, optional
             Save the plots, by default False but you can also indicate the path for the plot
         """
+        Path(save).mkdir(parents=True, exist_ok=True)
         self.model.plot_model(model, "learning", save=save)
 
     def predict(self, estimador: Any, target_data: pd.DataFrame|None=None) -> pd.DataFrame:
@@ -1011,7 +1012,7 @@ class Trainer:
            
 
 def generate_training_results(model, training: Trainer, feature: DataParser, plot: tuple, optimize: str, 
-                     tune: bool=True, strategy="holdout") -> dict[str, dict[str, tuple]]:
+                     tune: bool=False, strategy="holdout") -> dict[str, dict[str, tuple]]:
     """
     Generate training results for a given model, training object, and feature data.
 
@@ -1053,3 +1054,13 @@ def generate_training_results(model, training: Trainer, feature: DataParser, plo
             
 
     return results
+
+def evaluate_all_models(evaluation_fn: Callable, results: dict[str, dict[str, tuple]], training_output: str | Path) -> None:
+    for tune_status, result_dict in results.items():
+        for key, value in result_dict.items():
+            if key == "stacked" or key == "majority":
+                evaluation_fn(value[1], save=f"{training_output}/{tune_status}/{key}")
+            elif tune_status == "tuned" and key == "holdout":
+                for mod_name, model in value[1].items():
+                    evaluation_fn(model, save=f"{training_output}/{tune_status}/{key}/{mod_name}")
+

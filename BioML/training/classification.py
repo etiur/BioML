@@ -2,7 +2,7 @@ from typing import Iterable
 import pandas as pd
 
 from BioML import features
-from .base import PycaretInterface, Trainer, DataParser, write_results, generate_training_results
+from .base import PycaretInterface, Trainer, DataParser, write_results, generate_training_results, evaluate_all_models
 from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
 import argparse
 from pathlib import Path
@@ -171,7 +171,7 @@ def main():
     classifier = Classifier(experiment, ranking_dict, drop, selected=selected, test_size=test_size)
 
     results = generate_training_results(classifier, training, feature, plot, optimize, tune, strategy)
-
+    evaluate_all_models(experiment.evaluate_model, results, training_output)
     for tune_status, result_dict in results.items():
         predictions = []
         for key, value in result_dict.items():
