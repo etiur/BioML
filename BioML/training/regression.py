@@ -1,8 +1,9 @@
 from sklearn.model_selection import train_test_split, ShuffleSplit
 from pathlib import Path
 import argparse
-from .base import PycaretInterface, Trainer, DataParser, write_results, generate_training_results, evaluate_all_models
+from .base import PycaretInterface, Trainer
 import pandas as pd
+from .helper import DataParser, generate_training_results, evaluate_all_models, write_results
 
 
 def arg_parse():

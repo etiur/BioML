@@ -1,13 +1,6 @@
 from sklearn.preprocessing import RobustScaler, StandardScaler, MinMaxScaler
 import pandas as pd
 from pathlib import Path
-from xgboost import XGBClassifier
-from sklearn.svm import SVC
-from sklearn.linear_model import RidgeClassifier, SGDClassifier, PassiveAggressiveClassifier
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
-from lightgbm import LGBMClassifier
-from sklearn.neural_network import MLPClassifier
 import ast
 import numpy as np
 import logging
@@ -40,25 +33,6 @@ def write_excel(file, dataframe, sheet_name, overwrite=False):
     else:
         dataframe.to_excel(file, sheet_name=sheet_name)
 
-
-def interesting_classifiers(name, params):
-    """
-    All classifiers
-    """
-    classifiers = {
-        "RandomForestClassifier": RandomForestClassifier,
-        "ExtraTreesClassifier": ExtraTreesClassifier,
-        "SGDClassifier": SGDClassifier,
-        "RidgeClassifier": RidgeClassifier,
-        "PassiveAggressiveClassifier": PassiveAggressiveClassifier,
-        "MLPClassifier": MLPClassifier,
-        "SVC": SVC,
-        "XGBClassifier": XGBClassifier,
-        "LGBMClassifier": LGBMClassifier,
-        "KNeighborsClassifier": KNeighborsClassifier
-    }
-
-    return classifiers[name](**params)
 
 
 def modify_param(param, name, num_threads=-1):
@@ -227,7 +201,7 @@ class Threshold:
 
     def apply_threshold(self, threshold, greater=True, column_name='temperature'):
         """
-        Apply threshold to dataset
+        converts regression to classification problems
         :param threshold: threshold value
         :param greater: boolean value to indicate if threshold is greater or lower
         :param column_name: column name to apply threshold

@@ -1,8 +1,9 @@
-from .base import DataParser, PycaretInterface, Trainer
+from .base import PycaretInterface, Trainer
 from pathlib import Path
 import argparse
 from .classification import Classifier
 from .regression import Regressor
+from .helper import DataParser
 
 
 def arg_parse():
