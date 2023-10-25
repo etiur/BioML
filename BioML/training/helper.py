@@ -394,7 +394,7 @@ def reorganize_results(results: dict[str, dict[str, tuple[pd.DataFrame, Any, pd.
 
 def iterate_multiple_features(iterator: Iterator, model, label: str | list[int | float], scaler: str, 
                               training: Trainer, outliers: dict[str,tuple[str, ...]],
-                              training_output: Path) -> None:
+                              training_output: Path, sorting_function: Callable) -> None:
     
     """
     Iterates over multiple input features and generates training results for each feature.
@@ -427,7 +427,7 @@ def iterate_multiple_features(iterator: Iterator, model, label: str | list[int |
         results = generate_training_results(model, training, feature, plot=(), tune=False)
         performance_metric = reorganize_results(results, strategy="holdout", best_models=training.experiment.best_model)
         performance_list.append((sheet, performance_metric))
-
+    performance_list = sorting_function(performance_list)
     for sheet, performance in performance_list:
         write_results(training_output, performance, sheet_name=sheet)
     
