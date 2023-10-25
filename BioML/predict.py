@@ -67,14 +67,14 @@ class Predictor:
 
     @cached_property
     def loaded_model(self):
-        return self.model.load_model(self.model_path)
+        return self.model.load_model(self.model_path, verbose=False)
         
 
     def predicting(self):
         """
         Make predictions on new samples
         """
-        pred = self.model.predict_model(self.loaded_model, self.test_features)
+        pred = self.model.predict_model(self.loaded_model, self.test_features, verbose=False)
 
         return pred
 
@@ -173,83 +173,101 @@ class ApplicabilityDomain:
         pred.to_parquet(path_name)
         return pred
 
-
-def separate_negative_positive(self, pred: pd.DataFrame, fasta_file: str|Path):
+@dataclass(slots=True)
+class FastaExtractor:
     """
-    Parameters
-    ______________
-    fasta_file: str
-        The input fasta file
-    pred: list, optional
-        The predictions
+    A class that extracts sequences from a FASTA file according to the predictions and 
+    saves the results in a specified directory.
 
-    Return
-    ________
-    positive: list[Bio.SeqIO]
-    negative: list[Bio.SeqIO]
+    Attributes
+    ----------
+    fasta_file : str or Path
+        The path to the input FASTA file.
+    resdir : str or Path, optional
+        The path to the directory where the extracted sequences will be saved. Default is "prediction_results".
     """
-    # separating the records according to if the prediction is positive or negative
-    fasta_file = Path(fasta_file)
-    if (fasta_file.parent / "no_short.fasta").exists():
-        fasta_file = fasta_file.parent / "no_short.fasta"
+    fasta_file: str |Path
+    resdir: str | Path = "prediction_results"
 
-    with open(self.fasta_file) as inp:
-        record = SeqIO.parse(inp, "fasta")
-        p = 0
-        positive = []
-        negative = []
-        for ind, seq in enumerate(record):
-            try:
-                if int(pred.index[p].split("_")[1]) == ind:
-                    col = pred.iloc[p]
-                    if len(col) > 2:
-                        seq.id = f"{seq.id}-###label:{col['prediction_label']}-###prob_0:{col['prediction_score_0']}-###prob_1:{col['prediction_score_1']}-###AD:{col['AD_number']}"
-                    elif len(col) == 2:
-                        seq.id = f"{seq.id}-###label:{col['prediction_label']}-###AD:{col['AD_number']}"
-                    if pred["prediction_label"].iloc[p] == 1:
-                        positive.append(seq)
-                    else:
-                        negative.append(seq)
-                    p += 1
-            except IndexError:
-                break
+    def __post_init__(self):
+        self.fasta_file = Path(self.fasta_file)
+        self.resdir = Path(self.resdir)
 
-    return positive, negative
+    def separate_negative_positive(self, pred: pd.DataFrame):
+        """
+        Parameters
+        ______________
+        fasta_file: str
+            The input fasta file
+        pred: list, optional
+            The predictions
+
+        Return
+        ________
+        positive: list[Bio.SeqIO]
+        negative: list[Bio.SeqIO]
+        """
+        # separating the records according to if the prediction is positive or negative
+        
+        if (self.fasta_file.parent / "no_short.fasta").exists():
+            self.fasta_file = self.fasta_file.parent / "no_short.fasta"
+
+        with open(self.fasta_file) as inp:
+            record = SeqIO.parse(inp, "fasta")
+            p = 0
+            positive = []
+            negative = []
+            for ind, seq in enumerate(record):
+                try:
+                    if int(pred.index[p].split("_")[1]) == ind:
+                        col = pred.iloc[p]
+                        if len(col) > 2:
+                            seq.id = f"{seq.id}-###label:{col['prediction_label']}-###prob_0:{col['prediction_score_0']}-###prob_1:{col['prediction_score_1']}-###AD:{col['AD_number']}"
+                        elif len(col) == 2:
+                            seq.id = f"{seq.id}-###label:{col['prediction_label']}-###AD:{col['AD_number']}"
+                        if pred["prediction_label"].iloc[p] == 1:
+                            positive.append(seq)
+                        else:
+                            negative.append(seq)
+                        p += 1
+                except IndexError:
+                    break
+
+        return positive, negative
     
-def _sorting_function(sequence):
-    id_ = sequence.id.split("-###")
-    if len(id_) >= 5:
-        return float(id_[3].split(":")[1]), int(id_[4].split(":")[1])
-    else:
-        return int(id_[2].split(":")[1])
+    @staticmethod    
+    def _sorting_function(sequence):
+        id_ = sequence.id.split("-###")
+        if len(id_) >= 5:
+            return float(id_[3].split(":")[1]), int(id_[4].split(":")[1])
+        else:
+            return int(id_[2].split(":")[1])
 
-def extract(positive_list, negative_list, positive_fasta="positive.fasta", negative_fasta="negative.fasta",
-            res_dir: str | Path = "results"):
-    """
-    A function to extract those test fasta sequences that passed the filter
+    def extract(self, positive_list, negative_list, positive_fasta="positive.fasta", negative_fasta="negative.fasta"):
+        """
+        A function to extract those test fasta sequences that passed the filter
 
-    Parameters
-    ___________
-    fasta_file: str
-        The path to the test fasta sequences
-    pred: pandas Dataframe, optional
-        Predictions
-    positive_fasta: str, optional
-        The new filtered fasta file with positive predictions
-    negative_fasta: str, optional
-        The new filtered fasta file with negative sequences
-    res_dir: Path | str, optional
-        The folder where to keep the prediction results
-    """
-    # writing the positive and negative fasta sequences to different files
-    with open(f"{res_dir}/{positive_fasta}", "w") as pos:
-        positive = sorted(positive_list, reverse=True, key=_sorting_function)
-        fasta_pos = FastaIO.FastaWriter(pos, wrap=None)
-        fasta_pos.write_file(positive)
-    with open(f"{res_dir}/{negative_fasta}", "w") as neg:
-        negative = sorted(negative_list, reverse=True, key=_sorting_function)
-        fasta_neg = FastaIO.FastaWriter(neg, wrap=None)
-        fasta_neg.write_file(negative)
+        Parameters
+        ___________
+        fasta_file: str
+            The path to the test fasta sequences
+        pred: pandas Dataframe, optional
+            Predictions
+        positive_fasta: str, optional
+            The new filtered fasta file with positive predictions
+        negative_fasta: str, optional
+            The new filtered fasta file with negative sequences
+        """
+        # writing the positive and negative fasta sequences to different files
+        self.resdir.mkdir(exist_ok=True, parents=True)
+        with open(f"{self.resdir}/{positive_fasta}", "w") as pos:
+            positive = sorted(positive_list, reverse=True, key=self._sorting_function)
+            fasta_pos = FastaIO.FastaWriter(pos, wrap=None)
+            fasta_pos.write_file(positive)
+        with open(f"{self.resdir}/{negative_fasta}", "w") as neg:
+            negative = sorted(negative_list, reverse=True, key=self._sorting_function)
+            fasta_neg = FastaIO.FastaWriter(neg, wrap=None)
+            fasta_neg.write_file(negative)
 
 
 def predict(test_features, model_path, problem="classification"):
@@ -297,8 +315,9 @@ def main():
     predictions = predict(test_x, model_path, problem)
     if applicability_domain:
         predictions = domain_filter(fasta, predictions, transformed_x, test_x, res_dir, number_similar_samples)
-    positive, negative = separate_negative_positive(predictions, fasta)
-    extract(positive, negative, positive_fasta=f"positive.fasta", negative_fasta=f"negative.fasta", res_dir=res_dir)   
+    extractor = FastaExtractor(fasta, res_dir)
+    positive, negative = extractor.separate_negative_positive(predictions)
+    extractor.extract(positive, negative, positive_fasta=f"positive.fasta", negative_fasta=f"negative.fasta")   
 
 if __name__ == "__main__":
     # Run this if this file is executed from command line but not if is imported as API
