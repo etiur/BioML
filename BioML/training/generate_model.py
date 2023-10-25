@@ -47,6 +47,18 @@ def arg_parse():
 
 
 class GenerateModel:
+    """
+    A class that generates machine learning models based on a specified strategy.
+
+    Attributes
+    ----------
+    trainer : Trainer
+        The Trainer object containing the data and parameters for training the models.
+        
+    """
+
+    def  __init__(self, trainer: Trainer):
+        self.trainer = trainer
 
     def finalize_model(self, sorted_model, index: int | None = None):
         """
@@ -56,6 +68,8 @@ class GenerateModel:
         ----------
         sorted_model : Any
             The model or models to finalize.
+        index : int, optional
+            The index of the model to finalize, by default None.
 
         Returns
         -------
@@ -94,18 +108,47 @@ class GenerateModel:
             model_output = model_output.with_suffix("")
         self.trainer.experiment.save(model, str(model_output))
     
-    def train_by_strategy(sorted_models: dict, model_strategy: str, training: Trainer):
+    def train_by_strategy(self, sorted_models: dict, model_strategy: str):
+        """
+        Trains a machine learning model based on a specified strategy.
+
+        Parameters
+        ----------
+        sorted_models : dict
+            A dictionary containing the sorted models to use for training.
+        model_strategy : str
+            The name of the strategy to use for training. Can be "majority", "stacking", or "simple:index".
+
+        Returns
+        -------
+        Any
+            the trained models
+
+        Raises
+        ------
+        ValueError
+            If the `model_strategy` parameter is not one of the supported strategies.
+
+        Examples
+        --------
+        >>> sorted_models = {"model_1": model_1, "model_2": model_2, "model_3": model_3}
+        >>> trained_models, index = train_by_strategy(sorted_models, "majority")
+        ... # Trains a majority model using the sorted models.
+        >>> trained_models, index = train_by_strategy(sorted_models, "stacking")
+        ... # Trains a stacked model using the sorted models.
+        >>> trained_models, index = train_by_strategy(sorted_models, "simple:1")
+        ... # Trains the second model in the sorted models.
+        """
+
         if "majority" in model_strategy:
-            models = training.create_majority_model(sorted_models)
-            index = None
+            models = self.trainer.create_majority_model(sorted_models)
         elif "stacking" in model_strategy:
-            models = training.stack_models(sorted_models)
-            index = None
+            models = self.trainer.stack_models(sorted_models)
         elif "simple" in model_strategy:
-            models = sorted_models
             index = int(model_strategy.split(":")[1])
+            models = list(sorted_models.values())[index]
     
-        return models, index
+        return models
     
 
 def main():
@@ -120,7 +163,8 @@ def main():
 
     # instantiate everything to run training
     feature = DataParser(training_features, label, outliers=outliers, scaler=scaler)
-    experiment = PycaretInterface(problem, feature.label, seed, best_model=len(selected_models), optimize=optimize, output_path=model_output)
+    experiment = PycaretInterface(problem, feature.label, seed, best_model=len(selected_models), optimize=optimize, 
+                                  output_path=model_output)
     training = Trainer(experiment, num_split)
     if problem == "classification":
         model = Classifier(drop=None, selected=selected_models, test_size=test_size, optimize=optimize)
@@ -130,9 +174,9 @@ def main():
     if tune:
         sorted_results, sorted_models, top_params = training.retune_best_models(sorted_models)
     # generate the final model
-    generate = GenerateModel()
-    models, index =  generate.train_by_strategy(sorted_models, model_strategy, training)
-    final_model = generate.finalize_model(models, index)
+    generate = GenerateModel(training)
+    models =  generate.train_by_strategy(sorted_models, model_strategy)
+    final_model = generate.finalize_model(models)
     generate.save_model(final_model, model_output)
 
 
