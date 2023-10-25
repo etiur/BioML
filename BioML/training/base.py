@@ -600,10 +600,12 @@ class Trainer:
         >>> def scoring_function(x):
         ...     return sum(x)
         >>> rank_results(results, returned_models, scoring_function)
-        (   0  1  2
+
+        The order would be like so
         model3  7  8  9
         model2  4  5  6
-        model1  1  2  3, {'model3': 'Model C', 'model2': 'Model B', 'model1': 'Model A'})
+        model1  1  2  3, 
+        {'model3': 'Model C', 'model2': 'Model B', 'model1': 'Model A'})
         """
         scores = {}
         for key, value in results.items():

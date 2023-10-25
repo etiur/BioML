@@ -2,7 +2,7 @@ from ..utilities import write_excel, scale
 from pathlib import Path
 from .base import Trainer
 from collections import defaultdict
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Any, Iterator
 import pandas as pd
 from dataclasses import dataclass, field
 import numpy as np
@@ -230,7 +230,9 @@ def generate_training_results(model, training: Trainer, feature: DataParser, plo
 
     return results
 
-def evaluate_all_models(evaluation_fn: Callable, results: dict[str, dict[str, tuple]], training_output: str | Path) -> None:
+
+def evaluate_all_models(evaluation_fn: Callable, results: dict[str, dict[str, tuple]], 
+                        training_output: str | Path) -> None:
     """
     Evaluate all models using the given evaluation function and save the results. The function used here plots the learning curve.
     It is easier to extend this function to evaluate it other ways.
@@ -258,14 +260,14 @@ def evaluate_all_models(evaluation_fn: Callable, results: dict[str, dict[str, tu
                     evaluation_fn(model, save=f"{training_output}/{tune_status}/{key}/{mod_name}")
 
 
-def write_results(training_output: Path, sorted_results: pd.DataFrame, top_params: pd.Series | None = None, 
+def write_results(training_output: Path | str, sorted_results: pd.DataFrame, top_params: pd.Series | None = None, 
                   sheet_name: str|None=None) -> None:
     """
     Writes the training results and top hyperparameters to Excel files.
 
     Parameters
     ----------
-    training_output : Path
+    training_output : Path | str
         The path to the directory where the Excel files will be saved.
     sorted_results : pd.DataFrame
         A pandas DataFrame containing the sorted training results.
@@ -278,29 +280,176 @@ def write_results(training_output: Path, sorted_results: pd.DataFrame, top_param
     -------
     None
     """
+    training_output = Path(training_output)
     training_output.mkdir(exist_ok=True, parents=True)
     write_excel(training_output / "training_results.xlsx", sorted_results, sheet_name)
     if top_params is not None:
         write_excel(training_output / f"top_hyperparameters.xlsx", top_params, sheet_name)
 
+
 def sort_regression_prediction(dataframe: pd.DataFrame, optimize="RSME", R2_weight=0.8) -> pd.DataFrame:
+    """
+    Sorts the predictions of a regression model based on a specified optimization metric and R2 score.
+
+    Parameters
+    ----------
+    dataframe : pd.DataFrame
+        The DataFrame containing the predictions of the regression model.
+    optimize : str, optional
+        The name of the optimization metric to use for sorting the predictions. Default is "RMSE".
+    R2_weight : float, optional
+        The weight to give to the R2 score when sorting the predictions. Default is 0.8.
+
+    Returns
+    -------
+    pd.DataFrame
+        The sorted DataFrame of predictions.
+    """
     return dataframe.loc[(dataframe[optimize] + R2_weight * dataframe["R2"]).sort_values(ascending=False).index]
     
+
 def sort_classification_prediction(dataframe: pd.DataFrame, optimize="MCC", prec_weight=1.2, 
                                    recall_weight=0.8, report_weight=0.6) -> pd.DataFrame:
+    """
+    Sorts the predictions of a classification model based on a specified optimization metric and precision/recall scores.
+
+    Parameters
+    ----------
+    dataframe : pd.DataFrame
+        The DataFrame containing the predictions of the classification model.
+    optimize : str, optional
+        The name of the optimization metric to use for sorting the predictions. Default is "MCC".
+    prec_weight : float, optional
+        The weight to give to the precision score when sorting the predictions. Default is 1.2.
+    recall_weight : float, optional
+        The weight to give to the recall score when sorting the predictions. Default is 0.8.
+    report_weight : float, optional
+        The weight to give to the classification report scores when sorting the predictions. Default is 0.6.
+
+    Returns
+    -------
+    pd.DataFrame
+        The sorted DataFrame of predictions.
+    """
     sorted = dataframe.loc[(dataframe[optimize] + report_weight * (prec_weight * dataframe["Precision"] + 
                     recall_weight * dataframe["Recall"])).sort_values(ascending=False).index]
     return sorted
 
-def iterate_multiple_features(model, input_feature: str | pd.DataFrame , label: str | list[int | float], scaler: str, 
-                          training: Trainer, outliers: dict[str,tuple[str, ...]], training_output: Path, 
-                          sheet: int | str=0) -> pd.DataFrame:
+
+def reorganize_results(results: dict[str, dict[str, tuple[pd.DataFrame, Any, pd.Series]]], strategy: str="holdout", 
+                       best_models: int=3):
+    """
+    Reorganizes the results of a training experiment and returns a concatenated DataFrame of the performance metric.
+
+    Parameters
+    ----------
+    results : dict[str, dict[str, tuple[pd.DataFrame, Any, pd.Series]]]
+        A dictionary containing the results of a training experiment.
+    strategy : str, optional
+        The training strategy used. Default is "holdout".
+    best_models : int, optional
+        The number of best models to select. Default is 3.
+
+    Returns
+    -------
+    pd.DataFrame
+        A concatenated DataFrame of the best models.
+
+    Notes
+    -----
+    This function assumes that the `results` dictionary has the following structure, only 1 tune status:
+    {
+        "tune_status_1": {
+            "model_name_1": (dataframe_1, other_data_1, series_1),
+            "model_name_2": (dataframe_2, other_data_2, series_2),
+            ...
+        }
+
+    Example
+    --------
+    >>> results = {
+    ...     "tune_status_1": {
+    ...         "model_1": (df_1, other_data_1, series_1),
+    ...         "model_2": (df_2, other_data_2, series_2),
+    ...         "holdout": (df_3, other_data_3, series_3)
+    ... }
+    >>> new_results = {
+    ...     "model_1": df_1,
+    ...     "model_2": df_2,
+    ...     "holdout": df_3
+    ...               }
+    ... pd.concat(new_results)
+    """
+    new_performance = {}
+    for tune_status, value in results.items():
+        for mod_name, tuples in value.items():
+            if mod_name == strategy:
+                df = tuples[0].iloc[:best_models]
+            else:
+                df = tuples[0]
+            new_performance[mod_name] = df
+ 
+    return pd.concat(new_performance)
+
+
+def iterate_multiple_features(iterator: Iterator, model, label: str | list[int | float], scaler: str, 
+                              training: Trainer, outliers: dict[str,tuple[str, ...]],
+                              training_output: Path) -> None:
     
-    feature = DataParser(input_feature, label=label, scaler=scaler, sheets=sheet, outlier=outliers)
-    results = generate_training_results(model, training, feature, plot=(), tune=False)
-    for tune_status, result_dict in results.items():
-        for key, value in result_dict.items():
-            if len(value) == 2:
-                write_results(training_output/f"{tune_status}", value[0], sheet_name=sheet)
-            elif len(value) == 3:
-                write_results(training_output/f"{tune_status}", value[0], value[2], sheet_name=sheet)
+    """
+    Iterates over multiple input features and generates training results for each feature.
+
+    Parameters
+    ----------
+    iterator : Iterator
+        An iterator that yields a tuple of input features and sheet names.
+    model : Any
+        The machine learning model to use for training.
+    label : str or list[int or float]
+        The label or list of labels to use for training.
+    scaler : str
+        The type of scaler to use for preprocessing the data.
+    training : Trainer
+        The training object to use for training the model.
+    outliers : dict[str,tuple[str, ...]]
+        A dictionary containing the names of the outlier detection methods to use for each sheet.
+    training_output : Path
+        The path to the directory where the training results will be saved.
+
+    Returns
+    -------
+    None
+    """
+
+    performance_list = []
+    for input_feature, sheet in iterator:
+        feature = DataParser(input_feature, label=label, scaler=scaler, sheets=sheet, outlier=outliers)
+        results = generate_training_results(model, training, feature, plot=(), tune=False)
+        performance_metric = reorganize_results(results, strategy="holdout", best_models=training.experiment.best_model)
+        performance_list.append((sheet, performance_metric))
+
+    for sheet, performance in performance_list:
+        write_results(training_output, performance, sheet_name=sheet)
+    
+
+def iterate_excel(excel_file):
+    """
+    Iterates over the sheets of an Excel file and yields a tuple of the sheet data and sheet name.
+
+    Parameters
+    ----------
+    excel_file : str or Path
+        The path to the Excel file.
+
+    Yields
+    ------
+    Tuple[pd.DataFrame, str]
+        A tuple of the sheet data and sheet name.
+    """
+    with pd.ExcelFile(excel_file) as file:
+        for sheet in file.sheet_names:
+            df = pd.read_excel(excel_file, index_col=0, sheet_name=sheet)
+            yield df, sheet
+
+
+

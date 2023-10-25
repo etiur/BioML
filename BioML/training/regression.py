@@ -153,7 +153,7 @@ def main():
             # get the test set prediction results
             predictions.append(training.predict_on_test_set(value[1], f"{tune_status}_{key}"))
             # write the results on excel files
-            if len(value) == 2:
+            if len(value) == 2:   
                 write_results(training_output/f"{tune_status}", value[0], sheet_name=key)
             elif len(value) == 3:
                 write_results(training_output/f"{tune_status}", value[0], value[2], sheet_name=key)
