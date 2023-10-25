@@ -305,6 +305,7 @@ def sort_regression_prediction(dataframe: pd.DataFrame, optimize="RSME", R2_weig
     pd.DataFrame
         The sorted DataFrame of predictions.
     """
+
     return dataframe.loc[(dataframe[optimize] + R2_weight * dataframe["R2"]).sort_values(ascending=False).index]
     
 
@@ -331,65 +332,9 @@ def sort_classification_prediction(dataframe: pd.DataFrame, optimize="MCC", prec
     pd.DataFrame
         The sorted DataFrame of predictions.
     """
-    sorted = dataframe.loc[(dataframe[optimize] + report_weight * (prec_weight * dataframe["Precision"] + 
+    sort = dataframe.loc[(dataframe[optimize] + report_weight * (prec_weight * dataframe["Precision"] + 
                     recall_weight * dataframe["Recall"])).sort_values(ascending=False).index]
-    return sorted
-
-
-def reorganize_results(results: dict[str, dict[str, tuple[pd.DataFrame, Any, pd.Series]]], strategy: str="holdout", 
-                       best_models: int=3):
-    """
-    Reorganizes the results of a training experiment and returns a concatenated DataFrame of the performance metric.
-
-    Parameters
-    ----------
-    results : dict[str, dict[str, tuple[pd.DataFrame, Any, pd.Series]]]
-        A dictionary containing the results of a training experiment.
-    strategy : str, optional
-        The training strategy used. Default is "holdout".
-    best_models : int, optional
-        The number of best models to select. Default is 3.
-
-    Returns
-    -------
-    pd.DataFrame
-        A concatenated DataFrame of the best models.
-
-    Notes
-    -----
-    This function assumes that the `results` dictionary has the following structure, only 1 tune status:
-    {
-        "tune_status_1": {
-            "model_name_1": (dataframe_1, other_data_1, series_1),
-            "model_name_2": (dataframe_2, other_data_2, series_2),
-            ...
-        }
-
-    Example
-    --------
-    >>> results = {
-    ...     "tune_status_1": {
-    ...         "model_1": (df_1, other_data_1, series_1),
-    ...         "model_2": (df_2, other_data_2, series_2),
-    ...         "holdout": (df_3, other_data_3, series_3)
-    ... }
-    >>> new_results = {
-    ...     "model_1": df_1,
-    ...     "model_2": df_2,
-    ...     "holdout": df_3
-    ...               }
-    ... pd.concat(new_results)
-    """
-    new_performance = {}
-    for tune_status, value in results.items():
-        for mod_name, tuples in value.items():
-            if mod_name == strategy:
-                df = tuples[0].iloc[:best_models]
-            else:
-                df = tuples[0]
-            new_performance[mod_name] = df
- 
-    return pd.concat(new_performance)
+    return sort
 
 
 def iterate_multiple_features(iterator: Iterator, model, label: str | list[int | float], scaler: str, 
@@ -424,9 +369,9 @@ def iterate_multiple_features(iterator: Iterator, model, label: str | list[int |
     performance_list = []
     for input_feature, sheet in iterator:
         feature = DataParser(input_feature, label=label, scaler=scaler, sheets=sheet, outlier=outliers)
-        results = generate_training_results(model, training, feature, plot=(), tune=False)
-        performance_metric = reorganize_results(results, strategy="holdout", best_models=training.experiment.best_model)
-        performance_list.append((sheet, performance_metric))
+        sorted_results, sorted_models, top_params = model.run_training(training, feature, plot=())
+        index = sorted_results.index.unique(0)[:training.experiment.best_model]
+        performance_list.append((sheet, sorted_results.loc[index]))
     performance_list = sorting_function(performance_list)
     for sheet, performance in performance_list:
         write_results(training_output, performance, sheet_name=sheet)
