@@ -56,9 +56,9 @@ class PycaretInterface:
         Evaluate the performance of the trained models on new data.
     plot_best_models(sorted_models, split_ind=None)
         Analyze the best models and plot them.
-    retune_model(name, model, optimize="MCC", num_iter=5, fold=5)
+    retune_model(name, model,, num_iter=5, fold=5)
         Retune the specified model using Optuna.
-    stack_models(estimator_list, optimize="MCC", fold=5, meta_model=None)
+    stack_models(estimator_list, fold=5, meta_model=None)
         Create a stacked ensemble model from a list of models.
     get_params(name, model)
         Get the parameters of a trained model.
@@ -563,7 +563,7 @@ class PycaretInterface:
 
 
 class Trainer:
-    def __init__(self, model: PycaretInterface, num_splits: int=5):
+    def __init__(self, model: PycaretInterface, num_splits: int=5, optimize: str="MCC"):
         
         """
         Initialize a Trainer object with the given parameters.
@@ -579,6 +579,7 @@ class Trainer:
         self.log.info("Reading the features")
         self.num_splits = num_splits
         self.experiment = model
+        self.optimize = optimize
         self.log.info(f"Number of kfolds: {self.num_splits}")
 
     def rank_results(self, results: dict[str, pd.DataFrame], returned_models:dict[str], 
@@ -684,7 +685,7 @@ class Trainer:
 
         return sorted_results, sorted_models, top_params
     
-    def retune_best_models(self, sorted_models:dict[str, Any], optimize: str="MCC", num_iter: int=5):
+    def retune_best_models(self, sorted_models:dict[str, Any], num_iter: int=5):
         """
         Retune the best models using the specified optimization metric and number of iterations.
 
@@ -692,8 +693,6 @@ class Trainer:
         ----------
         sorted_models : dict[str, Any]
             A dictionary of sorted models.
-        optimize : str, optional
-            The metric to optimize for. Defaults to "MCC".
         num_iter : int, optional
             The number of iterations to use for retuning. Defaults to 5.
 
@@ -708,14 +707,14 @@ class Trainer:
         self.log.info("--------Retuning the best models--------")
         for key, model in list(sorted_models.item())[:self.experiment.best_model]:
             self.log.info(f"Retuning {key}")
-            tuned_model, results, params =  self.experiment.retune_model(key, model, optimize, num_iter, fold=self.num_splits)
+            tuned_model, results, params =  self.experiment.retune_model(key, model, self.optimize, num_iter, fold=self.num_splits)
             new_models[key] = tuned_model
             new_results[key] = results
             new_params[key] = params
 
         return pd.concat(new_results), new_models, pd.concat(new_params)
     
-    def stack_models(self, sorted_models: dict[str, Any], optimize="MCC", meta_model: Any=None):
+    def stack_models(self, sorted_models: dict[str, Any], meta_model: Any=None):
         """
         Create a stacked ensemble model from a dict of models.
 
@@ -723,8 +722,6 @@ class Trainer:
         ----------
         sorted_models : dict[str, Any]
             A dictionary of sorted models.
-        optimize : str, optional
-            The metric to optimize for. Defaults to "MCC".
         meta_model : Any or None, optional
             The meta model to use for stacking. Defaults to None.
 
@@ -735,12 +732,12 @@ class Trainer:
         """
         self.log.info("--------Stacking the best models--------")
   
-        stacked_models, stacked_results, params = self.experiment.stack_models(list(sorted_models.values())[:self.experiment.best_model], optimize=optimize, 
+        stacked_models, stacked_results, params = self.experiment.stack_models(list(sorted_models.values())[:self.experiment.best_model], optimize=self.optimize, 
                                                                                fold=self.num_splits, meta_model=meta_model)
         
         return stacked_results, stacked_models, params
     
-    def create_majority_model(self, sorted_models: dict[str, Any], optimize: str="MCC", 
+    def create_majority_model(self, sorted_models: dict[str, Any], 
                                weights: list[float] | None =None) -> tuple[pd.DataFrame, Any]:
         """
         Create a majority vote ensemble model from a dictionary of sorted models.
@@ -749,8 +746,6 @@ class Trainer:
         ----------
         sorted_models : dict
             A dictionary of sorted models.
-        optimize : str, optional
-            The metric to optimize for. Defaults to "MCC".
         weights : Iterable[float] or None, optional
             The weights to use for the models. Defaults to None.
 
@@ -761,7 +756,7 @@ class Trainer:
         """
         self.log.info("--------Creating an ensemble model--------")
         
-        ensemble_model, ensemble_results = self.experiment.create_majority(list(sorted_models.values())[:self.experiment.best_model], optimize=optimize,
+        ensemble_model, ensemble_results = self.experiment.create_majority(list(sorted_models.values())[:self.experiment.best_model], optimize=self.optimize,
                                                                            fold=self.num_splits, weights=weights)
         
         return ensemble_results, ensemble_model

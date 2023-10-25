@@ -73,7 +73,7 @@ def arg_parse():
 
 class Classifier:
     def __init__(self, ranking_params: dict[str, float]=None, drop: tuple[str] = ("ada", "gpc", "lightgbm"), 
-                 selected: Iterable[str] | None=None, test_size: float=0.2):
+                 selected: Iterable[str] | None=None, test_size: float=0.2, optimize: str="MCC"):
 
         # change the ranking parameters
         ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
@@ -90,6 +90,7 @@ class Classifier:
         self.report_weight = ranking_dict["report_weight"]
         self.difference_weight = ranking_dict["difference_weight"]
         self.selected = selected
+        self.optimize = optimize
     
     def _calculate_score_dataframe(self, dataframe):
         cv_train = dataframe.loc[("CV-Train", "Mean")]
@@ -163,13 +164,13 @@ def main():
     feature = DataParser(excel, label, outliers=outliers, scaler=scaler)
     experiment = PycaretInterface("classification", feature.label, seed, budget_time=budget_time, best_model=best_model, 
                                   output_path=training_output)
-    training = Trainer(experiment, num_split)
+    training = Trainer(experiment, num_split, optimize=optimize)
     ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight,
                         difference_weight=difference_weight, report_weight=report_weight)
     
-    classifier = Classifier(experiment, ranking_dict, drop, selected=selected, test_size=test_size)
+    classifier = Classifier(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize)
 
-    results = generate_training_results(classifier, training, feature, plot, optimize, tune, strategy)
+    results = generate_training_results(classifier, training, feature, plot, tune, strategy)
     evaluate_all_models(experiment.evaluate_model, results, training_output)
     for tune_status, result_dict in results.items():
         predictions = []

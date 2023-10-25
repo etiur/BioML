@@ -94,12 +94,12 @@ class GenerateModel:
             model_output = model_output.with_suffix("")
         self.trainer.experiment.save(model, str(model_output))
     
-    def train_by_strategy(sorted_models: dict, model_strategy: str, training: Trainer, optimize: str):
+    def train_by_strategy(sorted_models: dict, model_strategy: str, training: Trainer):
         if "majority" in model_strategy:
-            models = training.create_majority_model(sorted_models, optimize)
+            models = training.create_majority_model(sorted_models)
             index = None
         elif "stacking" in model_strategy:
-            models = training.stack_models(sorted_models, optimize)
+            models = training.stack_models(sorted_models)
             index = None
         elif "simple" in model_strategy:
             models = sorted_models
@@ -121,17 +121,17 @@ def main():
     # instantiate everything to run training
     feature = DataParser(training_features, label, outliers=outliers, scaler=scaler)
     experiment = PycaretInterface(problem, feature.label, seed, best_model=len(selected_models))
-    training = Trainer(experiment, num_split)
+    training = Trainer(experiment, num_split, optimize)
     if problem == "classification":
         model = Classifier(drop=None, selected=selected_models, test_size=test_size)
     elif problem == "regression":
         model = Regressor(drop=None, selected=selected_models, test_size=test_size)
     sorted_results, sorted_models, top_params = model.run_training(training, feature, plot=())
     if tune:
-        sorted_results, sorted_models, top_params = training.retune_best_models(sorted_models, optimize)
+        sorted_results, sorted_models, top_params = training.retune_best_models(sorted_models)
     # generate the final model
     generate = GenerateModel()
-    models, index =  generate.train_by_strategy(sorted_models, model_strategy, training, optimize)
+    models, index =  generate.train_by_strategy(sorted_models, model_strategy, training)
     final_model = generate.finalize_model(models, index)
     generate.save_model(final_model, model_output)
 

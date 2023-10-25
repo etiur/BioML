@@ -62,7 +62,7 @@ def arg_parse():
 
 class Regressor:
     def __init__(self, ranking_params=None, drop=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), selected=None, 
-                 test_size: float = 0.2):
+                 test_size: float = 0.2, optimize="RMSE"):
         
         ranking_dict = dict(R2_weight=0.8, difference_weight=1.2)
         if isinstance(ranking_params, dict):
@@ -75,6 +75,7 @@ class Regressor:
         self.difference_weight = ranking_dict["difference_weight"]
         self.R2_weight = ranking_dict["R2_weight"]
         self.selected = selected
+        self.optimize = optimize
 
     def _calculate_score_dataframe(self, dataframe):
         cv_train = dataframe.loc[("CV-Train", "Mean")]
@@ -138,10 +139,10 @@ def main():
                                   output_path=training_output)
 
     ranking_dict = dict(R2_weight=r2_weight, difference_weight=difference_weight)
-    training = Trainer(experiment, num_split)
-    regressor = Regressor(ranking_dict, drop, selected=selected, test_size=test_size)
+    training = Trainer(experiment, num_split, optimize)
+    regressor = Regressor(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize)
     
-    results = generate_training_results(regressor, training, feature, plot, optimize, tune, strategy)
+    results = generate_training_results(regressor, training, feature, plot, tune, strategy)
     
     evaluate_all_models(experiment.evaluate_model, results, training_output)
 

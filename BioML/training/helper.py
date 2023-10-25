@@ -1,6 +1,6 @@
 from ..utilities import write_excel, scale
 from pathlib import Path
-from .base import Trainer
+from .base import Trainer, PycaretInterface
 from collections import defaultdict
 from typing import Callable, Iterable
 import pandas as pd
@@ -188,8 +188,8 @@ class DataParser:
         return transformed_x, test_x
     
 
-def generate_training_results(model, training: Trainer, feature: DataParser, plot: tuple, optimize: str, 
-                     tune: bool=False, strategy="holdout") -> dict[str, dict[str, tuple]]:
+def generate_training_results(model, training: Trainer, feature: DataParser, plot: tuple, 
+                              tune: bool=False, strategy="holdout") -> dict[str, dict[str, tuple]]:
     """
     Generate training results for a given model, training object, and feature data.
 
@@ -203,8 +203,6 @@ def generate_training_results(model, training: Trainer, feature: DataParser, plo
         The feature data to use.
     plot : tuple
         A tuple containing the plot title and axis labels.
-    optimize : str
-        The metric to optimize for.
     tune : bool, optional
         Whether to tune the hyperparameters. Defaults to True.
     strategy : str, optional
@@ -220,14 +218,14 @@ def generate_training_results(model, training: Trainer, feature: DataParser, plo
     # saving the results in a dictionary and writing it into excel files
     results = defaultdict(dict)
     results["not_tuned"][strategy] = sorted_results, sorted_models, top_params
-    results["not_tuned"]["stacked"] = training.stack_models(sorted_models, optimize)
-    results["not_tuned"]["majority"] = training.create_majority_model(sorted_models, optimize)
+    results["not_tuned"]["stacked"] = training.stack_models(sorted_models)
+    results["not_tuned"]["majority"] = training.create_majority_model(sorted_models)
 
     if tune:
-        sorted_result_tune, sorted_models_tune, top_params_tune = training.retune_best_models(sorted_models, optimize)
+        sorted_result_tune, sorted_models_tune, top_params_tune = training.retune_best_models(sorted_models)
         results["tuned"][strategy] = sorted_result_tune, sorted_models_tune, top_params_tune
-        results["tuned"]["stacked"] = training.stack_models(sorted_models_tune, optimize)
-        results["tuned"]["majority"] = training.create_majority_model(sorted_models_tune, optimize)            
+        results["tuned"]["stacked"] = training.stack_models(sorted_models_tune)
+        results["tuned"]["majority"] = training.create_majority_model(sorted_models_tune)            
             
 
     return results
@@ -283,3 +281,13 @@ def write_results(training_output: Path, sorted_results: pd.DataFrame, top_param
     write_excel(training_output / "training_results.xlsx", sorted_results, sheet_name)
     if top_params is not None:
         write_excel(training_output / f"top_hyperparameters.xlsx", top_params, sheet_name)
+
+def iterate_through_excel(model, excel_file: str | Path, feature: DataParser, training: Trainer) -> pd.DataFrame:
+    with pd.ExcelFile(excel_file) as excel:
+        for i, sheet in enumerate(excel.sheet_names):
+            df = pd.read_excel(excel, sheet_name=sheet)
+            feature
+
+                
+
+            results = generate_training_results(model, training, feature, ())
