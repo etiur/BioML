@@ -62,6 +62,25 @@ def arg_parse():
 
 
 class Regressor:
+    """
+    A class that performs regression analysis on a dataset.
+
+    Attributes
+    ----------
+    ranking_params : dict, optional
+        A dictionary containing the ranking parameters to use for feature selection. Default is None.
+    drop : tuple, optional
+        A tuple of strings containing the names of the models to drop during feature selection. Default is 
+        ("tr", "kr", "ransac", "ard", "ada", "lightgbm").
+    selected : list, optional
+        A list of strings containing the names of the selected features. Default is None.
+    test_size : float, optional
+        The proportion of the dataset to use for testing. Default is 0.2.
+    optimize : str, optional
+        The name of the optimization metric to use for regression analysis. Default is "RMSE".
+
+
+    """
     def __init__(self, ranking_params=None, drop=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), selected=None, 
                  test_size: float = 0.2, optimize="RMSE"):
         
@@ -78,7 +97,27 @@ class Regressor:
         self.selected = selected
         self.optimize = optimize
 
-    def _calculate_score_dataframe(self, dataframe):
+    def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> float | int:
+        """
+        Calculates the score of a DataFrame based on the optimization metric and R2 score.
+
+        Parameters
+        ----------
+        dataframe : pd.DataFrame
+            The DataFrame containing the performance metrics of a regression model.
+
+        Returns
+        -------
+        int or float
+            The calculated score of the DataFrame.
+
+
+        Examples
+        --------
+        >>> dataframe = pd.read_csv("performance_metrics.csv")
+        >>> score = _calculate_score_dataframe(dataframe)
+        ... # Calculates the score of the DataFrame based on the optimization metric and R2 score.
+        """
         cv_train = dataframe.loc[("CV-Train", "Mean")]
         cv_val = dataframe.loc[("CV-Val", "Mean")]
 

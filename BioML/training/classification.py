@@ -93,7 +93,28 @@ class Classifier:
         self.selected = selected
         self.optimize = optimize
     
-    def _calculate_score_dataframe(self, dataframe):
+    def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> int | float:
+        """
+        Calculates the score of a DataFrame based on the optimization metric, precision, recall, 
+        and classification report.
+
+        Parameters
+        ----------
+        dataframe : pd.DataFrame
+            The DataFrame containing the performance metrics of a classification model.
+
+        Returns
+        -------
+        int or float
+            The calculated score of the DataFrame.
+
+
+        Examples
+        --------
+        >>> dataframe = pd.read_csv("performance_metrics.csv")
+        >>> score = _calculate_score_dataframe(dataframe)
+        ... # Calculates the score of the DataFrame based on the optimization metric, precision, recall, and classification report.
+        """
         cv_train = dataframe.loc[("CV-Train", "Mean")]
         cv_val = dataframe.loc[("CV-Val", "Mean")]
 
