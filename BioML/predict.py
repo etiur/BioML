@@ -3,7 +3,7 @@ from attr import field
 from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
 from yarl import cached_property
-from .training.base import DataParser
+from .training.helper import DataParser
 import argparse
 from scipy.spatial import distance
 from Bio import SeqIO
