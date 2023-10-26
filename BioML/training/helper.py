@@ -100,7 +100,6 @@ class DataParser:
         elif isinstance(features, (list, np.ndarray)):
             return pd.DataFrame(features)
 
-        self.log.error("features should be a csv or excel file, an array or a pandas DataFrame")
         raise TypeError("features should be a csv or excel file, an array or a pandas DataFrame")
         
     def read_labels(self, label: str | pd.Series) -> pd.Series:
@@ -136,7 +135,6 @@ class DataParser:
                 self.features.drop(label, axis=1, inplace=True)
                 return lab
                     
-        self.log.error("label should be a csv file, a pandas Series or inside features")
         raise TypeError("label should be a csv file, a pandas Series or inside features")
     
     def scale(self, X_train: pd.DataFrame, X_test: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
