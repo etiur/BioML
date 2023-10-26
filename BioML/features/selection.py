@@ -1,7 +1,7 @@
 import argparse
 import pandas as pd
 from sklearn.feature_selection import VarianceThreshold
-from ..utilities import scale, write_excel, Log
+from ..utilities import Log, scale, write_excel
 from pathlib import Path
 # Multiprocess instead of Multiprocessing solves the pickle problem in Windows (might be different in linux)
 # but it has its own errors. Use multiprocessing.get_context('fork') seems to solve the problem but only available
@@ -25,9 +25,8 @@ from typing import Any
 def arg_parse():
     parser = argparse.ArgumentParser(description="Preprocess and Select the best features, only use it if the feature came from possum or ifeatures")
 
-    parser.add_argument("-f", "--features", required=False,
-                        help="The path to the training features that contains both ifeature and possum in csv format",
-                        default="training_features/every_features.csv")
+    parser.add_argument("-f", "--features", required=True,
+                        help="The path to the training features")
     parser.add_argument("-l", "--label", required=True,
                         help="The path to the labels of the training set in a csv format if not in the features,"
                              "if present in the features csv use the flag to specify the label column name")
@@ -53,12 +52,12 @@ def arg_parse():
     parser.add_argument("-pk", "--plot_num_features", required=False, default=20, type=int,
                         help="How many features to include in the plot")
     parser.add_argument("-nf", "--num_filters", required=False, type=int,
-                        help="The number univariate filters to use maximum 10", default=10)
+                        help="The number univariate filters to use maximum 10 for classification and 4 for regression", default=10)
     parser.add_argument("-se", "--seed", required=False, type=int, default=None,
                         help="The seed number used for reproducibility")
     parser.add_argument("-st", "--strategy", required=False, choices=("holdout", "kfold"), default="holdout",
                         help="The spliting strategy to use")
-    parser.add_argument("-pr", "--problem", required=False, choices=("classification", "regression"), 
+    parser.add_argument("-pr", "--problem", required=True, choices=("classification", "regression"), 
                         default="classification", help="Classification or Regression problem")
 
     args = parser.parse_args()
@@ -129,7 +128,7 @@ class DataReader:
         self.features = self.read_feature(self.features)
         self.label = self.read_label(self.label)
         self._check_label(self.checked_label_path)
-        self.features = self.preprocess()
+        self.preprocess()
         self.analyse_composition(self.features)
     
     def _check_label(self, label_path: str | Path) -> None:
@@ -207,32 +206,32 @@ class DataReader:
             The feature data.
         """
         if isinstance(labels, (pd.Series, pd.DataFrame)):
-            return labels
+            return labels.values.to_numpy().flatten()
         elif isinstance(labels, (list, np.ndarray)):
-            return pd.Series(labels, index=self.features.index, name="target")
+            return pd.Series(labels, index=self.features.index, name="target").to_numpy().flatten()
 
         elif isinstance(labels, str) and labels.endswith(".csv"):
             if Path(labels).exists():
-                return pd.read_csv(labels, index_col=0)
+                return pd.read_csv(labels, index_col=0).to_numpy().flatten()
             
             elif labels in self.features.columns:
                 label = self.features[labels]
                 self.features.drop(labels, axis=1, inplace=True)
-                return label
+                return label.to_numpy().flatten()
             
         raise TypeError("label should be a csv file, a pandas Series, an array or inside features")
 
-    def preprocess(self) -> pd.DataFrame | None:
+    def preprocess(self) -> None:
         """
         Eliminate low variance features using the VarianceThreshold from sklearn
         """
         if self.variance_thres is not None:
             variance = VarianceThreshold(self.variance_thres)
             fit = variance.fit_transform(self.features)
-            features = pd.DataFrame(fit, index=self.features.index, 
+            self.features = pd.DataFrame(fit, index=self.features.index, 
                                          columns=variance.get_feature_names_out())
 
-            return features
+
     
 
     def analyse_composition(self, dataframe: pd.DataFrame) -> int | tuple[int, int]:
@@ -586,6 +585,7 @@ class FeatureClassification:
                                             feature_range, features.features, rfe_step, plot,
                                             plot_num_features)
         selector._write_dict(feature_dict)
+        return feature_dict
 
 
 class FeatureRegression:
@@ -626,8 +626,6 @@ class FeatureRegression:
         self._filter_args = {"filter_names": filter_names, "multivariate": (), "xgboost": xgb.XGBRegressor, 
                              "RFE": Ridge, "random_forest": rfr,
                             "filter_unsupervised": (), "regression_filters": regression_filters}
-        self.log.info("Regression Problem")
-        self.log.info(f"Using {len(filter_names) + len(regression_filters)} filters: {filter_names} and {regression_filters}")
         self.test_size = test_size
 
     @property
@@ -678,7 +676,7 @@ class FeatureRegression:
         selector._write_dict(feature_dict)
 
    
-def get_range_features(self, num_features_min: int | None=None, 
+def get_range_features(features: pd.DataFrame, num_features_min: int | None=None, 
                         num_features_max: int | None=None, step_range: int | None=None) -> list[int]:
     """
     Get a range of features dimensions to select.
@@ -699,9 +697,9 @@ def get_range_features(self, num_features_min: int | None=None,
         A list of integers representing the range of numbers for the number of features to select.
     """
     if not num_features_min:
-        num_features_min = len(self.features.columns) // 10
+        num_features_min = len(features.columns) // 10
         if not num_features_max:
-            num_features_max = len(self.features.columns) // 2 + 1
+            num_features_max = len(features.columns) // 2 + 1
         if not step_range:
             step_range = (num_features_max - num_features_min) // 4
         feature_range = list(range(num_features_min, num_features_max, step_range))
@@ -752,10 +750,11 @@ def main():
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
 
     num_features_min, num_features_max, step = translate_range_str_to_list(feature_range)
-    feature_range = get_range_features(num_features_min, num_features_max, step)
+    
 
     # generate the dataset
     training_data = DataReader(label, features, variance_threshold, scaler)
+    feature_range = get_range_features(training_data.features, num_features_min, num_features_max, step)
     filters = FeatureSelection(excel_file, num_thread, seed)
     # select features
     if problem == "classification":

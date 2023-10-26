@@ -8,7 +8,7 @@ from collections import Counter
 
 
 def scale(scaler: str, X_train: pd.DataFrame, 
-          X_test: pd.DataFrame=None) -> tuple[pd.DataFrame, ...]:
+          X_test: pd.DataFrame | None=None) -> tuple[pd.DataFrame, ...]:
     """
     Scale the features using RobustScaler, StandardScaler or MinMaxScaler.
 
