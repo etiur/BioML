@@ -1,10 +1,7 @@
-from dataclasses import dataclass, filed
-from attr import field
+from dataclasses import dataclass, field
 from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
-from yarl import cached_property
-
-import BioML
+from functools import cached_property
 from .training.helper import DataParser
 import argparse
 from scipy.spatial import distance
