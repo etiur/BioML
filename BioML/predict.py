@@ -158,7 +158,7 @@ class ApplicabilityDomain:
         return self.n_insiders
 
     def filter_model_predictions(self, predictions: pd.DataFrame, min_num: int=1,
-                                 path_name: str | Path = "filtered_predictions.parquet"):
+                                 path_name: str | Path = "filtered_predictions.parquet") -> pd.DataFrame:
         """
         Eliminate the models individual predictions of sequences that did not pass the applicability domain threshold
 
@@ -286,8 +286,43 @@ class FastaExtractor:
             fasta_neg.write_file(negative)
 
 
-def predict(test_features, model_path, problem="classification"):
+def predict(test_features: pd.DataFrame, model_path: str | Path, problem: str="classification") -> pd.DataFrame:
+    """
+    Make predictions on new samples.
 
+    Parameters
+    ----------
+    test_features : pandas DataFrame object
+        The test data.
+    model_path : str or Path
+        The path to the trained model.
+    problem : str, default="classification"
+        The type of problem. Must be one of "classification" or "regression".
+
+    Returns
+    -------
+    pd.DataFrame
+        The predicted values appended to the test features.
+
+    Notes
+    -----
+    This function makes predictions on new samples. 
+    It takes in a pandas DataFrame object `test_features` as the test data, a string `model_path` as the path to the trained model,
+    and a string `problem` as the type of problem. 
+    The function creates an instance of either the `ClassificationExperiment` or `RegressionExperiment` 
+    class based on the `problem` parameter. It then creates an instance of the `Predictor` class with the test data, experiment, 
+    and model path as parameters. The function calls the `predicting` method of the `Predictor` object to make predictions on the 
+    test data. The function returns the predicted values as a numpy array.
+
+    Examples
+    --------
+    >>> from predict import predict
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> test_features = pd.DataFrame(np.random.rand(10, 5))
+    >>> model_path = 'model.pkl'
+    >>> pred = predict(test_features, model_path, problem='classification')
+    """
     if problem == "classification":
         experiment = ClassificationExperiment()
     elif problem == "regression":
@@ -298,9 +333,52 @@ def predict(test_features, model_path, problem="classification"):
     return pred
 
 
-def domain_filter(predictions, scaled_training_features, scaled_test_features,
-                  res_dir="prediction_results", min_num=1):
+def domain_filter(predictions: pd.DataFrame, scaled_training_features: pd.DataFrame, scaled_test_features: pd.DataFrame,
+                  res_dir: str | Path="prediction_results", min_num: int=1) -> pd.DataFrame:
+    """
+    Filter predictions using the applicability domain.
 
+    Parameters
+    ----------
+    predictions : pd.DataFrame object
+        The predicted values.
+    scaled_training_features : pandas DataFrame object
+        The scaled training data.
+    scaled_test_features : pandas DataFrame object
+        The scaled test data.
+    res_dir : str, default="prediction_results"
+        The path to the directory to save the filtered predictions.
+    min_num : int, default=1
+        The minimum number of samples required to be within the applicability domain.
+
+    Returns
+    -------
+    pd.DataFrame
+        The filtered predictions.
+
+    Notes
+    -----
+    This function filters predictions using the applicability domain. 
+    It takes in the predicted values as a numpy ndarray, the scaled training data as a pandas DataFrame object, 
+    the scaled test data as a pandas DataFrame object, the path to the directory to save the filtered predictions as a string,
+      and the minimum number of samples required to be within the applicability domain as an integer. 
+      The function creates an instance of the `ApplicabilityDomain` class and fits it to the scaled training data. 
+      It then predicts the applicability domain for the scaled test data. The function calls the `filter_model_predictions` 
+      method of the `ApplicabilityDomain` object to filter the predictions based on the applicability domain. 
+      The function saves the filtered predictions to the specified directory as a parquet file. 
+      The function returns the filtered predictions as a numpy ndarray.
+
+    Examples
+    --------
+    >>> from predict import domain_filter
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> predictions = np.random.rand(10)
+    >>> scaled_training_features = pd.DataFrame(np.random.rand(10, 5))
+    >>> scaled_test_features = pd.DataFrame(np.random.rand(5, 5))
+    >>> filtered_predictions = domain_filter(predictions, scaled_training_features, 
+    >>> scaled_test_features, res_dir="results", min_num=2)
+    """
     domain = ApplicabilityDomain()
     domain.fit(scaled_training_features)
     domain.predict(scaled_test_features)
