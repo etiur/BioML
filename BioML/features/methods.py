@@ -15,7 +15,6 @@ from pathlib import Path
 from sklearn.linear_model import RidgeClassifier, Ridge
 
 
-
 def calculate_shap_importance(model: xgb.XGBClassifier | xgb.XGBRegressor, X_train: pd.DataFrame | np.ndarray, 
                         Y_train: pd.Series | np.ndarray, feature_names: Iterable[str]):
     """
@@ -44,8 +43,8 @@ def calculate_shap_importance(model: xgb.XGBClassifier | xgb.XGBRegressor, X_tra
     return shap_importance, shap_values
 
 
-def plot_shap_importance(shap_values, feature_names: Iterable[str], output_path: Path | None=None, 
-                         X_train: pd.DataFrame | np.ndarray=None, plot_num_features: int=20, dpi=500):
+def plot_shap_importance(shap_values, feature_names: Iterable[str], output_path: Path, 
+                         X_train: pd.DataFrame | np.ndarray | None=None, plot_num_features: int=20, dpi=500):
     """
     Plots the SHAP importance values for the given feature names.
 
@@ -248,7 +247,7 @@ def xgbtree(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray,
     return XGBOOST
 
 
-def rfe_linear(self, X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, num_features: int, 
+def rfe_linear(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, num_features: int, seed: int,
                 feature_names: Iterable[str], step: int=30, ridgemodel: RidgeClassifier | Ridge =RidgeClassifier) -> list[str]:
     """
     Perform feature selection using recursive feature elimination with a linear model.
@@ -273,7 +272,7 @@ def rfe_linear(self, X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np
     list
         A list of the selected feature names.
     """
-    linear_model = ridgemodel(random_state=self.seed, alpha=4)  
+    linear_model = ridgemodel(random_state=seed, alpha=4)  
     rfe = RFE(estimator=linear_model, n_features_to_select=num_features, step=step)
     rfe.fit(X_train, Y_train)
     features = rfe.get_feature_names_out(feature_names)

@@ -17,8 +17,4 @@ setup(name="BioML", author="Ruite Xiang", author_email="ruite.xiang@bsc.es",
                    "Natural Language :: English",
                    "Environment :: Console",
                    "Topic :: Scientific/Engineering :: Bio-Informatics"],
-      install_requires=["openpyxl", "hpsklearn@git+https://github.com/hyperopt/hyperopt-sklearn.git", "pyarrow",
-                        "scikit-learn>=1.0,<1.2", "joblib==1.2.0", "numpy", "pandas", "matplotlib", "biopython", "pyod",
-                        "scipy", "combo", "xgboost", "shap", "lightgbm",
-                        "ITMO_FS@git+https://github.com/ctlab/ITMO_FS.git"],
       keywords="bioprospecting, bioinformatics, machine learning")
