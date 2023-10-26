@@ -51,7 +51,7 @@ def arg_parse():
              args.res_dir, args.number_similar_samples, args.outlier_train, args.outlier_test, args.problem, args.label,
              args.applicability_domain]
 
-@dataclass
+@dataclass(slots=True)
 class Predictor:
     """
     A class to perform predictions
@@ -86,7 +86,7 @@ class Predictor:
         return pred
 
 
-@dataclass
+@dataclass(slots=True)
 class ApplicabilityDomain:
     """
     A class that looks for the applicability domain
