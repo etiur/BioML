@@ -3,6 +3,8 @@ from attr import field
 from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
 from yarl import cached_property
+
+import BioML
 from .training.helper import DataParser
 import argparse
 from scipy.spatial import distance
@@ -146,7 +148,7 @@ class ApplicabilityDomain:
         Returns
         __________
         list
-            The number of training samples within the applicability domain for each of the test samples
+            The number of training samples within the applicability domain for each test sample
         """
         # calculating the distance of test with each of the training samples
         d_train_test = np.array([distance.cdist(np.array(x).reshape(1, -1), self.x_train) for x in x_test])
@@ -164,8 +166,10 @@ class ApplicabilityDomain:
 
         Parameters
         ----------
-        model_predictions: dict[dict[np.ndarray]]
+        predictions: pd.Dataframe
             Prediction from all the classifiers
+        path_name: str | Path
+            The path where to save the filtered predictions
         min_num: int
             The minimum number to be considered of the same applicability domain
 
@@ -173,7 +177,7 @@ class ApplicabilityDomain:
         --------
         object: pd.Dataframe
             The predictions of each of the models kept in the dataframe, the columns are the different model predictions
-            and the rows the different sequences
+            and the rows the different sequences (The feature columns are removed from the predictions)
         """
   
         filtered_index = [f"sample_{x}" for x, similarity_score in enumerate(self.n_insiders) if similarity_score >= min_num]
@@ -213,10 +217,8 @@ class FastaExtractor:
         """
         Parameters
         ______________
-        fasta_file: str
-            The input fasta file
-        pred: list, optional
-            The predictions
+        pred: pd.DataFrame
+            The predictions, the index should be sample_index, where index starts from 0 to len(pred)
 
         Return
         ________
@@ -252,7 +254,7 @@ class FastaExtractor:
         return positive, negative
     
     @staticmethod    
-    def _sorting_function(sequence):
+    def _sorting_function(sequence: Bio.SeqIO.SeqRecord):
         id_ = sequence.id.split("-###")
         if len(id_) >= 5:
             return float(id_[3].split(":")[1]), int(id_[4].split(":")[1])
@@ -409,6 +411,9 @@ def main():
     predictions = predict(test_x, model_path, problem)
     if applicability_domain:
         predictions = domain_filter(fasta, predictions, transformed_x, test_x, res_dir, number_similar_samples)
+    else:
+        test_index = [f"sample_{x}" for x, ind in enumerate(predictions.index)]
+        predictions.index = test_index
     extractor = FastaExtractor(fasta, res_dir)
     positive, negative = extractor.separate_negative_positive(predictions)
     extractor.extract(positive, negative, positive_fasta=f"positive.fasta", negative_fasta=f"negative.fasta")   
