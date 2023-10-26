@@ -96,52 +96,6 @@ def write_excel(file, dataframe: pd.DataFrame | pd.Series, sheet_name: str, over
         dataframe.to_excel(file, sheet_name=sheet_name)
 
 
-
-def modify_param(param, name, num_threads=-1):
-    if "n_jobs" in param:
-        param["n_jobs"] = num_threads
-    if "shuffle" in param:
-        del param["shuffle"]
-    if "random_state" in param and param["random_state"] == True:
-        param["random_state"] = 1
-    if "fit_intercept" in param:
-        del param["fit_intercept"]
-    if "MLPClassifier" in name:
-        param['hidden_layer_sizes'] = ast.literal_eval(param['hidden_layer_sizes'])
-    if "XGBClassifier" in name:
-        if param['scale_pos_weight'] == True:
-            param['scale_pos_weight'] = 1
-        if param['scale_pos_weight'] == False:
-            param['scale_pos_weight'] = 0
-        if param['missing'] is None:
-            param["missing"] = np.nan
-        if param["max_delta_step"] == False:
-            param["max_delta_step"] = None
-    if "LGBMClassifier" in name:
-        if param["min_split_gain"] == False:
-            param["min_split_gain"] = 0.0
-        if param["min_split_gain"] == True:
-            param["min_split_gain"] = 1.0
-        if param["subsample_freq"] == False:
-            param["subsample_freq"] = 0
-        if param["subsample_freq"] == True:
-            param["subsample_freq"] = 1
-        if param["max_delta_step"] == False:
-            param["max_delta_step"] = None
-    if "RidgeClassifier" in name:
-        del param["normalize"]
-    if "MLPClassifier" in name:
-        if param['nesterovs_momentum'] == 1:
-            param['nesterovs_momentum'] = True
-    if "SVC" in name:
-        if "shrinking" in param:
-            if param["shrinking"] == 1:
-                param["shrinking"] = True
-            if param["shrinking"] == 0:
-                param["shrinking"] = False
-    return param
-
-
 def rewrite_possum(possum_stand_alone_path: str | Path) -> None:
     """
     Rewrite the Possum standalone file to use the local Possum package.

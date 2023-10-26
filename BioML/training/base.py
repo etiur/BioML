@@ -87,9 +87,16 @@ class PycaretInterface:
         if self.objective == "classification":
             self.model = ClassificationExperiment()
             self._plots = ["confusion_matrix", "learning", "class_report", "auc", "pr"]
+            self._final_models = ('lr', 'knn', 'nb', 'dt', 'svm', 'rbfsvm', 'gpc', 
+                                'mlp', 'ridge', 'rf', 'qda', 'ada', 'gbc', 'lda', 'et', 'xgboost', 
+                                'lightgbm', 'catboost', 'dummy')
+
         elif self.objective == "regression":
             self.model = RegressionExperiment()
             self._plots = ["residuals", "error", "learning"]
+            self._final_models = ['lr', 'lasso', 'ridge', 'en', 'lar', 'llar', 'omp', 'br', 'ard', 'par', 'ransac', 
+                                 'tr', 'huber', 'kr', 'svm', 'knn', 'dt', 'rf', 'et', 'ada', 'gbr', 'mlp', 'xgboost', 
+                                 'lightgbm', 'catboost', 'dummy']
         if not self.seed:
             self.seed = int(time.time())
         if isinstance(self.budget_time, (int, float)):
@@ -188,13 +195,11 @@ class PycaretInterface:
         'catboost': 'CatBoost Regressor',
         'dummy': 'Dummy Regressor'}
         """
-        mod = self.model.models()
-        self._final_models = mod.index.to_list()
         return self._final_models
     
     @final_models.setter
     def final_models(self, value) -> list[str]:
-        self._final_models = self._check_value(value, self.model.models().index.to_list(), "models")
+        self._final_models = self._check_value(value, self._final_models, "models")
 
     def setup_training(self,X_train: pd.DataFrame, X_test: pd.DataFrame, fold: int) -> Any:
         """
@@ -216,7 +221,7 @@ class PycaretInterface:
         """
         if self.objective == "classification":
             self.model.setup(data=X_train, target=self.label_name, normalize=False, preprocess=False, 
-                         log_experiment=False, experiment_name="Classification", 
+                         log_experiment=True, experiment_name="Classification", 
                         session_id = self.seed, fold_shuffle=True, fold=fold, test_data=X_test, verbose=False)
         
             self.model.add_metric("averagePre", "Average Precision Score", average_precision_score, 
@@ -224,7 +229,7 @@ class PycaretInterface:
 
         elif self.objective == "regression":
             self.model.setup(data=X_train, target=self.label_name, normalize=False, preprocess=False, 
-                             log_experiment=False, experiment_name="Regression", 
+                             log_experiment=True, experiment_name="Regression", 
                              session_id = self.seed, fold_shuffle=True,
                              fold=fold, test_data=X_test, verbose=False)
 
@@ -779,8 +784,7 @@ class Trainer:
                 # it keeps the original sorted order
                 for mod in list_models:
                     result = self.experiment.predict(mod)
-                    result.index = [f"{name}"]
-                    result = result.set_index("Model", append=True)
+                    result = result.set_index("Model")
                     final.append(result)
                 return pd.concat(final)
             
@@ -788,15 +792,13 @@ class Trainer:
                 final = []
                 for model in list(dict_models.values())[:self.experiment.best_model]:
                     result = self.experiment.predict(model)
-                    result.index = [f"{name}"]
-                    result = result.set_index("Model", append=True)
+                    result = result.set_index("Model")
                     final.append(result)
                 return pd.concat(final)
 
             case mod: # for stacked or majority models
                 result = self.experiment.predict(mod)
-                result.index = [f"{name}"]
-                result = result.set_index("Model", append=True)
+                result = result.set_index("Model")
                 return result
            
 

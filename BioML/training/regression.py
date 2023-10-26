@@ -130,7 +130,7 @@ class Regressor:
                 - self.difference_weight * abs(cv_val["R2"] - cv_train["R2"]))
         
         
-        return np.sqrt(abs(rmse * (self.R2_weight * r2)))
+        return - np.sqrt(abs(rmse * (self.R2_weight * r2)))
     
     def run_training(self, trainer: Trainer, feature: DataParser, plot: tuple[str, ...]=("residuals", "error", "learning")):
         """
