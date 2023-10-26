@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from . import methods
 from sklearn.ensemble import RandomForestClassifier as rfc
 from sklearn.ensemble import RandomForestRegressor as rfr
+from typing import Any
 
 
 def arg_parse():
@@ -125,8 +126,8 @@ class DataReader:
     checked_label_path: str = "labels_corrected.csv"
 
     def __post_init__(self):
-        self.features = self.read_features(self.features)
-        self.labels = self.read_label(self.label)
+        self.features = self.read_feature(self.features)
+        self.label = self.read_label(self.label)
         self._check_label(self.checked_label_path)
         self.features = self.preprocess()
         self.analyse_composition(self.features)
@@ -156,7 +157,6 @@ class DataReader:
                 if not label_path.exists():
                     self.label.to_csv(label_path)
             except KeyError as e:
-                self.log.error(f"feature dataframe and labels have different index names: {e}")
                 raise KeyError(f"feature dataframe and labels have different index names: {e}")
         
     def read_feature(self, features: str | pd.DataFrame | list | np.ndarray) -> pd.DataFrame:
@@ -185,10 +185,9 @@ class DataReader:
         elif isinstance(features, (list, np.ndarray)):
             return pd.DataFrame(features)
 
-        self.log.error("features should be a csv file, an array or a pandas DataFrame")
         raise TypeError("features should be a csv file, an array or a pandas DataFrame")
 
-    def read_label(self,  labels: str | pd.Series | Iterable) -> pd.Series:
+    def read_label(self,  labels: str | pd.Series | Iterable[int]) -> pd.Series | pd.DataFrame:
         """
         Read the label data and return a Series.
 
@@ -207,12 +206,12 @@ class DataReader:
         pd.Series
             The feature data.
         """
-        if isinstance(labels, pd.Series):
+        if isinstance(labels, (pd.Series, pd.DataFrame)):
             return labels
-        elif isinstance(labels, (list, set, np.ndarray)):
+        elif isinstance(labels, (list, np.ndarray)):
             return pd.Series(labels, index=self.features.index, name="target")
 
-        elif isinstance(labels, str) and label.endswith(".csv"):
+        elif isinstance(labels, str) and labels.endswith(".csv"):
             if Path(labels).exists():
                 return pd.read_csv(labels, index_col=0)
             
@@ -221,10 +220,9 @@ class DataReader:
                 self.features.drop(labels, axis=1, inplace=True)
                 return label
             
-        self.log.error("label should be a csv file, a pandas Series, an array or inside features")
         raise TypeError("label should be a csv file, a pandas Series, an array or inside features")
 
-    def preprocess(self) -> pd.DataFrame:
+    def preprocess(self) -> pd.DataFrame | None:
         """
         Eliminate low variance features using the VarianceThreshold from sklearn
         """
@@ -234,10 +232,10 @@ class DataReader:
             features = pd.DataFrame(fit, index=self.features.index, 
                                          columns=variance.get_feature_names_out())
 
-        return features
+            return features
     
 
-    def analyse_composition(dataframe: pd.DataFrame) -> Union[int, Tuple[int, int]]:
+    def analyse_composition(self, dataframe: pd.DataFrame) -> int | tuple[int, int]:
         """
         Analyses the composition of the given pandas DataFrame.
 
@@ -315,7 +313,7 @@ class FeatureSelection:
         self.log.info("Starting feature selection and using the following parameters")    
         self.log.info(f"seed: {self.seed}")
 
-    def parallel_filter(self, filter_args: dict[str], X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, 
+    def parallel_filter(self, filter_args: dict[str, Any], X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, 
                         num_features: int, feature_names: Iterable[str]) -> pd.DataFrame:
         """
         Perform parallelized feature selection.
@@ -366,7 +364,8 @@ class FeatureSelection:
 
         return pd.concat(results)
     
-    def supervised_filters(self, filter_args: dict[str], X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, 
+    def supervised_filters(self, filter_args: dict[str, Any], X_train: pd.DataFrame | np.ndarray, 
+                           Y_train: pd.Series | np.ndarray, 
                            feature_names: Iterable[str], output_path: Path, plot: bool=True, 
                            plot_num_features: int=20) -> pd.DataFrame:
         """
@@ -424,8 +423,8 @@ class FeatureSelection:
             for key, value in feature_dict.items():
                 write_excel(writer, value, key)
 
-    def generate_features(self, filter_args: dict[str], transformed: np.ndarray, Y_train: pd.Series | np.ndarray, 
-                          feature_range: Iterable[int], features: pd.DataFrame, rfe_step: int=30, plot: bool=True,
+    def generate_features(self, filter_args: dict[str, Any], transformed: np.ndarray, Y_train: pd.Series | np.ndarray, 
+                          feature_range: list[int], features: pd.DataFrame, rfe_step: int=30, plot: bool=True,
                           plot_num_features: int=20) -> dict[str, pd.DataFrame]:
         """
         Construct a dictionary of feature sets using all features.
@@ -468,7 +467,7 @@ class FeatureSelection:
             for filters in concatenated_features.index.unique(0):
                 feat = concatenated_features.loc[filters]
                 feature_dict[f"{filters}_{num_features}"]= features[feat.index[:num_features]]
-            rfe_results = methods.rfe_linear(transformed, Y_train, num_features, features.columns, rfe_step, 
+            rfe_results = methods.rfe_linear(transformed, Y_train, num_features, self.seed, features.columns, rfe_step, 
                                              filter_args["RFE"])
             feature_dict[f"rfe_{num_features}"] = features[rfe_results]
 
@@ -518,9 +517,6 @@ class FeatureClassification:
                              "RFE": RidgeClassifier, "random_forest": rfc,
                             "filter_unsupervised": filter_unsupervised, "regression_filters":()}
         self.test_size = test_size
-        self.log.info("Classification Problem")
-        self.log.info(f"Using {len(filter_names)+len(multivariate)+len(filter_unsupervised)} \
-                      filters: {filter_names}, {filter_unsupervised} and {multivariate}")
 
     @property
     def filter_args(self):
@@ -587,7 +583,7 @@ class FeatureClassification:
                                                                 random_state=self.seed, stratify=features.label)
         transformed_x = features.scale(X_train)
         feature_dict = selector.generate_features(self.filter_args, transformed_x, Y_train, 
-                                            feature_range, features.feature, rfe_step, plot,
+                                            feature_range, features.features, rfe_step, plot,
                                             plot_num_features)
         selector._write_dict(feature_dict)
 
@@ -678,7 +674,7 @@ class FeatureRegression:
                                                             random_state=self.seed)
         transformed_x = features.scale(X_train)
         feature_dict = selector.generate_features(self.filter_args, transformed_x, Y_train, 
-                                    feature_range, features.feature, rfe_step, plot, plot_num_features)
+                                    feature_range, features.features, rfe_step, plot, plot_num_features)
         selector._write_dict(feature_dict)
 
    
@@ -732,8 +728,7 @@ def translate_range_str_to_list(feature_range: str) -> tuple[int | None, int | N
         A tuple containing the minimum number of features, the maximum number of features, and the step size.
     """
     # translate the argments passsed as strings to a list of integers
-    feature_range = feature_range.split(":")
-    num_features_min, num_features_max, step = feature_range
+    num_features_min, num_features_max, step = feature_range.split(":")
     if num_features_min.lower() == "none":
         num_features_min = None
         steps = None
@@ -741,7 +736,7 @@ def translate_range_str_to_list(feature_range: str) -> tuple[int | None, int | N
     else:
         num_features_min = int(num_features_min)
         steps = None
-        if step.isdigt():
+        if step.isdigit():
             steps = int(step)
 
         nums_features_max = None
