@@ -88,9 +88,9 @@ class ApplicabilityDomain:
     """
     A class that looks for the applicability domain
     """
-    x_train: pd.DataFrame = filed(default=None, init=False, repr=False)
-    x_test: pd.DataFrame = filed(default=None, init=False, repr=False)
-    thresholds: float = filed(default=None, init=False, repr=False)
+    x_train: pd.DataFrame = field(default=None, init=False, repr=False)
+    x_test: pd.DataFrame = field(default=None, init=False, repr=False)
+    thresholds: float = field(default=None, init=False, repr=False)
     n_insiders: list =field(default_factory=list, init=False, repr=False)
 
     def fit(self, x_train: pd.DataFrame) -> np.ndarray:
@@ -219,8 +219,8 @@ class FastaExtractor:
 
         Return
         ________
-        positive: list[Bio.SeqIO]
-        negative: list[Bio.SeqIO]
+        positive: list[SeqIO.SeqRecord]
+        negative: list[SeqIO.SeqRecord]
         """
         # separating the records according to if the prediction is positive or negative
         
@@ -251,7 +251,7 @@ class FastaExtractor:
         return positive, negative
     
     @staticmethod    
-    def _sorting_function(sequence: Bio.SeqIO.SeqRecord):
+    def _sorting_function(sequence: SeqIO.SeqRecord):
         id_ = sequence.id.split("-###")
         if len(id_) >= 5:
             return float(id_[3].split(":")[1]), int(id_[4].split(":")[1])
