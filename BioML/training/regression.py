@@ -6,6 +6,7 @@ import pandas as pd
 from .helper import DataParser, generate_training_results, evaluate_all_models, write_results, sort_regression_prediction
 from functools import partial
 from typing import Iterable
+import numpy as np
 
 
 def arg_parse():
@@ -129,7 +130,7 @@ class Regressor:
                 - self.difference_weight * abs(cv_val["R2"] - cv_train["R2"]))
         
         
-        return rmse + (self.R2_weight * r2)
+        return np.sqrt(abs(rmse * (self.R2_weight * r2)))
     
     def run_training(self, trainer: Trainer, feature: DataParser, plot: tuple[str, ...]=("residuals", "error", "learning")):
         """
@@ -176,7 +177,7 @@ def main():
     outliers = {"x_train": outliers, "x_test": outliers}
     
     feature = DataParser(excel, label,  outliers=outliers, scaler=scaler)
-    experiment = PycaretInterface("regression", feature.label, seed, budget_time=trial_time, best_model=best_model, 
+    experiment = PycaretInterface("regression", feature.label.index.name, seed, budget_time=trial_time, best_model=best_model, 
                                   output_path=training_output, optimize=optimize)
 
     ranking_dict = dict(R2_weight=r2_weight, difference_weight=difference_weight)
@@ -194,11 +195,11 @@ def main():
             predictions.append(training.predict_on_test_set(value[1], f"{tune_status}_{key}"))
             # write the results on excel files
             if len(value) == 2:   
-                write_results(training_output/f"{tune_status}", value[0], sheet_name=key)
+                write_results(f"{training_output}/{tune_status}", value[0], sheet_name=key)
             elif len(value) == 3:
-                write_results(training_output/f"{tune_status}", value[0], value[2], sheet_name=key)
+                write_results(f"{training_output}/{tune_status}", value[0], value[2], sheet_name=key)
         partial_sort = partial(sort_regression_prediction, optimize=optimize, R2_weight=r2_weight)    
-        write_results(training_output/f"{tune_status}", partial_sort(pd.concat(predictions)), sheet_name=f"test_results")
+        write_results(f"{training_output}/{tune_status}", partial_sort(pd.concat(predictions)), sheet_name=f"test_results")
 
 
 if __name__ == "__main__":

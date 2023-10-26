@@ -52,7 +52,7 @@ def scale(scaler: str, X_train: pd.DataFrame,
         return transformed, scaler_dict, test_x
 
 
-def write_excel(file, dataframe: pd.DataFrame, sheet_name: str, overwrite: bool=False) -> None:
+def write_excel(file, dataframe: pd.DataFrame | pd.Series, sheet_name: str, overwrite: bool=False) -> None:
     """
     Write a pandas DataFrame to an Excel file.
 

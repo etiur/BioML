@@ -2,7 +2,7 @@ from ..utilities import write_excel, scale
 from pathlib import Path
 from .base import Trainer
 from collections import defaultdict
-from typing import Callable, Iterable, Protocol, Iterator
+from typing import Callable, Iterable, Iterator
 import pandas as pd
 from dataclasses import dataclass, field
 import numpy as np
@@ -213,6 +213,9 @@ def generate_training_results(model, training: Trainer, feature: DataParser, plo
         A dictionary containing the training results.
     """    
     sorted_results, sorted_models, top_params = model.run_training(training, feature, plot)
+    if 'dummy' in sorted_results.index.unique(0)[:3]:
+        warnings.warn(f"Dummy model is in the top {list(sorted_results.index.unique(0)).index('dummy')} models, turning off tuning")
+        tune = False
 
     # saving the results in a dictionary and writing it into excel files
     results = defaultdict(dict)
@@ -253,10 +256,10 @@ def evaluate_all_models(evaluation_fn: Callable, results: dict[str, dict[str, tu
     for tune_status, result_dict in results.items():
         for key, value in result_dict.items():
             if key == "stacked" or key == "majority":
-                evaluation_fn(value[1], save=f"{training_output}/{tune_status}/{key}")
+                evaluation_fn(value[1], save=f"{training_output}/evaluation_plots/{tune_status}/{key}")
             elif tune_status == "tuned" and key == "holdout":
                 for mod_name, model in value[1].items():
-                    evaluation_fn(model, save=f"{training_output}/{tune_status}/{key}/{mod_name}")
+                    evaluation_fn(model, save=f"{training_output}/evaluation_plots/{tune_status}/{key}/{mod_name}")
 
 
 def write_results(training_output: Path | str, sorted_results: pd.DataFrame, top_params: pd.Series | None = None, 

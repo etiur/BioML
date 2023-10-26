@@ -156,7 +156,7 @@ def main():
     problem, optimize, strategy, model_strategy, seed, kfold, tune = arg_parse()
     if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
-            outliers = [x.strip() for x in out.readlines()]
+            outliers = tuple(x.strip() for x in out.readlines())
     outliers = {"x_train": outliers, "x_test": outliers}
     
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
@@ -167,7 +167,7 @@ def main():
                                   output_path=model_output)
     training = Trainer(experiment, num_split)
     if problem == "classification":
-        model = Classifier(drop=None, selected=selected_models, test_size=test_size, optimize=optimize)
+        model = Classifier(drop=(), selected=selected_models, test_size=test_size, optimize=optimize)
     elif problem == "regression":
         model = Regressor(drop=None, selected=selected_models, test_size=test_size, optimize=optimize)
     sorted_results, sorted_models, top_params = model.run_training(training, feature, plot=())

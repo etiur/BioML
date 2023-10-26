@@ -92,7 +92,6 @@ class PycaretInterface:
             self._plots = ["residuals", "error", "learning"]
         if not self.seed:
             self.seed = int(time.time())
-        self.log.info(f"Seed: {self.seed}")
         if isinstance(self.budget_time, (int, float)):
             if self.budget_time < 0:
                 raise ValueError("The budget time should be greater than 0")
@@ -105,6 +104,7 @@ class PycaretInterface:
 
         self.log.info("------------------------------------------------------------------------------")
         self.log.info("PycaretInterface parameters")
+        self.log.info(f"Seed: {self.seed}")
         self.log.info(f"Budget time: {self.budget_time}")
         self.log.info(f"Label name: {self.label_name}")
         self.log.info(f"The number of models to select: {self.best_model}")
@@ -194,7 +194,7 @@ class PycaretInterface:
     
     @final_models.setter
     def final_models(self, value) -> list[str]:
-        self._final_models = self._check_value(value, self.mod.index.to_list(), "models")
+        self._final_models = self._check_value(value, self.model.models().index.to_list(), "models")
 
     def setup_training(self,X_train: pd.DataFrame, X_test: pd.DataFrame, fold: int) -> Any:
         """
@@ -217,7 +217,7 @@ class PycaretInterface:
         if self.objective == "classification":
             self.model.setup(data=X_train, target=self.label_name, normalize=False, preprocess=False, 
                          log_experiment=False, experiment_name="Classification", 
-                        session_id = self.seed, fold_shuffle=True, fold=fold, test_data=X_test)
+                        session_id = self.seed, fold_shuffle=True, fold=fold, test_data=X_test, verbose=False)
         
             self.model.add_metric("averagePre", "Average Precision Score", average_precision_score, 
                                    average="weighted", target="pred_proba", multiclass=False)
@@ -226,7 +226,7 @@ class PycaretInterface:
             self.model.setup(data=X_train, target=self.label_name, normalize=False, preprocess=False, 
                              log_experiment=False, experiment_name="Regression", 
                              session_id = self.seed, fold_shuffle=True,
-                             fold=fold, test_data=X_test)
+                             fold=fold, test_data=X_test, verbose=False)
 
         return self.model
 
@@ -256,15 +256,15 @@ class PycaretInterface:
             returned_models[m] = model
             results[m] = model_results
             runtime_train = time.time()
-            total_runtime = (runtime_train - runtime_start) / 60
+            total_runtime = round((runtime_train - runtime_start) / 60, 3)
             
             if self.budget_time and total_runtime > self.budget_time:
                 self.log.info(
-                    f"Total runtime {total_runtime} is over time budget by {total_runtime - self.budget_time} min, breaking loop"
+                    f"Total runtime {total_runtime} is over time budget by {total_runtime - self.budget_time} minutes, breaking loop"
                 )
                 break
            
-        self.log.info(f"Traininf over: Total runtime {total_runtime} min")
+        self.log.info(f"Traininf over: Total runtime {total_runtime} minutes")
 
         return results, returned_models
     
@@ -290,7 +290,7 @@ class PycaretInterface:
                     plot_path = self.output_path / "model_plots" / f"{name}" / f"split_{split_ind}"
                 plot_path.mkdir(parents=True, exist_ok=True)
                 for pl in self.plots:
-                    self.model.plot_model(model, pl, save=plot_path)
+                    self.model.plot_model(model, pl, save=plot_path, verbose=False)
 
     def get_params(self, name: str, model: Any)-> pd.Series:
         """
@@ -317,7 +317,7 @@ class PycaretInterface:
         params = pd.Series(params)
         return params
     
-    def get_params_stacked(stacked_models):
+    def get_params_stacked(self, stacked_models):
         """
         Get the parameters of the final estimator in a stacked ensemble model.
 
@@ -576,7 +576,7 @@ class Trainer:
         self.experiment = model
         self.log.info(f"Number of kfolds: {self.num_splits}")
 
-    def rank_results(self, results: dict[str, pd.DataFrame], returned_models:dict[str], 
+    def rank_results(self, results: dict[str, pd.DataFrame], returned_models:dict[str, Any], 
                      scoring_function: Callable):
         """
         Rank the results based on the scores obtained from the scoring function.
@@ -652,8 +652,8 @@ class Trainer:
         
         return results, returned_models
     
-    def analyse_models(self, transformed_x: pd.DataFrame, test_x: pd.DataFrame, scoring_fn: Callable, drop: Iterable[str] | None=None, 
-                       selected: Iterable[str] | None=None) -> tuple[pd.DataFrame, dict, pd.Series]:
+    def analyse_models(self, transformed_x: pd.DataFrame, test_x: pd.DataFrame, scoring_fn: Callable, 
+                       drop: tuple[str] | None=None, selected: tuple[str] | None=None) -> tuple[pd.DataFrame, dict, pd.Series]:
         """
         Analyze the trained models and rank them based on the specified scoring function.
 
@@ -701,7 +701,7 @@ class Trainer:
         new_results = {}
         new_params = {}
         self.log.info("--------Retuning the best models--------")
-        for key, model in list(sorted_models.item())[:self.experiment.best_model]:
+        for key, model in list(sorted_models.items())[:self.experiment.best_model]:
             self.log.info(f"Retuning {key}")
             tuned_model, results, params =  self.experiment.retune_model(key, model, num_iter, fold=self.num_splits)
             new_models[key] = tuned_model
@@ -780,6 +780,7 @@ class Trainer:
                 for mod in list_models:
                     result = self.experiment.predict(mod)
                     result.index = [f"{name}"]
+                    result = result.set_index("Model", append=True)
                     final.append(result)
                 return pd.concat(final)
             
@@ -788,12 +789,14 @@ class Trainer:
                 for model in list(dict_models.values())[:self.experiment.best_model]:
                     result = self.experiment.predict(model)
                     result.index = [f"{name}"]
+                    result = result.set_index("Model", append=True)
                     final.append(result)
                 return pd.concat(final)
 
             case mod: # for stacked or majority models
                 result = self.experiment.predict(mod)
                 result.index = [f"{name}"]
+                result = result.set_index("Model", append=True)
                 return result
            
 

@@ -179,12 +179,12 @@ def main():
     training_output = Path(training_output)
     if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
-            outliers = [x.strip() for x in out.readlines()]
+            outliers = tuple(x.strip() for x in out.readlines())
 
     outliers = {"x_train": outliers, "x_test": outliers}
     
     feature = DataParser(excel, label, outliers=outliers, scaler=scaler)
-    experiment = PycaretInterface("classification", feature.label, seed, budget_time=budget_time, best_model=best_model, 
+    experiment = PycaretInterface("classification", feature.label.index.name, seed, budget_time=budget_time, best_model=best_model, 
                                   output_path=training_output, optimize=optimize)
     training = Trainer(experiment, num_split)
     ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight,
@@ -201,12 +201,12 @@ def main():
             predictions.append(training.predict_on_test_set(value[1], f"{tune_status}_{key}"))
             # write the results on excel files
             if len(value) == 2:
-                write_results(training_output/f"{tune_status}", value[0], sheet_name=key)
+                write_results(f"{training_output}/{tune_status}", value[0], sheet_name=key)
             elif len(value) == 3:
-                write_results(training_output/f"{tune_status}", value[0], value[2], sheet_name=key)
-        partial_sort = partial(sort_classification_prediction, optimize=optimize, optimize=optimize, prec_weight=precision_weight, 
+                write_results(f"{training_output}/{tune_status}", value[0], value[2], sheet_name=key)
+        partial_sort = partial(sort_classification_prediction, optimize=optimize, prec_weight=precision_weight, 
                                    recall_weight=recall_weight, report_weight=report_weight)    
-        write_results(training_output/f"{tune_status}", partial_sort(pd.concat(predictions)), sheet_name=f"test_results")
+        write_results(f"{training_output}/{tune_status}", partial_sort(pd.concat(predictions)), sheet_name=f"test_results")
 
 
 if __name__ == "__main__":
