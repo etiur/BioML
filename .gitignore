@@ -10,3 +10,6 @@ __pycache__
 dist
 build
 BioML.egg-info
+data/training_features
+data/*.log
+tests/training

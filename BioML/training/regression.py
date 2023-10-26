@@ -5,6 +5,7 @@ from .base import PycaretInterface, Trainer
 import pandas as pd
 from .helper import DataParser, generate_training_results, evaluate_all_models, write_results, sort_regression_prediction
 from functools import partial
+from typing import Iterable
 
 
 def arg_parse():
@@ -81,8 +82,8 @@ class Regressor:
 
 
     """
-    def __init__(self, ranking_params=None, drop=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), selected=None, 
-                 test_size: float = 0.2, optimize="RMSE"):
+    def __init__(self, ranking_params=None, drop: Iterable[str]|None=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), selected: Iterable[str]|None=None, 
+                 test_size: float = 0.2, optimize: str="RMSE"):
         
         ranking_dict = dict(R2_weight=0.8, difference_weight=1.2)
         if isinstance(ranking_params, dict):
@@ -130,7 +131,7 @@ class Regressor:
         
         return rmse + (self.R2_weight * r2)
     
-    def run_training(self, trainer: Trainer, feature: DataParser, plot=("residuals", "error", "learning")):
+    def run_training(self, trainer: Trainer, feature: DataParser, plot: tuple[str, ...]=("residuals", "error", "learning")):
         """
         A function that splits the data into training and test sets and then trains the models
         using cross-validation but only on the training data
@@ -170,7 +171,7 @@ def main():
     training_output = Path(training_output)
     if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
-            outliers = [x.strip() for x in out.readlines()]
+            outliers = tuple(x.strip() for x in out.readlines())
 
     outliers = {"x_train": outliers, "x_test": outliers}
     

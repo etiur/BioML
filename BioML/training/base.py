@@ -8,6 +8,7 @@ from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
 from ..utilities import Log
 from sklearn.metrics import average_precision_score
+from typing import Iterable
         
 
 @dataclass
@@ -499,7 +500,8 @@ class PycaretInterface:
         save : bool | str, optional
             Save the plots, by default False but you can also indicate the path for the plot
         """
-        Path(save).mkdir(parents=True, exist_ok=True)
+        if not isinstance(save, bool):
+            Path(save).mkdir(parents=True, exist_ok=True)
         self.model.plot_model(model, "learning", save=save)
 
     def predict(self, estimador: Any, target_data: pd.DataFrame|None=None) -> pd.DataFrame:
@@ -650,8 +652,8 @@ class Trainer:
         
         return results, returned_models
     
-    def analyse_models(self, transformed_x: pd.DataFrame, test_x: pd.DataFrame, scoring_fn: Callable, drop: tuple | None=None, 
-                       selected: tuple | None=None) -> tuple[pd.DataFrame, dict, pd.Series]:
+    def analyse_models(self, transformed_x: pd.DataFrame, test_x: pd.DataFrame, scoring_fn: Callable, drop: Iterable[str] | None=None, 
+                       selected: Iterable[str] | None=None) -> tuple[pd.DataFrame, dict, pd.Series]:
         """
         Analyze the trained models and rank them based on the specified scoring function.
 
