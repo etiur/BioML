@@ -7,9 +7,39 @@ import logging
 from collections import Counter
 
 
-def scale(scaler, X_train, X_test=None):
+def scale(scaler: str, X_train: pd.DataFrame, 
+          X_test: pd.DataFrame=None) -> tuple[pd.DataFrame, dict[str, RobustScaler|StandardScaler|MinMaxScaler], pd.DataFrame]:
     """
-    Scale the features using RobustScaler
+    Scale the features using RobustScaler, StandardScaler or MinMaxScaler.
+
+    Parameters
+    ----------
+    scaler : str
+        The type of scaler to use. Must be one of "robust", "zscore", or "minmax".
+    X_train : pandas DataFrame object
+        The training data.
+    X_test : pandas DataFrame object, default=None
+        The test data.
+
+    Returns
+    -------
+    tuple
+        A tuple containing:
+        - transformed : pandas DataFrame object
+            The transformed training data.
+        - scaler_dict : dictionary
+            A dictionary containing the scaler object used for scaling.
+        - test_x : pandas DataFrame object, default=None
+            The transformed test data.
+
+    Notes
+    -----
+    This function scales the features using RobustScaler, StandardScaler or MinMaxScaler. 
+    The function first creates a dictionary containing the scaler objects for each type of scaler. 
+    It then applies the selected scaler to the training data and returns the transformed data as a pandas DataFrame object. 
+    If test data is provided, the function applies the same scaler to the test data and returns the transformed test data as a pandas DataFrame object. 
+    The function also returns a dictionary containing the scaler object used for scaling.
+
     """
     scaler_dict = {"robust": RobustScaler(), "zscore": StandardScaler(), "minmax": MinMaxScaler()}
     transformed = scaler_dict[scaler].fit_transform(X_train)
@@ -22,7 +52,39 @@ def scale(scaler, X_train, X_test=None):
         return transformed, scaler_dict, test_x
 
 
-def write_excel(file, dataframe, sheet_name, overwrite=False):
+def write_excel(file, dataframe: pd.DataFrame, sheet_name: str, overwrite: bool=False) -> None:
+    """
+    Write a pandas DataFrame to an Excel file.
+
+    Parameters
+    ----------
+    file : str or pandas ExcelWriter object
+        The file path or ExcelWriter object to write to.
+    dataframe : pandas DataFrame object
+        The DataFrame to write to the Excel file.
+    sheet_name : str
+        The name of the sheet to write to.
+    overwrite : bool, default=False
+        Whether to overwrite the file if it already exists.
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    This function writes a pandas DataFrame to an Excel file. If the file does not exist, it creates a new file. 
+    If the file exists and `overwrite` is set to `True`, it overwrites the file. 
+    If the file exists and `overwrite` is set to `False`, it appends the DataFrame to the existing file. 
+    The function uses the `openpyxl` engine to write to the Excel file.
+
+    Examples
+    --------
+    >>> from utilities import write_excel
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
+    >>> write_excel('example.xlsx', df, 'Sheet1')
+    """
     if not isinstance(file, pd.io.excel._openpyxl.OpenpyxlWriter):
         if overwrite or not Path(file).exists():
             mode = "w"
@@ -80,7 +142,30 @@ def modify_param(param, name, num_threads=-1):
     return param
 
 
-def rewrite_possum(possum_stand_alone_path):
+def rewrite_possum(possum_stand_alone_path: str | Path) -> None:
+    """
+    Rewrite the Possum standalone file to use the local Possum package.
+
+    Parameters
+    ----------
+    possum_stand_alone_path : str or Path object
+        The path to the Possum standalone file ending in .pl since it is in perl.
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    This function rewrites the Possum standalone file to use the local Possum package. 
+    It takes in the path to the Possum standalone file as a string or Path object. 
+    The function reads the file, replaces the path to the Possum package with the local path, and writes the updated file.
+
+    Examples
+    --------
+    >>> from utilities import rewrite_possum
+    >>> rewrite_possum('possum_standalone.pl')
+    """
     possum_path = Path(possum_stand_alone_path)
     with possum_path.open() as possum:
         possum = possum.readlines()
@@ -193,19 +278,78 @@ class Log:
 
 
 class Threshold:
+    """
+    A class to convert regression labels into classification labels.
 
-    def __init__(self, csv_file, output_csv, sep=","):
-        self.csv_file = pd.read_csv(csv_file, sep=sep, index_col=0)
+    Parameters
+    ----------
+    input_data : pd.DataFrame
+        The data to apply the threshold
+    output_csv : str or Path object
+        The path to the output CSV file.
+
+    Methods
+    -------
+    apply_threshold(threshold) -> None
+        Apply a threshold to the regression labels.
+    save_csv() -> None
+        Save the CSV file to disk.
+    
+    Notes
+    -----
+    This class reads in a CSV file as a pandas DataFrame object and applies a threshold to the regression labels.
+    It then saves the DataFrame object as a CSV file.
+
+    Examples
+    --------
+    >>> from utilities import Threshold
+    >>> import pandas as pd
+    >>> data = pd.read_csv('data/data.csv')
+    >>> threshold = Threshold(data, 'data/data_threshold.csv')
+    >>> threshold.apply_threshold(0.5)
+    >>> threshold.save_csv()
+    """
+
+    def __init__(self, input_data: pd.DataFrame, output_csv: str | Path):
+        self.csv_file = input_data
         self.output_csv = Path(output_csv)
         self.output_csv.parent.mkdir(exist_ok=True, parents=True)
 
-    def apply_threshold(self, threshold, greater=True, column_name='temperature'):
+    def apply_threshold(self, threshold: float, greater: bool=True, column_name: str='temperature'):
         """
-        converts regression to classification problems
-        :param threshold: threshold value
-        :param greater: boolean value to indicate if threshold is greater or lower
-        :param column_name: column name to apply threshold
-        :return: filtered dataset
+        Convert a regression problem to a classification problem by applying a threshold to a column in the dataset.
+
+        Parameters
+        ----------
+        threshold : float
+            The threshold value to apply.
+        greater : bool, default=True
+            A boolean value to indicate if the threshold is greater or lower.
+        column_name : str, default='temperature'
+            The name of the column to apply the threshold to.
+
+        Returns
+        -------
+        pandas Series object
+            The filtered dataset.
+
+        Notes
+        -----
+        This method converts a regression problem to a classification problem by applying a threshold to a column in the dataset. 
+        It takes in the threshold value, a boolean value to indicate if the positive class or class 1 should be greater or lower, 
+        and the name of the column to apply the threshold to. 
+        The method first creates a copy of the column and converts it to a numeric data type. 
+        It then drops any rows with missing values. 
+        The method then creates a new copy of the column and applies the threshold to it, setting values above or below the 
+        threshold to 1 or 0, respectively. The method returns the filtered dataset as a pandas Series object.
+
+        Examples
+        --------
+        >>> from utilities import Threshold
+        >>> import pandas as pd
+        >>> data = pd.read_csv('data/data.csv')
+        >>> threshold = Threshold(data, 'data/data_threshold.csv')
+        >>> threshold.save_csv()
         """
         dataset = self.csv_file[column_name].copy()
         dataset = pd.to_numeric(dataset, errors="coerce")

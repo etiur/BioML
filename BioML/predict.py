@@ -70,9 +70,14 @@ class Predictor:
         return self.model.load_model(self.model_path, verbose=False)
         
 
-    def predicting(self):
+    def predicting(self) -> pd.DataFrame:
         """
         Make predictions on new samples
+
+        Returns
+        -------
+        pd.DataFrame
+            The predictions appended as new columns to the test set
         """
         pred = self.model.predict_model(self.loaded_model, self.test_features, verbose=False)
 
@@ -89,13 +94,19 @@ class ApplicabilityDomain:
     thresholds: float = filed(default=None, init=False, repr=False)
     n_insiders: list =field(default_factory=list, init=False, repr=False)
 
-    def fit(self, x_train):
+    def fit(self, x_train: pd.DataFrame) -> np.ndarray:
         """
-        A function to calculate the training sample threshold for the applicability domain
+        A function to calculate the training sample threshold for the applicability domain.
 
         Parameters
-        ___________
-        x_train: pandas Dataframe object
+        ----------
+        x_train : pandas DataFrame object
+            The training data.
+
+        Returns
+        -------
+        np.ndarray
+            An array of the computed thresholds.
         """
         self.x_train = x_train
         # for each of the training sample calculate the distance to the other samples
@@ -124,13 +135,18 @@ class ApplicabilityDomain:
         self.thresholds[np.isinf(self.thresholds)] = min(self.thresholds)  # setting to the minimum value where infinity
         return self.thresholds
 
-    def predict(self, x_test):
+    def predict(self, x_test: pd.DataFrame) -> list:
         """
         A function to find those samples that are within the training samples' threshold
 
         Parameters
         ___________
         x_test: pandas Dataframe object
+
+        Returns
+        __________
+        list
+            The number of training samples within the applicability domain for each of the test samples
         """
         # calculating the distance of test with each of the training samples
         d_train_test = np.array([distance.cdist(np.array(x).reshape(1, -1), self.x_train) for x in x_test])
