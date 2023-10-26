@@ -7,3 +7,6 @@ tests/mlruns/*
 tests/catboost_info
 .vscode
 __pycache__
+dist
+build
+BioML.egg-info
