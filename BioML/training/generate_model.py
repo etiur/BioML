@@ -3,8 +3,8 @@ from pathlib import Path
 import argparse
 from .classification import Classifier
 from .regression import Regressor
-from .helper import DataParser
-import json
+from .helper import DataParser, FileParser
+
 
 
 def arg_parse():
@@ -39,7 +39,7 @@ def arg_parse():
                         help="The sheet name for the excel file if the training features is in excel format")
     parser.add_argument("--tune", action="store_false", required=False, help="If to tune the best models")
     parser.add_argument("-j", "--setup_config", required=False, default=None,
-                        help="A json file for teh setup_configurations")
+                        help="A json or yaml file for the setup_configurations")
     args = parser.parse_args()
 
     return [args.training_features, args.label, args.scaler, args.model_output,
@@ -159,8 +159,8 @@ def main():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
     if setup_config:
-        with open(setup_config) as config:
-            setup_config = json.load(config)
+        file = FileParser(setup_config)
+        setup_config = file.load(extension=setup_config.split(".")[-1])
 
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
 

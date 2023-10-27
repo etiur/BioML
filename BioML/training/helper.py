@@ -1,13 +1,15 @@
-from ..utilities import write_excel, scale
+from ..utilities import write_excel
 from pathlib import Path
 from .base import Trainer
 from collections import defaultdict
 from typing import Callable, Iterable, Iterator
 import pandas as pd
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import numpy as np
 import warnings
-
+import json
+import yaml
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -184,6 +186,20 @@ class DataParser:
         test_x = pd.concat([test_x, y_test], axis=1)
         return transformed_x, test_x
     
+
+@dataclass(slots=True)
+class FileParser:
+    file_path: str | Path
+
+    def load(self, extension: str="json") -> dict[str, Any]:
+        with open(self.file_path) as file:
+            if extension == "json":
+                return json.load(file)
+            elif extension == "yaml":
+                return yaml.load(file, Loader=yaml.FullLoader)
+            else:
+                raise ValueError(f"Unsupported file extension: {extension}")
+
 
 def generate_training_results(model, training: Trainer, feature: DataParser, plot: tuple, 
                               tune: bool=False, **kwargs) -> dict[str, dict[str, tuple]]:
