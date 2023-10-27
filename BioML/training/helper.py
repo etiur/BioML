@@ -306,9 +306,9 @@ def sort_regression_prediction(dataframe: pd.DataFrame, optimize="RSME") -> pd.D
         The sorted DataFrame of predictions.
     """
     if optimize == "R2":
-        return dataframe.loc[dataframe["R2"].sort_values(ascending=False).index]
+        return dataframe.sort_values(optimize, ascending=False)
     if optimize != "R2":
-        return dataframe.loc[dataframe[optimize].sort_values(ascending=True).index]
+        return dataframe.sort_values(optimize,ascending=True)
     
 
 def sort_classification_prediction(dataframe: pd.DataFrame, optimize="MCC", prec_weight=1.2, 
