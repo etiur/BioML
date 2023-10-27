@@ -14,7 +14,10 @@ from typing import Iterable
 @dataclass
 class PycaretInterface:
     """
-    A class for interfacing with the PyCaret library for machine learning.
+    A class for interfacing with the PyCaret library for machine learning. 
+    Learn more here:
+    https://pycaret.gitbook.io/docs/
+    https://medium.com/analytics-vidhya/pycaret-101-for-beginners-27d9aefd34c5
 
     Attributes
     ----------
@@ -85,14 +88,14 @@ class PycaretInterface:
     
     def __post_init__(self):
         if self.objective == "classification":
-            self.model = ClassificationExperiment()
+            self.pycaret = ClassificationExperiment()
             self._plots = ["confusion_matrix", "learning", "class_report", "auc", "pr"]
             self._final_models = ('lr', 'knn', 'nb', 'dt', 'svm', 'rbfsvm', 'gpc', 
                                 'mlp', 'ridge', 'rf', 'qda', 'ada', 'gbc', 'lda', 'et', 'xgboost', 
                                 'lightgbm', 'catboost', 'dummy')
 
         elif self.objective == "regression":
-            self.model = RegressionExperiment()
+            self.pycaret = RegressionExperiment()
             self._plots = ["residuals", "error", "learning"]
             self._final_models = ['lr', 'lasso', 'ridge', 'en', 'lar', 'llar', 'omp', 'br', 'ard', 'par', 'ransac', 
                                  'tr', 'huber', 'kr', 'svm', 'knn', 'dt', 'rf', 'et', 'ada', 'gbr', 'mlp', 'xgboost', 
@@ -220,20 +223,20 @@ class PycaretInterface:
             The pycaret classification or regression object
         """
         if self.objective == "classification":
-            self.model.setup(data=X_train, target=self.label_name, normalize=False, preprocess=False, 
+            self.pycaret.setup(data=X_train, target=self.label_name, normalize=False, preprocess=False, 
                          log_experiment=True, experiment_name="Classification", 
                         session_id = self.seed, fold_shuffle=True, fold=fold, test_data=X_test, verbose=False)
         
-            self.model.add_metric("averagePre", "Average Precision Score", average_precision_score, 
+            self.pycaret.add_metric("averagePre", "Average Precision Score", average_precision_score, 
                                    average="weighted", target="pred_proba", multiclass=False)
 
         elif self.objective == "regression":
-            self.model.setup(data=X_train, target=self.label_name, normalize=False, preprocess=False, 
+            self.pycaret.setup(data=X_train, target=self.label_name, normalize=False, preprocess=False, 
                              log_experiment=True, experiment_name="Regression", 
                              session_id = self.seed, fold_shuffle=True,
                              fold=fold, test_data=X_test, verbose=False)
 
-        return self.model
+        return self.pycaret
 
     def train(self):
         """
@@ -255,8 +258,8 @@ class PycaretInterface:
             self.log.info(f"Time budget is {self.budget_time} minutes")
         runtime_start = time.time()
         for m in self.final_models:
-            model =self.model.create_model(m, return_train_score=True, verbose=False)
-            model_results = self.model.pull(pop=True)
+            model =self.pycaret.create_model(m, return_train_score=True, verbose=False)
+            model_results = self.pycaret.pull(pop=True)
             model_results = model_results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
             returned_models[m] = model
             results[m] = model_results
@@ -295,7 +298,7 @@ class PycaretInterface:
                     plot_path = self.output_path / "model_plots" / f"{name}" / f"split_{split_ind}"
                 plot_path.mkdir(parents=True, exist_ok=True)
                 for pl in self.plots:
-                    self.model.plot_model(model, pl, save=plot_path, verbose=False)
+                    self.pycaret.plot_model(model, pl, save=plot_path, verbose=False)
 
     def get_params(self, name: str, model: Any)-> pd.Series:
         """
@@ -386,10 +389,10 @@ class PycaretInterface:
         self.log.info("---------Retuning the best models--------------")
         self.log.info(f"num_iter: {num_iter}")
         self.log.info(f"fold: {fold}")
-        tuned_model = self.model.tune_model(model, optimize=self.optimize, search_library="optuna", search_algorithm="tpe", 
+        tuned_model = self.pycaret.tune_model(model, optimize=self.optimize, search_library="optuna", search_algorithm="tpe", 
                                             early_stopping="asha", return_train_score=True, n_iter=num_iter, fold=fold,
                                             verbose=False)
-        results = self.model.pull(pop=True)
+        results = self.pycaret.pull(pop=True)
         tuned_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
         params = self.get_params(name, tuned_model)
         return tuned_model, tuned_results, params
@@ -414,11 +417,11 @@ class PycaretInterface:
             A tuple containing the stacked ensemble model, the results of the ensemble, and the parameters used for training the ensemble.
         """
         self.log.info("----------Stacking the best models--------------")
-        stacked_models = self.model.stack_models(estimator_list, optimize=self.optimize, 
+        stacked_models = self.pycaret.stack_models(estimator_list, optimize=self.optimize, 
                                                  return_train_score=True,  verbose=False, fold=fold, 
                                                  meta_model_fold=fold, 
                                                  meta_model=meta_model)
-        results = self.model.pull(pop=True)
+        results = self.pycaret.pull(pop=True)
         stacked_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
         params = self.get_params_stacked(stacked_models)
         return stacked_models, stacked_results, params
@@ -445,11 +448,11 @@ class PycaretInterface:
         self.log.info("----------Creating a majority voting model--------------")
         self.log.info(f"fold: {fold}")
         self.log.info(f"weights: {weights}")
-        majority_model = self.model.blend_models(estimator_list, optimize=self.optimize, 
+        majority_model = self.pycaret.blend_models(estimator_list, optimize=self.optimize, 
                                                  verbose=False, return_train_score=True, fold=fold, 
                                                  weights=weights)
         
-        results = self.model.pull(pop=True)
+        results = self.pycaret.pull(pop=True)
         majority_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
         return majority_model, majority_results
     
@@ -473,7 +476,7 @@ class PycaretInterface:
             The file name
         """
         self.log.info("----------Checking for data drift--------------")
-        self.model.check_drift(input_data, target_data, filename=filename)
+        self.pycaret.check_drift(input_data, target_data, filename=filename)
         return filename
     
     def finalize_model(self, model: Any):
@@ -491,7 +494,7 @@ class PycaretInterface:
             The finalized model
         """
         self.log.info("----------Finalizing the model by training it with all the data including test set--------------")
-        finalized = self.model.finalize_model(model)
+        finalized = self.pycaret.finalize_model(model)
         return finalized
     
     def evaluate_model(self, model: Any, save: bool | str =False) -> None:
@@ -507,7 +510,7 @@ class PycaretInterface:
         """
         if not isinstance(save, bool):
             Path(save).mkdir(parents=True, exist_ok=True)
-        self.model.plot_model(model, "learning", save=save)
+        self.pycaret.plot_model(model, "learning", save=save)
 
     def predict(self, estimador: Any, target_data: pd.DataFrame|None=None) -> pd.DataFrame:
         """
@@ -527,13 +530,13 @@ class PycaretInterface:
         
         """
         if self.objective == "classification":
-            pred = self.model.predict_model(estimador, data=target_data, 
+            pred = self.pycaret.predict_model(estimador, data=target_data, 
                                         verbose=False, raw_score=True)
         else:
-            pred = self.model.predict_model(estimador, data=target_data, 
+            pred = self.pycaret.predict_model(estimador, data=target_data, 
                                             verbose=False)
         if target_data is None or self.label_name in target_data.columns:
-            results = self.model.pull(pop=True)
+            results = self.pycaret.pull(pop=True)
             return results
         return pred
     
@@ -548,7 +551,7 @@ class PycaretInterface:
         filename : str
             The name of the file to save the model.
         """
-        self.model.save_model(model, filename)
+        self.pycaret.save_model(model, filename)
     
     def load_model(self, filename: str):
         """
@@ -559,11 +562,11 @@ class PycaretInterface:
         filename : str
             The name of the file to load the model.
         """
-        self.model.load_model(filename)
+        self.pycaret.load_model(filename)
 
 
 class Trainer:
-    def __init__(self, model: PycaretInterface, num_splits: int=5):
+    def __init__(self, caret_interface: PycaretInterface, num_splits: int=5):
         
         """
         Initialize a Trainer object with the given parameters.
@@ -578,7 +581,7 @@ class Trainer:
         self.log = Log("model_training")
         self.log.info("Reading the features")
         self.num_splits = num_splits
-        self.experiment = model
+        self.experiment = caret_interface
         self.log.info(f"Number of kfolds: {self.num_splits}")
 
     def rank_results(self, results: dict[str, pd.DataFrame], returned_models:dict[str, Any], 
