@@ -174,7 +174,7 @@ def main():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
 
-    outliers = {"x_train": outliers, "x_test": outliers}
+    outliers = {"x_train": outliers}
     
     feature = DataParser(excel, label,  outliers=outliers, scaler=scaler, sheets=sheet)
     experiment = PycaretInterface("regression", feature.label, seed, budget_time=trial_time, best_model=best_model, 

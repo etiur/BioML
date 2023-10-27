@@ -66,6 +66,8 @@ class DataParser:
                 self.features = pd.concat([self.features, self.label], axis=1)
                 self.label = self.label.index.name
 
+        self.features = self.fix_outliers(self.features)
+
     def read_features(self, features: str | pd.DataFrame | list | np.ndarray) -> pd.DataFrame:
         """
         Reads the feature data from a file or returns the input data.
@@ -138,29 +140,28 @@ class DataParser:
                     
         raise TypeError("label should be a csv file, a pandas Series or inside features")
     
-    def scale(self, X_train: pd.DataFrame, X_test: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    def fix_outliers(self, training_features: pd.DataFrame, test_features: pd.DataFrame |None =None):
         """
-        Scales the train data and test data
+        Remove outliers from the train data
 
         Parameters
         ----------
-        X_train : pd.DataFrame
+        training_features : pd.DataFrame
             The training data.
-        X_test : pd.DataFrame
-            The test data.
+        test_features : pd.DataFrame or None, optional
+            The testing data. Defaults to None.
 
         Returns
         -------
-        tuple[pd.DataFrame, pd.DataFrame]
-            The scaled training and test data.
+        pd.DataFrame
+            The data with outliers removed.
         """
         #remove outliers
-        X_train = X_train.loc[[x for x in X_train.index if x not in self.outliers["x_train"]]]
-        X_test = X_test.loc[[x for x in X_test.index if x not in self.outliers["x_test"]]]
-
-        transformed_x, scaler_dict, test_x = scale(self.scaler, X_train, X_test)
-
-        return transformed_x, test_x
+        training_features.loc[[x for x in training_features.index if x not in self.outliers["x_train"]]]
+        if test_features is not None:
+            test_features.loc[[x for x in test_features.index if x not in self.outliers["x_test"]]]
+            return training_features, test_features
+        return training_features
     
     def process(self, transformed_x: pd.DataFrame, test_x: pd.DataFrame, y_train: pd.Series, 
                 y_test: pd.Series)-> tuple[pd.DataFrame, pd.DataFrame]:
