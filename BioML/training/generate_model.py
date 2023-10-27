@@ -156,12 +156,12 @@ def main():
     if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
-    outliers = {"x_train": outliers}
     
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
 
     # instantiate everything to run training
     feature = DataParser(training_features, label, outliers=outliers, scaler=scaler, sheets=sheet)
+    
     experiment = PycaretInterface(problem, feature.label, seed, best_model=len(selected_models), optimize=optimize, 
                                   output_path=model_output)
     training = Trainer(experiment, num_split)

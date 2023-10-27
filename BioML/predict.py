@@ -399,17 +399,14 @@ def main():
 
     if outlier_test and Path(outlier_test[0]).exists():
         with open(outlier_test) as out_test:
-            outlier_test = [x.strip() for x in out_test.readlines()]
+            outlier_test = tuple(x.strip() for x in out_test.readlines())
     
     if outlier_train and Path(outlier_train[0]).exists():
         with open(outlier_train) as out_train:
-            outlier_train = [x.strip() for x in out_train.readlines()]
+            outlier_train = tuple(x.strip() for x in out_train.readlines())
 
-    outliers = {"x_train": outlier_train, "x_test": outlier_test}
-
-    feature = DataParser(training_features, label, outliers=outliers, scaler=scaler, sheets=sheet_name)
-    test_features = feature.read_features(test_features)
-    training_features, test_features =  feature.fix_outliers(feature.features, test_features)
+    feature = DataParser(training_features, label, outliers=outlier_train, scaler=scaler, sheets=sheet_name)
+    test_features = feature.fix_outliers(feature.read_features(test_features), outlier_test)
     predictions = predict(test_features, model_path, problem)
     if applicability_domain:
         transformed, scaler_dict, test_x = scale(scaler, training_features, test_features)

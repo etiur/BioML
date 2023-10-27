@@ -54,7 +54,7 @@ class DataParser:
     """
     features: pd.DataFrame | str | list | np.ndarray
     label: pd.Series | str | Iterable[int|float] | None = None
-    outliers: dict[str, tuple] = field(default_factory=lambda: defaultdict(tuple))
+    outliers: tuple[str, ...] = ()
     scaler: str="robust"
     sheets: str | int |None = None
 
@@ -65,6 +65,8 @@ class DataParser:
             if not isinstance(self.label, str):
                 self.features = pd.concat([self.features, self.label], axis=1)
                 self.label = self.label.index.name
+
+        self.features = self.fix_outliers(self.features, self.outliers)
 
     def read_features(self, features: str | pd.DataFrame | list | np.ndarray) -> pd.DataFrame:
         """
@@ -97,7 +99,6 @@ class DataParser:
 
                 return pd.read_excel(features, index_col=0, engine='openpyxl', sheet_name=self.sheets)
         
-            
         elif isinstance(features, pd.DataFrame):
             return features
         elif isinstance(features, (list, np.ndarray)):
@@ -138,7 +139,7 @@ class DataParser:
                     
         raise TypeError("label should be a csv file, a pandas Series or inside features")
     
-    def fix_outliers(self, training_features: pd.DataFrame, test_features: pd.DataFrame |None =None):
+    def fix_outliers(self, training_features: pd.DataFrame, outliers: tuple[str, ...]):
         """
         Remove outliers from the train data
 
@@ -146,8 +147,6 @@ class DataParser:
         ----------
         training_features : pd.DataFrame
             The training data.
-        test_features : pd.DataFrame or None, optional
-            The testing data. Defaults to None.
 
         Returns
         -------
@@ -155,10 +154,8 @@ class DataParser:
             The data with outliers removed.
         """
         #remove outliers
-        training_features.loc[[x for x in training_features.index if x not in self.outliers["x_train"]]]
-        if test_features is not None:
-            test_features.loc[[x for x in test_features.index if x not in self.outliers["x_test"]]]
-            return training_features, test_features
+        training_features.loc[[x for x in training_features.index if x not in outliers]]
+
         return training_features
     
     def process(self, transformed_x: pd.DataFrame, test_x: pd.DataFrame, y_train: pd.Series, 
