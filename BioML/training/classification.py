@@ -119,7 +119,7 @@ class Classifier:
         cv_val = dataframe.loc[("CV-Val", "Mean")]
 
         mcc = ((cv_train[self.optimize] + cv_val[self.optimize])
-                - self.difference_weight * abs(cv_val[self.optimize] - cv_val[self.optimize] ))
+                - self.difference_weight * abs(cv_val[self.optimize] - cv_train[self.optimize] ))
         
         prec = ((cv_train["Prec."] + cv_val["Prec."])
                 - self.difference_weight * abs(cv_val["Prec."] - cv_train["Prec."]))

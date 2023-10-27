@@ -289,7 +289,7 @@ def write_results(training_output: Path | str, sorted_results: pd.DataFrame, top
         write_excel(training_output / f"top_hyperparameters.xlsx", top_params, sheet_name)
 
 
-def sort_regression_prediction(dataframe: pd.DataFrame, optimize="RSME", R2_weight=0.8) -> pd.DataFrame:
+def sort_regression_prediction(dataframe: pd.DataFrame, optimize="RSME") -> pd.DataFrame:
     """
     Sorts the predictions of a regression model based on a specified optimization metric and R2 score.
 
@@ -299,16 +299,16 @@ def sort_regression_prediction(dataframe: pd.DataFrame, optimize="RSME", R2_weig
         The DataFrame containing the predictions of the regression model.
     optimize : str, optional
         The name of the optimization metric to use for sorting the predictions. Default is "RMSE".
-    R2_weight : float, optional
-        The weight to give to the R2 score when sorting the predictions. Default is 0.8.
 
     Returns
     -------
     pd.DataFrame
         The sorted DataFrame of predictions.
     """
-
-    return dataframe.loc[(dataframe[optimize] + R2_weight * dataframe["R2"]).sort_values(ascending=False).index]
+    if optimize == "R2":
+        return dataframe.loc[dataframe["R2"].sort_values(ascending=False).index]
+    if optimize != "R2":
+        return dataframe.loc[dataframe[optimize].sort_values(ascending=True).index]
     
 
 def sort_classification_prediction(dataframe: pd.DataFrame, optimize="MCC", prec_weight=1.2, 
@@ -334,7 +334,7 @@ def sort_classification_prediction(dataframe: pd.DataFrame, optimize="MCC", prec
     pd.DataFrame
         The sorted DataFrame of predictions.
     """
-    sort = dataframe.loc[(dataframe[optimize] + report_weight * (prec_weight * dataframe["Precision"] + 
+    sort = dataframe.loc[(dataframe[optimize] + report_weight * (prec_weight * dataframe["Prec."] + 
                     recall_weight * dataframe["Recall"])).sort_values(ascending=False).index]
     return sort
 

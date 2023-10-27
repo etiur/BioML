@@ -33,8 +33,6 @@ def arg_parse():
                         help="The time budget for the training in minutes, should be > 0 or None")
     parser.add_argument("-dw", "--difference_weight", required=False, default=1.2, type=float,
                         help="How important is to have similar training and test metrics")
-    parser.add_argument("-r2", "--r2_weight", required=False, default=0.8, type=float,
-                        help="The weights for the R2 score")
     parser.add_argument("-st", "--strategy", required=False, choices=("holdout", "kfold"), default="holdout",
                         help="The spliting strategy to use")
     parser.add_argument("-be", "--best_model", required=False, default=3, type=int,
@@ -59,7 +57,7 @@ def arg_parse():
 
     return [args.label, args.training_output, args.budget_time, args.scaler,
             args.excel, args.kfold_parameters, args.outliers,
-            args.difference_weight, args.r2_weight, args.strategy, args.best_model,
+            args.difference_weight, args.strategy, args.best_model,
             args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected]
 
 
@@ -86,7 +84,7 @@ class Regressor:
     def __init__(self, ranking_params=None, drop: Iterable[str]|None=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), selected: Iterable[str]|None=None, 
                  test_size: float = 0.2, optimize: str="RMSE"):
         
-        ranking_dict = dict(R2_weight=0.8, difference_weight=1.2)
+        ranking_dict = dict(difference_weight=1.2)
         if isinstance(ranking_params, dict):
             for key, value in ranking_params.items():
                 if key not in ranking_dict:
@@ -95,7 +93,6 @@ class Regressor:
         self.test_size = test_size
         self.drop = drop
         self.difference_weight = ranking_dict["difference_weight"]
-        self.R2_weight = ranking_dict["R2_weight"]
         self.selected = selected
         self.optimize = optimize
 
@@ -123,14 +120,17 @@ class Regressor:
         cv_train = dataframe.loc[("CV-Train", "Mean")]
         cv_val = dataframe.loc[("CV-Val", "Mean")]
 
-        rmse = ((cv_train[self.optimize] + cv_val[self.optimize])
-                - self.difference_weight * abs(cv_val[self.optimize] - cv_val[self.optimize] ))
-        
-        r2 = ((cv_train["R2"] + cv_val["R2"])
+        if self.optimize != "R2":
+            rmse = ((cv_train[self.optimize] + cv_val[self.optimize])
+                    + self.difference_weight * abs(cv_val[self.optimize] - cv_train[self.optimize]))
+            
+            return - rmse # negative because the sorting is from greater to smaller, in this case the smaller the error value the better
+
+        if self.optimize == "R2":
+            r2 = ((cv_train["R2"] + cv_val["R2"])
                 - self.difference_weight * abs(cv_val["R2"] - cv_train["R2"]))
         
-        
-        return - np.sqrt(abs(rmse * (self.R2_weight * r2)))
+            return r2
     
     def run_training(self, trainer: Trainer, feature: DataParser, plot: tuple[str, ...]=("residuals", "error", "learning")):
         """
@@ -166,7 +166,7 @@ class Regressor:
     
 def main():
     label, training_output, trial_time, scaler, excel, kfold, outliers, \
-        difference_weight, r2_weight, strategy, seed, best_model, drop, tune, plot, optimize, selected = arg_parse()
+        difference_weight, strategy, seed, best_model, drop, tune, plot, optimize, selected = arg_parse()
     
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     training_output = Path(training_output)
@@ -180,7 +180,7 @@ def main():
     experiment = PycaretInterface("regression", feature.label.index.name, seed, budget_time=trial_time, best_model=best_model, 
                                   output_path=training_output, optimize=optimize)
 
-    ranking_dict = dict(R2_weight=r2_weight, difference_weight=difference_weight)
+    ranking_dict = dict(difference_weight=difference_weight)
     training = Trainer(experiment, num_split)
     regressor = Regressor(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize)
     
@@ -198,7 +198,7 @@ def main():
                 write_results(f"{training_output}/{tune_status}", value[0], sheet_name=key)
             elif len(value) == 3:
                 write_results(f"{training_output}/{tune_status}", value[0], value[2], sheet_name=key)
-        partial_sort = partial(sort_regression_prediction, optimize=optimize, R2_weight=r2_weight)    
+        partial_sort = partial(sort_regression_prediction, optimize=optimize)    
         write_results(f"{training_output}/{tune_status}", partial_sort(pd.concat(predictions)), sheet_name=f"test_results")
 
 
