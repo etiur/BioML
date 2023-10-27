@@ -4,6 +4,7 @@ import argparse
 from .classification import Classifier
 from .regression import Regressor
 from .helper import DataParser
+import json
 
 
 def arg_parse():
@@ -37,12 +38,13 @@ def arg_parse():
     parser.add_argument("-sh", "--sheet_name", required=False, default=None, 
                         help="The sheet name for the excel file if the training features is in excel format")
     parser.add_argument("--tune", action="store_false", required=False, help="If to tune the best models")
-    
+    parser.add_argument("-j", "--setup_config", required=False, default=None,
+                        help="A json file for teh setup_configurations")
     args = parser.parse_args()
 
     return [args.training_features, args.label, args.scaler, args.model_output,
             args.outliers, args.selected_models, args.problem, args.optimize,
-            args.model_strategy, args.seed, args.kfold_parameters, args.tune, args.sheet_name]
+            args.model_strategy, args.seed, args.kfold_parameters, args.tune, args.sheet_name, args.setup_config]
 
 
 class GenerateModel:
@@ -152,11 +154,14 @@ class GenerateModel:
 
 def main():
     training_features, label, scaler, model_output, outliers, selected_models, \
-    problem, optimize, model_strategy, seed, kfold, tune, sheet = arg_parse()
+    problem, optimize, model_strategy, seed, kfold, tune, sheet, setup_config = arg_parse()
     if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
-    
+    if setup_config:
+        with open(setup_config) as config:
+            setup_config = json.load(config)
+
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
 
     # instantiate everything to run training
@@ -169,7 +174,7 @@ def main():
         model = Classifier(drop=(), selected=selected_models, test_size=test_size, optimize=optimize)
     elif problem == "regression":
         model = Regressor(drop=(), selected=selected_models, test_size=test_size, optimize=optimize)
-    sorted_results, sorted_models, top_params = model.run_training(training, feature, plot=())
+    sorted_results, sorted_models, top_params = model.run_training(training, feature, plot=(), **setup_config)
     if tune:
         sorted_results, sorted_models, top_params = training.retune_best_models(sorted_models)
     # generate the final model
