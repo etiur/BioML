@@ -11,7 +11,7 @@ def arg_parse():
 
     parser.add_argument("-i", "--training_features", required=True,
                         help="The file to where the features for the training are in excel or csv format")
-    parser.add_argument("-sc", "--scaler", default="robust", choices=("robust", "standard", "minmax"),
+    parser.add_argument("-sc", "--scaler", default="robust", choices=("robust", "zscore", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
     parser.add_argument("-l", "--label", required=True,
                         help="The path to the labels of the training set in a csv format")
@@ -30,20 +30,19 @@ def arg_parse():
                         default="MCC", choices=("MCC", "Prec.", "Recall", "F1", "AUC", "Accuracy", "Average Precision Score", 
                                                 "RMSE", "R2", "MSE", "MAE", "RMSLE", "MAPE"), 
                         help="The metric to optimize")
-    parser.add_argument("-st", "--strategy", required=False, choices=("holdout", "kfold"), default="holdout",
-                        help="The spliting strategy to use")
     parser.add_argument("-m", "--model_strategy", help=f"The strategy to use for the model, choices are majority, stacking or simple:model_index, model index should be an integer", default="majority")
     parser.add_argument("--seed", required=True, help="The seed for the random state")
     parser.add_argument("-k", "--kfold_parameters", required=False,
                         help="The parameters for the kfold in num_split:test_size format", default="5:0.2")
-    
+    parser.add_argument("-sh", "--sheet_name", required=False, default=None, 
+                        help="The sheet name for the excel file if the training features is in excel format")
     parser.add_argument("--tune", action="store_false", required=False, help="If to tune the best models")
     
     args = parser.parse_args()
 
     return [args.training_features, args.label, args.scaler, args.model_output,
-            args.outliers, args.selected_models, args.problem, args.optimize, args.strategy, 
-            args.model_strategy, args.seed, args.kfold_parameters, args.tune]
+            args.outliers, args.selected_models, args.problem, args.optimize,
+            args.model_strategy, args.seed, args.kfold_parameters, args.tune, args.sheet_name]
 
 
 class GenerateModel:
@@ -153,16 +152,16 @@ class GenerateModel:
 
 def main():
     training_features, label, scaler, model_output, outliers, selected_models, \
-    problem, optimize, strategy, model_strategy, seed, kfold, tune = arg_parse()
+    problem, optimize, model_strategy, seed, kfold, tune, sheet = arg_parse()
     if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
-    outliers = {"x_train": outliers, "x_test": outliers}
+    outliers = {"x_train": outliers}
     
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
 
     # instantiate everything to run training
-    feature = DataParser(training_features, label, outliers=outliers, scaler=scaler)
+    feature = DataParser(training_features, label, outliers=outliers, scaler=scaler, sheets=sheet)
     experiment = PycaretInterface(problem, feature.label, seed, best_model=len(selected_models), optimize=optimize, 
                                   output_path=model_output)
     training = Trainer(experiment, num_split)

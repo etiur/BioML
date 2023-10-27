@@ -10,6 +10,7 @@ from Bio.SeqIO import FastaIO
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from .utilities import scale
 
 
 def arg_parse():
@@ -17,7 +18,7 @@ def arg_parse():
     parser.add_argument("-i", "--fasta_file", help="The fasta file path", required=True)
     parser.add_argument("-tr", "--training_features", required=True,
                         help="The file to where the training features are saved in excel or csv format")
-    parser.add_argument("-sc", "--scaler", default="robust", choices=("robust", "standard", "minmax"),
+    parser.add_argument("-sc", "--scaler", default="robust", choices=("robust", "zscore", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
     parser.add_argument("-m", "--model_path", required=True,
                         help="The directory for the generated models")
@@ -42,11 +43,13 @@ def arg_parse():
                         help="Use it if the lables is in the training features so it is removed, but not necessary otherwise")
     parser.add_argument("-ad", "--applicability_domain", required=False, action="store_false", 
                         help="If to use the applicability domain to filter the predictions")
+    parser.add_argument("-sh", "--sheet_name", required=False, default=None, 
+                        help="The sheet name for the excel file if the training features is in excel format")
     args = parser.parse_args()
 
     return [args.fasta_file, args.training_features, args.scaler, args.model_path, args.test_features,
              args.res_dir, args.number_similar_samples, args.outlier_train, args.outlier_test, args.problem, args.label,
-             args.applicability_domain]
+             args.applicability_domain, args.sheet_name]
 
 @dataclass(slots=True)
 class Predictor:
@@ -203,7 +206,7 @@ class FastaExtractor:
     resdir : str or Path, optional
         The path to the directory where the extracted sequences will be saved. Default is "prediction_results".
     """
-    fasta_file: str |Path
+    fasta_file: str | Path
     resdir: str | Path = "prediction_results"
 
     def __post_init__(self):
@@ -258,16 +261,17 @@ class FastaExtractor:
         else:
             return int(id_[2].split(":")[1])
 
-    def extract(self, positive_list, negative_list, positive_fasta="positive.fasta", negative_fasta="negative.fasta"):
+    def extract(self, positive_list: list[SeqIO.SeqRecord], negative_list: list[SeqIO.SeqRecord], 
+                positive_fasta: str="positive.fasta", negative_fasta: str="negative.fasta"):
         """
         A function to extract those test fasta sequences that passed the filter
 
         Parameters
         ___________
-        fasta_file: str
-            The path to the test fasta sequences
-        pred: pandas Dataframe, optional
-            Predictions
+        positive_list: list[SeqIO.SeqRecord]
+            The positive class sequences
+        negative_list: list[SeqIO.SeqRecord]
+            The negative class sequences
         positive_fasta: str, optional
             The new filtered fasta file with positive predictions
         negative_fasta: str, optional
@@ -378,6 +382,7 @@ def domain_filter(predictions: pd.DataFrame, scaled_training_features: pd.DataFr
     >>> filtered_predictions = domain_filter(predictions, scaled_training_features, 
     >>> scaled_test_features, res_dir="results", min_num=2)
     """
+    res_dir = Path(res_dir)
     domain = ApplicabilityDomain()
     domain.fit(scaled_training_features)
     domain.predict(scaled_test_features)
@@ -390,7 +395,7 @@ def domain_filter(predictions: pd.DataFrame, scaled_training_features: pd.DataFr
 
 def main():
     fasta, training_features, scaler, model_path, test_features, res_dir, number_similar_samples, \
-    outlier_train, outlier_test, problem, label, applicability_domain = arg_parse()
+    outlier_train, outlier_test, problem, label, applicability_domain, sheet_name = arg_parse()
 
     if outlier_test and Path(outlier_test[0]).exists():
         with open(outlier_test) as out_test:
@@ -402,12 +407,13 @@ def main():
 
     outliers = {"x_train": outlier_train, "x_test": outlier_test}
 
-    feature = DataParser(training_features, label, outliers=outliers, scaler=scaler)
+    feature = DataParser(training_features, label, outliers=outliers, scaler=scaler, sheets=sheet_name)
     test_features = feature.read_features(test_features)
-    transformed_x, test_x =  feature.scale(feature.features, test_features)
-    predictions = predict(test_x, model_path, problem)
+    training_features, test_features =  feature.fix_outliers(feature.features, test_features)
+    predictions = predict(test_features, model_path, problem)
     if applicability_domain:
-        predictions = domain_filter(fasta, predictions, transformed_x, test_x, res_dir, number_similar_samples)
+        transformed, scaler_dict, test_x = scale(scaler, training_features, test_features)
+        predictions = domain_filter(predictions, transformed , test_x, res_dir, number_similar_samples)
     else:
         test_index = [f"sample_{x}" for x, ind in enumerate(predictions.index)]
         predictions.index = test_index

@@ -56,7 +56,7 @@ class DataParser:
     label: pd.Series | str | Iterable[int|float] | None = None
     outliers: dict[str, tuple] = field(default_factory=lambda: defaultdict(tuple))
     scaler: str="robust"
-    sheets: str | int = 0
+    sheets: str | int |None = None
 
     def __post_init__(self):
         self.features = self.read_features(self.features)
@@ -65,8 +65,6 @@ class DataParser:
             if not isinstance(self.label, str):
                 self.features = pd.concat([self.features, self.label], axis=1)
                 self.label = self.label.index.name
-
-        self.features = self.fix_outliers(self.features)
 
     def read_features(self, features: str | pd.DataFrame | list | np.ndarray) -> pd.DataFrame:
         """

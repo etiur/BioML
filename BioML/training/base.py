@@ -215,7 +215,7 @@ class PycaretInterface:
 
         Parameters
         ----------
-        features: pd.DataFrame
+        features: pd.DataFrame, it must contain the labels
             The training data.
         label_name: str
             The name of the target column.
@@ -545,8 +545,8 @@ class PycaretInterface:
                                         verbose=False, raw_score=True)
         else:
             pred = self.pycaret.predict_model(estimador, data=target_data, 
-                                            verbose=False)
-        if target_data is None or self.label_name in target_data.columns:
+                                              verbose=False)
+        if target_data is None:
             results = self.pycaret.pull(pop=True)
             return results
         return pred
@@ -575,6 +575,8 @@ class PycaretInterface:
         """
         self.pycaret.load_model(filename)
 
+    def get_logs(self):
+        return self.pycaret.get_logs()
 
 class Trainer:
     def __init__(self, caret_interface: PycaretInterface, num_splits: int=5):

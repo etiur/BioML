@@ -19,7 +19,7 @@ def arg_parse():
                         help="The path to the labels of the training set in a csv format of string if it is insde the features")
     parser.add_argument("-n", "--num_thread", required=False, default=50, type=int,
                         help="The number of threads to search for the hyperparameter space")
-    parser.add_argument("-s", "--scaler", required=False, default="robust", choices=("robust", "standard", "minmax"),
+    parser.add_argument("-s", "--scaler", required=False, default="robust", choices=("robust", "zscore", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
     parser.add_argument("-i", "--training_features", required=True,
                         help="The file to where the training features are saved in excel or csv format")
