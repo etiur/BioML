@@ -163,7 +163,7 @@ def main():
 
     # instantiate everything to run training
     feature = DataParser(training_features, label, outliers=outliers, scaler=scaler)
-    experiment = PycaretInterface(problem, feature.label.index.name, seed, best_model=len(selected_models), optimize=optimize, 
+    experiment = PycaretInterface(problem, feature.label, seed, best_model=len(selected_models), optimize=optimize, 
                                   output_path=model_output)
     training = Trainer(experiment, num_split)
     if problem == "classification":

@@ -41,9 +41,6 @@ def arg_parse():
     parser.add_argument("-dw", "--difference_weight", required=False, default=1.2, type=float,
                         help="How important is to have similar training and test metrics")
 
-    parser.add_argument("-st", "--strategy", required=False, choices=("holdout", "kfold"), default="holdout",
-                        help="The spliting strategy to use")
-
     parser.add_argument("-be", "--best_model", required=False, default=3, type=int,
                         help="The number of best models to select, it affects the analysis and the saved hyperparameters")
     parser.add_argument("--seed", required=False, default=None, type=int, help="The seed for the random state")
@@ -64,12 +61,16 @@ def arg_parse():
     parser.add_argument("-op", "--optimize", required=False, default="MCC", choices=("MCC", "Prec.", "Recall", "F1", "AUC", "Accuracy", 
                                                                                      "Average Precision Score"),
                         help="The metric to optimize for retuning the best models")
+    
+    parser.add_argument("-sh", "--sheet_name", required=False, default=None, 
+                        help="The sheet name for the excel file if the training features is in excel format")
 
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.budget_time, args.scaler, args.training_features, args.kfold_parameters, 
             args.outliers, args.precision_weight, args.recall_weight, args.report_weight, args.difference_weight, 
-            args.strategy, args.best_model, args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected]
+            args.strategy, args.best_model, args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected,
+            args.sheet_name]
 
 
 class Classifier:
@@ -129,7 +130,8 @@ class Classifier:
         
         return mcc + self.report_weight * (self.pre_weight * prec + self.rec_weight * recall)
     
-    def run_training(self, trainer: Trainer, feature: DataParser, plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report")):
+    def run_training(self, trainer: Trainer, feature: DataParser, plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report"),
+                     **kwargs):
         """
         A function that splits the data into training and test sets and then trains the models
         using cross-validation but only on the training data
@@ -146,6 +148,8 @@ class Classifier:
                 4. confusion_matrix 
                 5. class_report: read classification_report from sklearn.metrics
 
+        **kwargs : dict, optional
+            A dictionary containing the parameters for the setup function in pycaret.
         Returns
         -------
         pd.DataFrame
@@ -155,13 +159,8 @@ class Classifier:
         pd.DataFrame
          
         """
-        X_train, X_test, y_train, y_test = train_test_split(feature.features, feature.label, test_size=self.test_size, 
-                                                            random_state=trainer.experiment.seed, 
-                                                            stratify=feature.label)
-        transformed_x, test_x = feature.scale(X_train, X_test)
-        transformed_x, test_x = feature.process(X_train, X_test, y_train, y_test)
-        sorted_results, sorted_models, top_params = trainer.analyse_models(transformed_x, test_x, 
-                                                                           self._calculate_score_dataframe, self.drop, self.selected)
+        sorted_results, sorted_models, top_params = trainer.analyse_models(feature, self._calculate_score_dataframe, self.test_size,
+                                                                           self.drop, self.selected, **kwargs)
         if plot:
             trainer.experiment.plots = plot
             trainer.experiment.plot_best_models(sorted_models)
@@ -172,8 +171,8 @@ class Classifier:
 
 def main():
     label, training_output, budget_time, scaler, excel, kfold, outliers, \
-    precision_weight, recall_weight, report_weight, difference_weight, strategy, best_model, \
-    seed, drop, tune,  plot, optimize, selected = arg_parse()
+    precision_weight, recall_weight, report_weight, difference_weight, best_model, \
+    seed, drop, tune,  plot, optimize, selected, sheet = arg_parse()
     
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     training_output = Path(training_output)
@@ -183,8 +182,8 @@ def main():
 
     outliers = {"x_train": outliers, "x_test": outliers}
     
-    feature = DataParser(excel, label, outliers=outliers, scaler=scaler)
-    experiment = PycaretInterface("classification", feature.label.index.name, seed, budget_time=budget_time, best_model=best_model, 
+    feature = DataParser(excel, label, outliers=outliers, scaler=scaler, sheets=sheet)
+    experiment = PycaretInterface("classification", feature.label, seed, budget_time=budget_time, best_model=best_model, 
                                   output_path=training_output, optimize=optimize)
     training = Trainer(experiment, num_split)
     ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight,
@@ -192,13 +191,13 @@ def main():
     
     classifier = Classifier(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize)
 
-    results = generate_training_results(classifier, training, feature, plot, tune, strategy)
+    results = generate_training_results(classifier, training, feature, plot, tune)
     evaluate_all_models(experiment.evaluate_model, results, training_output)
     for tune_status, result_dict in results.items():
         predictions = []
         for key, value in result_dict.items():
             # get the test set prediction results
-            predictions.append(training.predict_on_test_set(value[1], f"{tune_status}_{key}"))
+            predictions.append(training.predict_on_test_set(value[1]))
             # write the results on excel files
             if len(value) == 2:
                 write_results(f"{training_output}/{tune_status}", value[0], sheet_name=key)

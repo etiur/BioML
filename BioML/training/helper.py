@@ -62,6 +62,9 @@ class DataParser:
         self.features = self.read_features(self.features)
         if self.label:
             self.label = self.read_labels(self.label)
+            if not isinstance(self.label, str):
+                self.features = pd.concat([self.features, self.label], axis=1)
+                self.label = self.label.index.name
 
     def read_features(self, features: str | pd.DataFrame | list | np.ndarray) -> pd.DataFrame:
         """
@@ -102,7 +105,7 @@ class DataParser:
 
         raise TypeError("features should be a csv or excel file, an array or a pandas DataFrame")
         
-    def read_labels(self, label: str | pd.Series) -> pd.Series:
+    def read_labels(self, label: str | pd.Series) -> str:
         """
         Reads the label data from a file or returns the input data.
 
@@ -131,9 +134,7 @@ class DataParser:
                 label.index.name = "target"
                 return label    
             elif label in self.features.columns:
-                lab = self.features[label]
-                self.features.drop(label, axis=1, inplace=True)
-                return lab
+                return label
                     
         raise TypeError("label should be a csv file, a pandas Series or inside features")
     
@@ -180,7 +181,8 @@ class DataParser:
         Returns
         -------
         Tuple[pd.DataFrame, pd.DataFrame]
-            A tuple containing the concatenated training feature and label data, and the concatenated testing feature and label data.
+            A tuple containing the concatenated training feature and label data, 
+            and the concatenated testing feature and label data.
         """
         transformed_x = pd.concat([transformed_x, y_train], axis=1) 
         test_x = pd.concat([test_x, y_test], axis=1)
@@ -188,7 +190,7 @@ class DataParser:
     
 
 def generate_training_results(model, training: Trainer, feature: DataParser, plot: tuple, 
-                              tune: bool=False, strategy="holdout") -> dict[str, dict[str, tuple]]:
+                              tune: bool=False, **kwargs) -> dict[str, dict[str, tuple]]:
     """
     Generate training results for a given model, training object, and feature data.
 
@@ -204,28 +206,28 @@ def generate_training_results(model, training: Trainer, feature: DataParser, plo
         A tuple containing the plot title and axis labels.
     tune : bool, optional
         Whether to tune the hyperparameters. Defaults to True.
-    strategy : str, optional
-        The strategy to use for training. Defaults to "holdout".
+    **kwargs : dict
+        Additional keyword arguments to pass to the pycaret setup function.
 
     Returns
     -------
     dict
         A dictionary containing the training results.
     """    
-    sorted_results, sorted_models, top_params = model.run_training(training, feature, plot)
+    sorted_results, sorted_models, top_params = model.run_training(training, feature, plot, **kwargs)
     if 'dummy' in sorted_results.index.unique(0)[:3]:
         warnings.warn(f"Dummy model is in the top {list(sorted_results.index.unique(0)).index('dummy')} models, turning off tuning")
         tune = False
 
     # saving the results in a dictionary and writing it into excel files
     results = defaultdict(dict)
-    results["not_tuned"][strategy] = sorted_results, sorted_models, top_params
+    results["not_tuned"]["holdout"] = sorted_results, sorted_models, top_params
     results["not_tuned"]["stacked"] = training.stack_models(sorted_models)
     results["not_tuned"]["majority"] = training.create_majority_model(sorted_models)
 
     if tune:
         sorted_result_tune, sorted_models_tune, top_params_tune = training.retune_best_models(sorted_models)
-        results["tuned"][strategy] = sorted_result_tune, sorted_models_tune, top_params_tune
+        results["tuned"]["holdout"] = sorted_result_tune, sorted_models_tune, top_params_tune
         results["tuned"]["stacked"] = training.stack_models(sorted_models_tune)
         results["tuned"]["majority"] = training.create_majority_model(sorted_models_tune)            
             
@@ -289,7 +291,7 @@ def write_results(training_output: Path | str, sorted_results: pd.DataFrame, top
         write_excel(training_output / f"top_hyperparameters.xlsx", top_params, sheet_name)
 
 
-def sort_regression_prediction(dataframe: pd.DataFrame, optimize="RSME") -> pd.DataFrame:
+def sort_regression_prediction(dataframe: pd.DataFrame, optimize: str="RSME") -> pd.DataFrame:
     """
     Sorts the predictions of a regression model based on a specified optimization metric and R2 score.
 
@@ -311,8 +313,8 @@ def sort_regression_prediction(dataframe: pd.DataFrame, optimize="RSME") -> pd.D
         return dataframe.sort_values(optimize,ascending=True)
     
 
-def sort_classification_prediction(dataframe: pd.DataFrame, optimize="MCC", prec_weight=1.2, 
-                                   recall_weight=0.8, report_weight=0.6) -> pd.DataFrame:
+def sort_classification_prediction(dataframe: pd.DataFrame, optimize:str="MCC", prec_weight:float=1.2, 
+                                   recall_weight:float=0.8, report_weight:float=0.6) -> pd.DataFrame:
     """
     Sorts the predictions of a classification model based on a specified optimization metric and precision/recall scores.
 
@@ -341,7 +343,7 @@ def sort_classification_prediction(dataframe: pd.DataFrame, optimize="MCC", prec
 
 def iterate_multiple_features(iterator: Iterator, model, label: str | list[int | float], scaler: str, 
                               training: Trainer, outliers: dict[str,tuple[str, ...]],
-                              training_output: Path) -> None:
+                              training_output: Path, **kwargs) -> None:
     
     """
     Iterates over multiple input features and generates training results for each feature.
@@ -370,8 +372,8 @@ def iterate_multiple_features(iterator: Iterator, model, label: str | list[int |
 
     performance_list = []
     for input_feature, sheet in iterator:
-        feature = DataParser(input_feature, label=label, scaler=scaler, sheets=sheet, outlier=outliers)
-        sorted_results, sorted_models, top_params = model.run_training(training, feature, plot=())
+        feature = DataParser(input_feature, label=label, scaler=scaler, sheets=sheet, outliers=outliers)
+        sorted_results, sorted_models, top_params = model.run_training(training, feature, plot=(), **kwargs)
         index = sorted_results.index.unique(0)[:training.experiment.best_model]
         score = 0
         for i in index:

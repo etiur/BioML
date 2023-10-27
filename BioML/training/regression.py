@@ -33,8 +33,6 @@ def arg_parse():
                         help="The time budget for the training in minutes, should be > 0 or None")
     parser.add_argument("-dw", "--difference_weight", required=False, default=1.2, type=float,
                         help="How important is to have similar training and test metrics")
-    parser.add_argument("-st", "--strategy", required=False, choices=("holdout", "kfold"), default="holdout",
-                        help="The spliting strategy to use")
     parser.add_argument("-be", "--best_model", required=False, default=3, type=int,
                         help="The number of best models to select, it affects the analysis and the save hyperparameters")
     parser.add_argument("--seed", required=False, default=None, type=int, help="The seed for the random state")
@@ -52,13 +50,14 @@ def arg_parse():
                         choices=("RMSE", "R2", "MSE", "MAE", "RMSLE", "MAPE"), help="The metric to optimize")
     parser.add_argument("-p", "--plot", nargs="+", required=False, default=("residuals", "error", "learning"),
                         help="The plots to show")
-
+    parser.add_argument("-sh", "--sheet_name", required=False, default=None, 
+                        help="The sheet name for the excel file if the training features is in excel format")
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.budget_time, args.scaler,
-            args.excel, args.kfold_parameters, args.outliers,
+            args.training_features, args.kfold_parameters, args.outliers,
             args.difference_weight, args.strategy, args.best_model,
-            args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected]
+            args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected, args.sheet_name]
 
 
 class Regressor:
@@ -81,7 +80,8 @@ class Regressor:
 
 
     """
-    def __init__(self, ranking_params=None, drop: Iterable[str]|None=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), selected: Iterable[str]|None=None, 
+    def __init__(self, ranking_params: dict[str, float] | None=None, 
+                 drop: Iterable[str]=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), selected: Iterable[str]=(), 
                  test_size: float = 0.2, optimize: str="RMSE"):
         
         ranking_dict = dict(difference_weight=1.2)
@@ -132,7 +132,8 @@ class Regressor:
         
             return r2
     
-    def run_training(self, trainer: Trainer, feature: DataParser, plot: tuple[str, ...]=("residuals", "error", "learning")):
+    def run_training(self, trainer: Trainer, feature: DataParser, plot: tuple[str, ...]=("residuals", "error", "learning"),
+                     **kwargs):
         """
         A function that splits the data into training and test sets and then trains the models
         using cross-validation but only on the training data
@@ -146,17 +147,16 @@ class Regressor:
                 1. residuals: Plots the difference (predicted-actual value) vs predicted value for train and test
                 2. error: Plots the actual values vs predicted values
                 3. learning: learning curve
-
+        **kwargs : dict, optional
+            A dictionary containing the parameters for the setup function in pycaret.
         Returns
         -------
         tuple[pd.DataFrame, dict, pd.Series]
             The sorted results, the sorted models and the top parameters
          
         """
-        X_train, X_test, y_train, y_test = train_test_split(feature.features, feature.label, test_size=self.test_size, random_state=trainer.experiment.seed)
-        transformed_x, test_x = feature.scale(X_train, X_test)
-        transformed_x, test_x = feature.process(X_train, X_test, y_train, y_test)
-        sorted_results, sorted_models, top_params = trainer.analyse_models(transformed_x, test_x, self._calculate_score_dataframe, self.drop, self.selected)
+        sorted_results, sorted_models, top_params = trainer.analyse_models(feature, self._calculate_score_dataframe, self.test_size,
+                                                                           self.drop, self.selected, **kwargs)
         if plot:
             trainer.experiment.plots = plot
             trainer.experiment.plot_best_models(sorted_models)
@@ -165,8 +165,8 @@ class Regressor:
     
     
 def main():
-    label, training_output, trial_time, scaler, excel, kfold, outliers, \
-        difference_weight, strategy, seed, best_model, drop, tune, plot, optimize, selected = arg_parse()
+    label, training_output, trial_time, scaler, excel, kfold, outliers, difference_weight, \
+    seed, best_model, drop, tune, plot, optimize, selected, sheet = arg_parse()
     
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     training_output = Path(training_output)
@@ -176,15 +176,15 @@ def main():
 
     outliers = {"x_train": outliers, "x_test": outliers}
     
-    feature = DataParser(excel, label,  outliers=outliers, scaler=scaler)
-    experiment = PycaretInterface("regression", feature.label.index.name, seed, budget_time=trial_time, best_model=best_model, 
+    feature = DataParser(excel, label,  outliers=outliers, scaler=scaler, sheets=sheet)
+    experiment = PycaretInterface("regression", feature.label, seed, budget_time=trial_time, best_model=best_model, 
                                   output_path=training_output, optimize=optimize)
 
     ranking_dict = dict(difference_weight=difference_weight)
     training = Trainer(experiment, num_split)
     regressor = Regressor(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize)
     
-    results = generate_training_results(regressor, training, feature, plot, tune, strategy)
+    results = generate_training_results(regressor, training, feature, plot, tune)
     
     evaluate_all_models(experiment.evaluate_model, results, training_output)
 
@@ -192,7 +192,7 @@ def main():
         predictions = []
         for key, value in result_dict.items():
             # get the test set prediction results
-            predictions.append(training.predict_on_test_set(value[1], f"{tune_status}_{key}"))
+            predictions.append(training.predict_on_test_set(value[1]))
             # write the results on excel files
             if len(value) == 2:   
                 write_results(f"{training_output}/{tune_status}", value[0], sheet_name=key)

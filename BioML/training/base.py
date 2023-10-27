@@ -8,7 +8,9 @@ from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
 from ..utilities import Log
 from sklearn.metrics import average_precision_score
-from .helper import DataParser        
+from .helper import DataParser       
+from typing import Iterable
+
 
 @dataclass
 class PycaretInterface:
@@ -75,6 +77,7 @@ class PycaretInterface:
 
     """
     objective: str
+    label_name: str
     seed: None | int = None
     optimize: str = "MCC"
     #verbose: bool = False
@@ -120,7 +123,7 @@ class PycaretInterface:
         self.log.info(f"Output path: {self.output_path}")
     
     @staticmethod
-    def _check_value(value, element_list, element_name):
+    def _check_value(value: str | Iterable[str], element_list: list[str], element_name: str):
         if isinstance(value, (list, np.ndarray, tuple, set)):
             test = list(set(value).difference(element_list))
             if test:
@@ -134,18 +137,18 @@ class PycaretInterface:
         return value
 
     @property
-    def plots(self):
+    def plots(self) -> list[str]:
         """
         The plots that should be saved
         """
         return self._plots
     
     @plots.setter
-    def plots(self, value) -> list[str]:
+    def plots(self, value):
         self._plots = self._check_value(value, self._plots, "plots")
 
     @property
-    def final_models(self):
+    def final_models(self) -> list[str]:
         """
         The models to be used for classification or regression use one of the keys, 
         you can include custom models as long as it is compatibl with scit-learn API
@@ -202,10 +205,10 @@ class PycaretInterface:
         return self._final_models
     
     @final_models.setter
-    def final_models(self, value) -> list[str]:
+    def final_models(self, value: str |Iterable[str]) -> None:
         self._final_models = self._check_value(value, self._final_models, "models")
 
-    def setup_training(self, features: pd.DataFrame, label_name:str, fold: int=5, test_size:float=0.2, scaler:str="robust",
+    def setup_training(self, features: pd.DataFrame, fold: int=5, test_size:float=0.2, scaler:str="robust",
                        **kwargs):
         """
         Call pycaret set_up for the training.
@@ -229,7 +232,7 @@ class PycaretInterface:
         self
             PycaretInterface object.
         """
-        self.pycaret.setup(data=features, target=label_name, normalize=True, preprocess=True, 
+        self.pycaret.setup(data=features, target=self.label_name, normalize=True, preprocess=True, 
                            log_experiment=True, experiment_name=self.objective.capitalize(), normalize_method=scaler,
                            session_id = self.seed, fold_shuffle=True, fold=fold, verbose=False, train_size=1-test_size, 
                            **kwargs)
@@ -637,8 +640,8 @@ class Trainer:
 
         return pd.concat(sorted_results), sorted_models
     
-    def train(self, features: DataParser, test_size: float=0.2, 
-              drop: tuple[str, ...] | None=None, selected_models: str | tuple[str, ...] | None=None, **kwargs) -> tuple[dict, dict]:
+    def train(self, features: DataParser, test_size: float=0.2, drop: tuple[str, ...]=(), 
+              selected_models: str | tuple[str, ...] =(), **kwargs) -> tuple[dict, dict]:
         """
         Train the models on the specified feature data and return the results and models.
 
@@ -661,7 +664,7 @@ class Trainer:
             A tuple containing the results and models.
         """
         # To access the transformed data
-        self.experiment.setup_training(features.features, features.label, self.num_splits, test_size, features.scaler,
+        self.experiment.setup_training(features.features, self.num_splits, test_size, features.scaler,
                                         **kwargs)
         if drop:
             self.experiment.final_models = [x for x in self.experiment.final_models if x not in drop]   
@@ -671,30 +674,32 @@ class Trainer:
         
         return results, returned_models
     
-    def analyse_models(self, transformed_x: pd.DataFrame, test_x: pd.DataFrame, scoring_fn: Callable, 
-                       drop: tuple[str] | None=None, selected: tuple[str] | None=None) -> tuple[pd.DataFrame, dict, pd.Series]:
+    def analyse_models(self, features: DataParser, scoring_fn: Callable, test_size: float=0.2,
+                       drop: tuple[str] | None=None, selected: tuple[str] | None=None, **kwargs) -> tuple[pd.DataFrame, dict, pd.Series]:
         """
         Analyze the trained models and rank them based on the specified scoring function.
 
         Parameters
         ----------
-        transformed_x : pd.DataFrame
-            The transformed feature data.
-        test_x : pd.DataFrame
-            The test feature data.
+        features : DataParser
+            The training feature data.
         scoring_fn : Callable
             The scoring function to use for evaluating the models.
+        test_size : float, optional
+            The proportion of the data to use as a test set. Defaults to 0.2.
         drop : tuple or None, optional
             The features to drop from the feature data. Defaults to None.
         selected : tuple or None, optional
             The features to select from the feature data. Defaults to None.
+        **kwargs : dict
+            Additional parameters to pass to the setup_training function which calls the pycaret.setup function.
 
         Returns
         -------
         tuple[pd.DataFrame, dict, pd.Series]
             A tuple containing the sorted results and sorted models.
         """
-        results, returned_models = self.train(transformed_x, test_x, drop, selected)
+        results, returned_models = self.train(features, test_size, drop, selected, **kwargs)
         sorted_results, sorted_models = self.rank_results(results, returned_models, scoring_fn)
         top_params = self.experiment.get_best_params_multiple(sorted_models)
 
@@ -776,7 +781,7 @@ class Trainer:
         
         return ensemble_results, ensemble_model
     
-    def predict_on_test_set(self, sorted_models: dict | list, name: str) -> pd.DataFrame:
+    def predict_on_test_set(self, sorted_models: dict | list) -> pd.DataFrame:
         """
         Generate predictions on the test set using the specified models.
 
