@@ -8,8 +8,7 @@ from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
 from ..utilities import Log
 from sklearn.metrics import average_precision_score
-from typing import Iterable
-        
+from .helper import DataParser        
 
 @dataclass
 class PycaretInterface:
@@ -45,7 +44,7 @@ class PycaretInterface:
 
     Methods
     -------
-    setup_training(X_train, X_test, fold)
+    setup_training(features, label_name, fold, test_size, scaler, **kwargs)
         Set up the training data for the machine learning models.
     train()
         Train the machine learning models.
@@ -76,7 +75,6 @@ class PycaretInterface:
 
     """
     objective: str
-    label_name: str
     seed: None | int = None
     optimize: str = "MCC"
     #verbose: bool = False
@@ -207,33 +205,42 @@ class PycaretInterface:
     def final_models(self, value) -> list[str]:
         self._final_models = self._check_value(value, self._final_models, "models")
 
-    def setup_training(self,X_train: pd.DataFrame, X_test: pd.DataFrame, fold: int) -> Any:
+    def setup_training(self, features: pd.DataFrame, label_name:str, fold: int=5, test_size:float=0.2, scaler:str="robust",
+                       **kwargs):
         """
         Call pycaret set_up for the training.
 
         Parameters
         ----------
-        X_train : pd.DataFrame
+        features: pd.DataFrame
             The training data.
-        X_test : pd.DataFrame
-            The test data.
+        label_name: str
+            The name of the target column.
         fold : int
             The number of cross-validation folds to use.
-
+        test_size : float
+            The proportion of the dataset to include in the test split.
+        scaler : str
+            The scaler to use.
+        kwargs : dict
+            Other parameters to pass to pycaret.setup.
         Returns
         -------
-        Any
-            The pycaret classification or regression object
+        self
+            PycaretInterface object.
         """
-        self.pycaret.setup(data=X_train, target=self.label_name, normalize=False, preprocess=False, 
-                           log_experiment=True, experiment_name=self.objective.capitalize(), 
-                           session_id = self.seed, fold_shuffle=True, fold=fold, test_data=X_test, verbose=False)
-        
+        self.pycaret.setup(data=features, target=label_name, normalize=True, preprocess=True, 
+                           log_experiment=True, experiment_name=self.objective.capitalize(), normalize_method=scaler,
+                           session_id = self.seed, fold_shuffle=True, fold=fold, verbose=False, train_size=1-test_size, 
+                           **kwargs)
+
         if self.objective == "classification":
             self.pycaret.add_metric("averagePre", "Average Precision Score", average_precision_score, 
                                    average="weighted", target="pred_proba", multiclass=False)
 
-        return self.pycaret
+        config = self.pycaret.pull(pop=True)
+        config.to_csv(self.output_path / f"config_setup_pycaret.csv")
+        return self
 
     def train(self):
         """
@@ -630,21 +637,23 @@ class Trainer:
 
         return pd.concat(sorted_results), sorted_models
     
-    def train(self, X_train: pd.DataFrame, X_test: pd.DataFrame, 
-              drop: tuple[str, ...] | None=None, selected_models: str | tuple[str, ...] | None=None) -> tuple[dict, dict]:
+    def train(self, features: DataParser, test_size: float=0.2, 
+              drop: tuple[str, ...] | None=None, selected_models: str | tuple[str, ...] | None=None, **kwargs) -> tuple[dict, dict]:
         """
         Train the models on the specified feature data and return the results and models.
 
         Parameters
         ----------
-        X_train : pd.DataFrame
+        features : pd.DataFrame
             The training feature data.
-        X_test : pd.DataFrame
-            The test feature data.
+        test_size : float, 
+            The proportion of the data to use as a test set. Defaults to 0.2.
         drop : tuple[str, ...] or None, optional
             The features to drop from the feature data. Defaults to None.
         selected_models : str or tuple[str, ...] or None, optional
             The models to use for training. Defaults to None.
+        **kwargs :
+            Additional parameters to pass to the setup_training function which calls the pycaret.setup function.
 
         Returns
         -------
@@ -652,7 +661,8 @@ class Trainer:
             A tuple containing the results and models.
         """
         # To access the transformed data
-        self.experiment.setup_training(X_train, X_test, self.num_splits)
+        self.experiment.setup_training(features.features, features.label, self.num_splits, test_size, features.scaler,
+                                        **kwargs)
         if drop:
             self.experiment.final_models = [x for x in self.experiment.final_models if x not in drop]   
         if selected_models:
