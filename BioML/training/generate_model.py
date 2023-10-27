@@ -169,7 +169,7 @@ def main():
     if problem == "classification":
         model = Classifier(drop=(), selected=selected_models, test_size=test_size, optimize=optimize)
     elif problem == "regression":
-        model = Regressor(drop=None, selected=selected_models, test_size=test_size, optimize=optimize)
+        model = Regressor(drop=(), selected=selected_models, test_size=test_size, optimize=optimize)
     sorted_results, sorted_models, top_params = model.run_training(training, feature, plot=())
     if tune:
         sorted_results, sorted_models, top_params = training.retune_best_models(sorted_models)

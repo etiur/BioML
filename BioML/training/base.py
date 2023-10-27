@@ -18,6 +18,7 @@ class PycaretInterface:
     Learn more here:
     https://pycaret.gitbook.io/docs/
     https://medium.com/analytics-vidhya/pycaret-101-for-beginners-27d9aefd34c5
+    https://towardsdatascience.com/5-things-you-are-doing-wrong-in-pycaret-e01981575d2a
 
     Attributes
     ----------
@@ -93,7 +94,7 @@ class PycaretInterface:
             self._final_models = ('lr', 'knn', 'nb', 'dt', 'svm', 'rbfsvm', 'gpc', 
                                 'mlp', 'ridge', 'rf', 'qda', 'ada', 'gbc', 'lda', 'et', 'xgboost', 
                                 'lightgbm', 'catboost', 'dummy')
-
+            
         elif self.objective == "regression":
             self.pycaret = RegressionExperiment()
             self._plots = ["residuals", "error", "learning"]
@@ -148,7 +149,9 @@ class PycaretInterface:
     @property
     def final_models(self):
         """
-        The models to be used for classification or regression use one of the keys
+        The models to be used for classification or regression use one of the keys, 
+        you can include custom models as long as it is compatibl with scit-learn API
+
         ---------------Classification models---------------
         {'lr': 'Logistic Regression',
         'knn': 'K Neighbors Classifier',
@@ -222,25 +225,19 @@ class PycaretInterface:
         Any
             The pycaret classification or regression object
         """
-        if self.objective == "classification":
-            self.pycaret.setup(data=X_train, target=self.label_name, normalize=False, preprocess=False, 
-                         log_experiment=True, experiment_name="Classification", 
-                        session_id = self.seed, fold_shuffle=True, fold=fold, test_data=X_test, verbose=False)
+        self.pycaret.setup(data=X_train, target=self.label_name, normalize=False, preprocess=False, 
+                           log_experiment=True, experiment_name=self.objective.capitalize(), 
+                           session_id = self.seed, fold_shuffle=True, fold=fold, test_data=X_test, verbose=False)
         
+        if self.objective == "classification":
             self.pycaret.add_metric("averagePre", "Average Precision Score", average_precision_score, 
                                    average="weighted", target="pred_proba", multiclass=False)
-
-        elif self.objective == "regression":
-            self.pycaret.setup(data=X_train, target=self.label_name, normalize=False, preprocess=False, 
-                             log_experiment=True, experiment_name="Regression", 
-                             session_id = self.seed, fold_shuffle=True,
-                             fold=fold, test_data=X_test, verbose=False)
 
         return self.pycaret
 
     def train(self):
         """
-        Train the machine learning models.
+        Train the machine learning models using all default hyperparameters so just one set of parameters
 
         Returns
         -------
@@ -257,10 +254,14 @@ class PycaretInterface:
         if self.budget_time:
             self.log.info(f"Time budget is {self.budget_time} minutes")
         runtime_start = time.time()
+        count=0
         for m in self.final_models:
             model =self.pycaret.create_model(m, return_train_score=True, verbose=False)
             model_results = self.pycaret.pull(pop=True)
             model_results = model_results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
+            if not isinstance(m, str):
+                m = f"custom_model_{count}"
+                count += 1
             returned_models[m] = model
             results[m] = model_results
             runtime_train = time.time()
@@ -365,7 +366,7 @@ class PycaretInterface:
 
         return pd.concat(model_params)
     
-    def retune_model(self, name: str, model: Any, num_iter: int=5, 
+    def retune_model(self, name: str, model: Any, num_iter: int=10, 
                      fold: int=5) -> tuple[Any, pd.DataFrame, pd.Series]:
         """
         Retune the specified model using Optuna.
@@ -377,7 +378,7 @@ class PycaretInterface:
         model : Any
             The trained model to retune.
         num_iter : int, optional
-            The number of iterations to use for tuning. Defaults to 5.
+            The number of iterations to use for tuning. Defaults to 10.
         fold : int, optional
             The number of cross-validation folds to use. Defaults to 5.
 
