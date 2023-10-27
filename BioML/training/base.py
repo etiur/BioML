@@ -109,11 +109,9 @@ class PycaretInterface:
                 raise ValueError("The budget time should be greater than 0")
         elif self.budget_time is not None:
             raise ValueError("The budget time should be greater than 0 or None")
-        if self.output_path is None:
-            self.output_path = Path.cwd()
-        else:
-            self.output_path = Path(self.output_path)
-
+        
+        self.output_path = Path.cwd() if self.output_path is None else Path(self.output_path)
+        
         self.log.info("------------------------------------------------------------------------------")
         self.log.info("PycaretInterface parameters")
         self.log.info(f"Seed: {self.seed}")
