@@ -86,23 +86,23 @@ class DataParser:
             If the input data type is not supported.
         """
         # concatenate features and labels
-        if isinstance(features, str):
-            if features.endswith(".csv"):
-                return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
-
-            elif features.endswith(".xlsx"):
-                with pd.ExcelFile(features) as file:
-                    if len(file.sheet_names) > 1:
-                        warnings.warn(f"The excel file contains more than one sheet, only the sheet {self.sheets} will be used")
-
-                return pd.read_excel(features, index_col=0, engine='openpyxl', sheet_name=self.sheets)
-        
-        elif isinstance(features, pd.DataFrame):
-            return features
-        elif isinstance(features, (list, np.ndarray)):
-            return pd.DataFrame(features)
-
-        raise NotSupportedError("features should be a csv or excel file, an array or a pandas DataFrame")
+        match features:
+            case str(feature):
+                if feature.endswith(".csv"):
+                    return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
+                if feature.endswith(".xlsx"):
+                    sheets = self.sheets if self.sheets else 0
+                    with pd.ExcelFile(features) as file:
+                        if len(file.sheet_names) > 1:
+                            warnings.warn(f"The excel file contains more than one sheet, only the sheet {sheets} will be used")
+                    return pd.read_excel(features, index_col=0, engine='openpyxl', sheet_name=sheets)
+                    
+            case pd.DataFrame(feature):
+                return feature
+            case list(feature) | np.array(feature):
+                return pd.DataFrame(feature)
+            case _:
+                raise NotSupportedError("features should be a csv or excel file, an array or a pandas DataFrame")
         
     def read_labels(self, label: str | pd.Series) -> str | pd.Series:
         """
@@ -123,19 +123,21 @@ class DataParser:
         TypeError
             If the input data type is not supported.
         """
-        if isinstance(label, pd.Series):
-            label.index.name = "target"
-            return label
-        
-        elif type(label) == str:
-            if Path(label).exists() and Path(label).suffix == ".csv":
-                label = pd.read_csv(label, index_col=0)
+        match label:
+            case pd.Series(label):
                 label.index.name = "target"
-                return label    
-            elif label in self.features.columns:
                 return label
-                    
-        raise NotSupportedError("label should be a csv file, a pandas Series or inside features")
+            case str(label):
+                if Path(label).exists() and Path(label).suffix == ".csv":
+                    label = pd.read_csv(label, index_col=0)
+                    label.index.name = "target"
+                    return label
+                elif label in self.features.columns:
+                    return label
+            case list(label) | np.array(label):
+                return pd.Series(label, index=self.features.index, columns=["target"])
+            case _:
+                raise NotSupportedError("label should be a csv file, an array, a pandas Series or inside features")
     
     def remove_outliers(self, training_features: pd.DataFrame, outliers: Iterable[str]):
         """
