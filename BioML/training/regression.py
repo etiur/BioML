@@ -3,6 +3,7 @@ import argparse
 from .base import PycaretInterface, Trainer
 import pandas as pd
 from .helper import DataParser, generate_training_results, evaluate_all_models, write_results, sort_regression_prediction
+from .helper import generate_test_prediction
 from functools import partial
 from typing import Iterable
 import numpy as np
@@ -172,7 +173,7 @@ def main():
     if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
-    
+    # instantiate the classes
     feature = DataParser(excel, label,  outliers=outliers, sheets=sheet)
     experiment = PycaretInterface("regression", feature.label, seed, scaler=scaler, budget_time=trial_time, best_model=best_model, 
                                   output_path=training_output, optimize=optimize)
@@ -181,22 +182,17 @@ def main():
     training = Trainer(experiment, num_split)
     regressor = Regressor(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize)
     
-    results = generate_training_results(regressor, training, feature, plot, tune)
-    
-    evaluate_all_models(experiment.evaluate_model, results, training_output)
+    # train the models and retunr the prediction results
+    results, models_dict = generate_training_results(regressor, training, feature, plot, tune)
+    partial_sort = partial(sort_regression_prediction, optimize=optimize) 
+    test_set_predictions = generate_test_prediction(models_dict, training, partial_sort)
+    evaluate_all_models(experiment.evaluate_model, models_dict, training_output)
 
+    # finally write the results
     for tune_status, result_dict in results.items():
-        predictions = []
         for key, value in result_dict.items():
-            # get the test set prediction results
-            predictions.append(training.predict_on_test_set(value[1]))
-            # write the results on excel files
-            if len(value) == 2:   
-                write_results(f"{training_output}/{tune_status}", value[0], sheet_name=key)
-            elif len(value) == 3:
-                write_results(f"{training_output}/{tune_status}", value[0], value[2], sheet_name=key)
-        partial_sort = partial(sort_regression_prediction, optimize=optimize)    
-        write_results(f"{training_output}/{tune_status}", partial_sort(pd.concat(predictions)), sheet_name=f"test_results")
+            write_results(f"{training_output}/{tune_status}", *value, sheet_name=key)
+        write_results(f"{training_output}/{tune_status}", test_set_predictions[tune_status] , sheet_name=f"test_results")
 
 
 if __name__ == "__main__":

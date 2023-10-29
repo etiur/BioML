@@ -4,6 +4,7 @@ from .base import PycaretInterface, Trainer
 import argparse
 from pathlib import Path
 from .helper import write_results, generate_training_results, evaluate_all_models, DataParser, sort_classification_prediction
+from .helper import generate_test_prediction
 from functools import partial
 
 
@@ -178,7 +179,7 @@ def main():
     if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
-    
+    # instantiate all the classes
     feature = DataParser(excel, label, outliers=outliers, sheets=sheet)
     experiment = PycaretInterface("classification", feature.label, seed, scaler=scaler, budget_time=budget_time, best_model=best_model, 
                                   output_path=training_output, optimize=optimize)
@@ -188,21 +189,19 @@ def main():
     
     classifier = Classifier(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize)
 
-    results = generate_training_results(classifier, training, feature, plot, tune)
-    evaluate_all_models(experiment.evaluate_model, results, training_output)
+    # Train using the classes
+    partial_sort = partial(sort_classification_prediction, optimize=optimize, prec_weight=precision_weight, 
+                                   recall_weight=recall_weight, report_weight=report_weight)   
+     
+    results, models_dict = generate_training_results(classifier, training, feature, plot, tune)
+    test_set_predictions = generate_test_prediction(models_dict, training, partial_sort)
+    evaluate_all_models(experiment.evaluate_model, models_dict, training_output)
+
+    # finally write the results
     for tune_status, result_dict in results.items():
-        predictions = []
         for key, value in result_dict.items():
-            # get the test set prediction results
-            predictions.append(training.predict_on_test_set(value[1]))
-            # write the results on excel files
-            if len(value) == 2:
-                write_results(f"{training_output}/{tune_status}", value[0], sheet_name=key)
-            elif len(value) == 3:
-                write_results(f"{training_output}/{tune_status}", value[0], value[2], sheet_name=key)
-        partial_sort = partial(sort_classification_prediction, optimize=optimize, prec_weight=precision_weight, 
-                                   recall_weight=recall_weight, report_weight=report_weight)    
-        write_results(f"{training_output}/{tune_status}", partial_sort(pd.concat(predictions)), sheet_name=f"test_results")
+            write_results(f"{training_output}/{tune_status}", *value, sheet_name=key)
+        write_results(f"{training_output}/{tune_status}", test_set_predictions[tune_status] , sheet_name=f"test_results")
 
 
 if __name__ == "__main__":

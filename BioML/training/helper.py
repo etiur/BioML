@@ -9,7 +9,7 @@ import numpy as np
 import warnings
 import json
 import yaml
-from typing import Any
+from typing import Any, Callable
 from ..custom_errors import NotSupportedError
 
 
@@ -200,7 +200,7 @@ class FileParser:
 
 
 def generate_training_results(model, training: Trainer, feature: DataParser, plot: tuple, 
-                              tune: bool=False, **kwargs) -> dict[str, dict[str, tuple]]:
+                              tune: bool=False, **kwargs) -> tuple[dict[str, dict], dict[str, dict]]:
     """
     Generate training results for a given model, training object, and feature data.
 
@@ -221,8 +221,8 @@ def generate_training_results(model, training: Trainer, feature: DataParser, plo
 
     Returns
     -------
-    dict
-        A dictionary containing the training results.
+    tuple[dict, dict]
+        A tuple of dictionary containing the training results and the models.
     """    
     sorted_results, sorted_models, top_params = model.run_training(training, feature, plot, **kwargs)
     if 'dummy' in sorted_results.index.unique(0)[:3]:
@@ -230,22 +230,37 @@ def generate_training_results(model, training: Trainer, feature: DataParser, plo
         tune = False
 
     # saving the results in a dictionary and writing it into excel files
+    models_dict = defaultdict(dict)
     results = defaultdict(dict)
-    results["not_tuned"]["holdout"] = sorted_results, sorted_models, top_params
-    results["not_tuned"]["stacked"] = training.stack_models(sorted_models)
-    results["not_tuned"]["majority"] = training.create_majority_model(sorted_models)
+    # save the results
+    results["not_tuned"]["holdout"] = sorted_results, top_params
+    stacked_results, stacked_models, stacked_params = training.stack_models(sorted_models)
+    results["not_tuned"]["stacked"] = stacked_results, stacked_params
+    majority_results, majority_models = training.create_majority_model(sorted_models)
+    results["not_tuned"]["majority"] = majority_results
+    #satev the models
+    models_dict["not_tuned"]["holdout"] = sorted_models
+    models_dict["not_tuned"]["stacked"] = stacked_models
+    models_dict["not_tuned"]["majority"] = majority_models
 
     if tune:
+        # save the results
         sorted_result_tune, sorted_models_tune, top_params_tune = training.retune_best_models(sorted_models)
-        results["tuned"]["holdout"] = sorted_result_tune, sorted_models_tune, top_params_tune
-        results["tuned"]["stacked"] = training.stack_models(sorted_models_tune)
-        results["tuned"]["majority"] = training.create_majority_model(sorted_models_tune)            
-            
+        results["tuned"]["holdout"] = sorted_result_tune, top_params_tune
+        stacked_results_tune, stacked_models_tune, stacked_params_tune = training.stack_models(sorted_models_tune)
+        results["tuned"]["stacked"] = stacked_results_tune, stacked_params_tune
+        majority_results_tune, majority_models_tune = training.create_majority_model(sorted_models_tune)
+        results["tuned"]["majority"] = majority_results_tune   
 
-    return results
+        #save the models
+        models_dict["tuned"]["holdout"] = sorted_models_tune
+        models_dict["tuned"]["stacked"] = stacked_models_tune
+        models_dict["tuned"]["majority"] = majority_models_tune
+
+    return results, models_dict
 
 
-def evaluate_all_models(evaluation_fn: Callable, results: dict[str, dict[str, tuple]], 
+def evaluate_all_models(evaluation_fn: Callable, results: dict[str, dict[str, tuple | dict]], 
                         training_output: str | Path) -> None:
     """
     Evaluate all models using the given evaluation function and save the results. The function used here plots the learning curve.
@@ -268,10 +283,38 @@ def evaluate_all_models(evaluation_fn: Callable, results: dict[str, dict[str, tu
     for tune_status, result_dict in results.items():
         for key, value in result_dict.items():
             if key == "stacked" or key == "majority":
-                evaluation_fn(value[1], save=f"{training_output}/evaluation_plots/{tune_status}/{key}")
+                evaluation_fn(value, save=f"{training_output}/evaluation_plots/{tune_status}/{key}")
             elif tune_status == "tuned" and key == "holdout":
-                for mod_name, model in value[1].items():
+                for mod_name, model in value.items():
                     evaluation_fn(model, save=f"{training_output}/evaluation_plots/{tune_status}/{key}/{mod_name}")
+
+
+def generate_test_prediction(models_dict: dict[str, dict], training: Trainer, sorting_function: Callable) -> dict[str, pd.DataFrame]:
+    """
+    Generate test set predictions for a given set of models.
+
+    Parameters
+    ----------
+    models_dict : dict[str, dict]
+        A dictionary containing the models to use for each tuning status.
+    training : Trainer
+        An instance of the Trainer class used to train the models.
+    sorting_function : Callable
+        A function used to sort the predictions.
+
+    Returns
+    -------
+    dict[str, pd.DataFrame]
+        A dictionary containing the prediction results for each tuning status.
+    """
+    prediction_results = {}
+    for tune_status, result_dict in models_dict.items():
+        predictions = []
+        for key, models in result_dict.items():
+            # get the test set prediction results
+            predictions.append(training.predict_on_test_set(models))
+        prediction_results[tune_status] = sorting_function(pd.concat(predictions))
+    return prediction_results
 
 
 def write_results(training_output: Path | str, sorted_results: pd.DataFrame, top_params: pd.Series | None = None, 
