@@ -1,6 +1,6 @@
 from ..utilities import write_excel
 from pathlib import Path
-from .base import Trainer
+from .base import Trainer, Modelor
 from collections import defaultdict
 from typing import Callable, Iterable, Iterator
 import pandas as pd
@@ -59,7 +59,7 @@ class DataParser:
     def __post_init__(self):
         self.features = self.read_features(self.features)
         if self.label:
-            self.label = self.read_labels(self.label)
+            self.label = self.read_labels(self.label) # type: ignore
             if not isinstance(self.label, str):
                 self.features = pd.concat([self.features, self.label], axis=1)
                 self.label = self.label.index.name
@@ -128,11 +128,11 @@ class DataParser:
             case str(labels) if Path(labels).exists() and Path(labels).suffix == ".csv":
                 labels = pd.read_csv(labels, index_col=0)
                 labels.index.name = "target"
-                return labels
-            case str(labels) if labels in self.features.columns:
+                return labels # type: ignore
+            case str(labels) if labels in self.features.columns: # type: ignore
                 return labels
             case list() | np.ndarray() as labels:
-                return pd.Series(labels, index=self.features.index, columns=["target"])
+                return pd.Series(labels, index=self.features.index, columns=["target"]) # type: ignore
             case _:
                 raise NotSupportedError(f"label should be a csv file, an array, a pandas Series or inside features: you provided {label}")
     
@@ -199,8 +199,8 @@ class FileParser:
                 raise NotSupportedError(f"Unsupported file extension: {extension}")
 
 
-def generate_training_results(model, training: Trainer, feature: DataParser, plot: tuple, 
-                              tune: bool=False, **kwargs) -> tuple[dict[str, dict], dict[str, dict]]:
+def generate_training_results(model: Modelor, training: Trainer, feature: DataParser, plot: tuple, 
+                              tune: bool=False, **kwargs: Any) -> tuple[dict[str, dict], dict[str, dict]]:
     """
     Generate training results for a given model, training object, and feature data.
 
@@ -285,7 +285,7 @@ def evaluate_all_models(evaluation_fn: Callable, results: dict[str, dict[str, tu
             if key == "stacked" or key == "majority":
                 evaluation_fn(value, save=f"{training_output}/evaluation_plots/{tune_status}/{key}")
             elif tune_status == "tuned" and key == "holdout":
-                for mod_name, model in value.items():
+                for mod_name, model in value.items(): # type: ignore
                     evaluation_fn(model, save=f"{training_output}/evaluation_plots/{tune_status}/{key}/{mod_name}")
 
 
@@ -339,12 +339,12 @@ def write_results(training_output: Path | str, sorted_results: pd.DataFrame, top
     """
     training_output = Path(training_output)
     training_output.mkdir(exist_ok=True, parents=True)
-    write_excel(training_output / "training_results.xlsx", sorted_results, sheet_name)
+    write_excel(training_output / "training_results.xlsx", sorted_results, sheet_name) # type: ignore
     if top_params is not None:
-        write_excel(training_output / f"top_hyperparameters.xlsx", top_params, sheet_name)
+        write_excel(training_output / f"top_hyperparameters.xlsx", top_params, sheet_name) # type: ignore
 
 
-def sort_regression_prediction(dataframe: pd.DataFrame, optimize: str="RSME") -> pd.DataFrame:
+def sort_regression_prediction(dataframe: pd.DataFrame, optimize: str="RSME") -> pd.DataFrame: # type: ignore
     """
     Sorts the predictions of a regression model based on a specified optimization metric and R2 score.
 
@@ -394,9 +394,9 @@ def sort_classification_prediction(dataframe: pd.DataFrame, optimize:str="MCC", 
     return sort
 
 
-def iterate_multiple_features(iterator: Iterator, model, label: str | list[int | float], 
+def iterate_multiple_features(iterator: Iterator, model: Modelor, label: str | list[int | float], 
                               training: Trainer, outliers: Iterable[str],
-                              training_output: Path, **kwargs) -> None:
+                              training_output: Path, **kwargs: Any) -> None:
     
     """
     Iterates over multiple input features and generates training results for each feature.

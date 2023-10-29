@@ -1,4 +1,4 @@
-from typing import Iterable
+from typing import Iterable, Any
 import pandas as pd
 from .base import PycaretInterface, Trainer
 import argparse
@@ -119,19 +119,19 @@ class Classifier:
         cv_train = dataframe.loc[("CV-Train", "Mean")]
         cv_val = dataframe.loc[("CV-Val", "Mean")]
 
-        mcc = ((cv_train[self.optimize] + cv_val[self.optimize])
-                - self.difference_weight * abs(cv_val[self.optimize] - cv_train[self.optimize] ))
+        mcc = ((cv_train[self.optimize] + cv_val[self.optimize]) # type: ignore
+                - self.difference_weight * abs(cv_val[self.optimize] - cv_train[self.optimize] )) # type: ignore
         
-        prec = ((cv_train["Prec."] + cv_val["Prec."])
-                - self.difference_weight * abs(cv_val["Prec."] - cv_train["Prec."]))
-        
-        recall = ((cv_train["Recall"] + cv_val["Recall"])
-                - self.difference_weight * abs(cv_val["Recall"] - cv_train["Recall"]))
+        prec = ((cv_train["Prec."] + cv_val["Prec."]) # type: ignore
+                - self.difference_weight * abs(cv_val["Prec."] - cv_train["Prec."])) # type: ignore
+         
+        recall = ((cv_train["Recall"] + cv_val["Recall"]) # type: ignore
+                - self.difference_weight * abs(cv_val["Recall"] - cv_train["Recall"])) # type: ignore
         
         return mcc + self.report_weight * (self.pre_weight * prec + self.rec_weight * recall)
     
     def run_training(self, trainer: Trainer, feature: DataParser, plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report"),
-                     **kwargs):
+                     **kwargs: Any) -> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
         """
         A function that splits the data into training and test sets and then trains the models
         using cross-validation but only on the training data
@@ -160,7 +160,7 @@ class Classifier:
          
         """
         sorted_results, sorted_models, top_params = trainer.analyse_models(feature, self._calculate_score_dataframe, self.test_size,
-                                                                           self.drop, self.selected, **kwargs)
+                                                                           self.drop, self.selected, **kwargs) # type: ignore
         if plot:
             trainer.experiment.plots = plot
             trainer.experiment.plot_best_models(sorted_models)
@@ -181,8 +181,8 @@ def main():
             outliers = tuple(x.strip() for x in out.readlines())
     # instantiate all the classes
     feature = DataParser(excel, label, outliers=outliers, sheets=sheet)
-    experiment = PycaretInterface("classification", feature.label, seed, scaler=scaler, budget_time=budget_time, best_model=best_model, 
-                                  output_path=training_output, optimize=optimize)
+    experiment = PycaretInterface("classification", feature.label, seed, scaler=scaler, budget_time=budget_time, # type: ignore
+                                  best_model=best_model, output_path=training_output, optimize=optimize)
     training = Trainer(experiment, num_split)
     ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight,
                         difference_weight=difference_weight, report_weight=report_weight)

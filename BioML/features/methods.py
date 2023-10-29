@@ -38,7 +38,7 @@ def calculate_shap_importance(model: xgb.XGBClassifier | xgb.XGBRegressor, X_tra
     """
     xgboost_explainer = shap.TreeExplainer(model, X_train, feature_names=feature_names)
     shap_values = xgboost_explainer.shap_values(X_train, Y_train)
-    shap_importance = pd.Series(np.abs(shap_values).mean(axis=0), feature_names).sort_values(ascending=False)
+    shap_importance = pd.Series(np.abs(shap_values).mean(axis=0), feature_names).sort_values(ascending=False) # type: ignore
     shap_importance = shap_importance.loc[lambda x: x > 0]
     return shap_importance, shap_values
 
@@ -174,13 +174,13 @@ def unsupervised(X_train: pd.DataFrame | np.ndarray, num_features: int,
         ufilter = TraceRatioLaplacian(num_features).fit(X_train)
         scores = {x: v for x, v in zip(feature_names, ufilter.score_)}
 
-    scores = pd.Series(dict(sorted(scores.items(), key=lambda items: items[1], reverse=True)))
+    scores = pd.Series(dict(sorted(scores.items(), key=lambda items: items[1], reverse=True))) # type: ignore
 
     return scores
 
 
 def random_forest(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray,
-                  feature_names: Iterable[str], treemodel: rfc | rfr=rfc, 
+                  feature_names: Iterable[str], treemodel: rfc | rfr=rfc, # type: ignore
                   seed: int=123, num_threads: int=-1) -> pd.Series:
     """
     Perform feature selection using a random forest model.
@@ -206,16 +206,16 @@ def random_forest(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.nd
         A series containing the feature importances, sorted in descending order.
     """
     forest_model = treemodel(random_state=seed, max_features=0.7, max_samples=0.8, min_samples_split=6, n_estimators=200, 
-                                n_jobs=num_threads, min_impurity_decrease=0.1)
+                                n_jobs=num_threads, min_impurity_decrease=0.1) # type: ignore
     forest_model.fit(X_train, Y_train)
-    gini_importance = pd.Series(forest_model.feature_importances_, index=feature_names)
+    gini_importance = pd.Series(forest_model.feature_importances_, index=feature_names) # type: ignore
     gini_importance.sort_values(ascending=False, inplace=True)
 
     return gini_importance
 
 
 def xgbtree(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, 
-            xgboosmodel: xgb.XGBClassifier | xgb.XGBRegressor= xgb.XGBClassifier, 
+            xgboosmodel: xgb.XGBClassifier | xgb.XGBRegressor= xgb.XGBClassifier,  # type: ignore
             seed: int=123, num_threads: int=-1) -> xgb.XGBClassifier | xgb.XGBRegressor:
     """
     Perform feature selection using a xgboost model.
@@ -240,7 +240,7 @@ def xgbtree(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray,
     """
 
     XGBOOST = xgboosmodel(learning_rate=0.01, n_estimators=200, max_depth=4, gamma=0,
-                            subsample=0.8, colsample_bytree=0.8, nthread=num_threads, seed=seed)
+                            subsample=0.8, colsample_bytree=0.8, nthread=num_threads, seed=seed) # type: ignore
     # Train the model
     XGBOOST.fit(X_train, Y_train)
 
@@ -248,7 +248,7 @@ def xgbtree(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray,
 
 
 def rfe_linear(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, num_features: int, seed: int,
-                feature_names: Iterable[str], step: int=30, ridgemodel: RidgeClassifier | Ridge =RidgeClassifier) -> list[str]:
+                feature_names: Iterable[str], step: int=30, ridgemodel: RidgeClassifier | Ridge =RidgeClassifier) -> list[str]: # type: ignore
     """
     Perform feature selection using recursive feature elimination with a linear model.
 
@@ -272,12 +272,12 @@ def rfe_linear(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarr
     list
         A list of the selected feature names.
     """
-    linear_model = ridgemodel(random_state=seed, alpha=4)  
+    linear_model = ridgemodel(random_state=seed, alpha=4)   # type: ignore
     rfe = RFE(estimator=linear_model, n_features_to_select=num_features, step=step)
     rfe.fit(X_train, Y_train)
-    features = rfe.get_feature_names_out(feature_names)
-    return features
-
+    features = rfe.get_feature_names_out(feature_names) # type: ignore
+    return features # type: ignore
+ 
 
 def regression_filters(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, feature_nums: int, 
                     feature_names: Iterable[str], reg_func: str) -> pd.Series:
@@ -306,6 +306,6 @@ def regression_filters(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | 
     sel = SelectKBest(reg_filters[reg_func], k=feature_nums)
     sel.fit(X_train, Y_train)
     scores = sel.scores_
-    scores = {x: v for x, v in zip(feature_names, scores)}
+    scores = {x: v for x, v in zip(feature_names, scores)} # type: ignore
     scores = pd.Series(dict(sorted(scores.items(), key=lambda items: items[1], reverse=True)))
     return scores

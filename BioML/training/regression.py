@@ -5,8 +5,7 @@ import pandas as pd
 from .helper import DataParser, generate_training_results, evaluate_all_models, write_results, sort_regression_prediction
 from .helper import generate_test_prediction
 from functools import partial
-from typing import Iterable
-import numpy as np
+from typing import Iterable, Any
 
 
 def arg_parse():
@@ -96,7 +95,7 @@ class Regressor:
         self.selected = selected
         self.optimize = optimize
 
-    def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> float | int:
+    def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> float | int: # type: ignore
         """
         Calculates the score of a DataFrame based on the optimization metric and R2 score.
 
@@ -121,19 +120,19 @@ class Regressor:
         cv_val = dataframe.loc[("CV-Val", "Mean")]
 
         if self.optimize != "R2":
-            rmse = ((cv_train[self.optimize] + cv_val[self.optimize])
-                    + self.difference_weight * abs(cv_val[self.optimize] - cv_train[self.optimize]))
+            rmse = ((cv_train[self.optimize] + cv_val[self.optimize]) # type: ignore
+                    + self.difference_weight * abs(cv_val[self.optimize] - cv_train[self.optimize])) # type: ignore
             
             return - rmse # negative because the sorting is from greater to smaller, in this case the smaller the error value the better
 
         if self.optimize == "R2":
-            r2 = ((cv_train["R2"] + cv_val["R2"])
-                - self.difference_weight * abs(cv_val["R2"] - cv_train["R2"]))
+            r2 = ((cv_train["R2"] + cv_val["R2"]) # type: ignore
+                - self.difference_weight * abs(cv_val["R2"] - cv_train["R2"])) # type: ignore
         
             return r2
     
     def run_training(self, trainer: Trainer, feature: DataParser, plot: tuple[str, ...]=("residuals", "error", "learning"),
-                     **kwargs):
+                     **kwargs: Any)-> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
         """
         A function that splits the data into training and test sets and then trains the models
         using cross-validation but only on the training data
@@ -156,7 +155,7 @@ class Regressor:
          
         """
         sorted_results, sorted_models, top_params = trainer.analyse_models(feature, self._calculate_score_dataframe, self.test_size,
-                                                                           self.drop, self.selected, **kwargs)
+                                                                           self.drop, self.selected, **kwargs) # type: ignore
         if plot:
             trainer.experiment.plots = plot
             trainer.experiment.plot_best_models(sorted_models)
@@ -175,8 +174,8 @@ def main():
             outliers = tuple(x.strip() for x in out.readlines())
     # instantiate the classes
     feature = DataParser(excel, label,  outliers=outliers, sheets=sheet)
-    experiment = PycaretInterface("regression", feature.label, seed, scaler=scaler, budget_time=trial_time, best_model=best_model, 
-                                  output_path=training_output, optimize=optimize)
+    experiment = PycaretInterface("regression", feature.label, seed, scaler=scaler, budget_time=trial_time, # type: ignore
+                                  best_model=best_model, output_path=training_output, optimize=optimize) 
 
     ranking_dict = dict(difference_weight=difference_weight)
     training = Trainer(experiment, num_split)

@@ -548,7 +548,7 @@ class ReadFeatures:
                     ind = int(col.split("_")[-1])
                     if self.selected_kfolds[sheet] and ind not in self.selected_kfolds[sheet]: continue
                     sub_feat = feature.loc[:, f"split_{ind}"]
-                    feature_dict[f"split_{ind}"] = self.features[sub_feat.columns]
+                    feature_dict[f"split_{ind}"] = self.features[sub_feat.columns] # type: ignore
                 write_excel(writer, pd.concat(feature_dict, axis=1), f"{sheet}")
 
 
@@ -596,7 +596,7 @@ def extract_and_filter(fasta_file=None, pssm_dir="pssm", ifeature_out="ifeature_
     if "filter" in purpose:
         # feature filtering
         if not selected:
-            raise ("you have not defined the selected feature sets")
+            raise ValueError("you have not defined the selected feature sets")
         filtering = ReadFeatures(fasta_file, ifeature_out, possum_out, extracted_out, types, type_file,
                                  excel_feature_file, selected)
         filtering.filter_features()

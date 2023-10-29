@@ -9,7 +9,7 @@ from pycaret.regression import RegressionExperiment
 from ..utilities import Log
 from sklearn.metrics import average_precision_score
 from .helper import DataParser       
-from typing import Iterable
+from typing import Iterable, Protocol
 
 
 @dataclass
@@ -146,7 +146,7 @@ class PycaretInterface:
     
     @plots.setter
     def plots(self, value):
-        self._plots = self._check_value(value, self._plots, "plots")
+        self._plots = self._check_value(value, self._plots, "plots") # type: ignore
 
     @property
     def final_models(self) -> list[str]:
@@ -203,11 +203,11 @@ class PycaretInterface:
         'catboost': 'CatBoost Regressor',
         'dummy': 'Dummy Regressor'}
         """
-        return self._final_models
-    
+        return self._final_models # type: ignore
+     
     @final_models.setter
     def final_models(self, value: str |Iterable[str]) -> None:
-        self._final_models = self._check_value(value, self._final_models, "models")
+        self._final_models = self._check_value(value, self._final_models, "models") # type: ignore
 
     def setup_training(self, features: pd.DataFrame, fold: int=5, test_size:float=0.2,
                        **kwargs):
@@ -237,12 +237,12 @@ class PycaretInterface:
                            **kwargs)
 
         if self.objective == "classification":
-            self.pycaret.add_metric("averagePre", "Average Precision Score", average_precision_score, 
+            self.pycaret.add_metric("averagePre", "Average Precision Score", average_precision_score,  # type: ignore
                                    average="weighted", target="pred_proba", multiclass=False)
 
         config: pd.DataFrame = self.pycaret.pull(pop=True)
-        if not (self.output_path / f"config_setup_pycaret.csv").exists():
-            config.to_csv(self.output_path / f"config_setup_pycaret.csv")
+        if not (self.output_path / f"config_setup_pycaret.csv").exists(): # type: ignore
+            config.to_csv(self.output_path / f"config_setup_pycaret.csv") # type: ignore
         return self
 
     def train(self):
@@ -282,8 +282,8 @@ class PycaretInterface:
                     f"Total runtime {total_runtime} is over time budget by {total_runtime - self.budget_time} minutes, breaking loop"
                 )
                 break
-           
-        self.log.info(f"Traininf over: Total runtime {total_runtime} minutes")
+            
+        self.log.info(f"Traininf over: Total runtime {total_runtime} minutes") # type: ignore
 
         return results, returned_models
     
@@ -304,9 +304,9 @@ class PycaretInterface:
             if ind <= self.best_model:
                 self.log.info(f"Analyse the top {ind} model: {name}")
                 if not split_ind:
-                    plot_path = self.output_path / "model_plots" / name
+                    plot_path = self.output_path / "model_plots" / name # type: ignore
                 else:
-                    plot_path = self.output_path / "model_plots" / f"{name}" / f"split_{split_ind}"
+                    plot_path = self.output_path / "model_plots" / f"{name}" / f"split_{split_ind}" # type: ignore
                 plot_path.mkdir(parents=True, exist_ok=True)
                 for pl in self.plots:
                     self.pycaret.plot_model(model, pl, save=plot_path, verbose=False)
@@ -374,7 +374,7 @@ class PycaretInterface:
             params = self.get_params(name, model)
             model_params[name] = params
 
-        return pd.concat(model_params)
+        return pd.concat(model_params) # type: ignore
     
     def retune_model(self, name: str, model: Any, num_iter: int=10, 
                      fold: int=5) -> tuple[Any, pd.DataFrame, pd.Series]:
@@ -521,7 +521,7 @@ class PycaretInterface:
         """
         if type(save) == str:
             Path(save).mkdir(parents=True, exist_ok=True)
-        self.pycaret.plot_model(model, "learning", save=save)
+        self.pycaret.plot_model(model, "learning", save=save) # type: ignore
 
     def predict(self, estimador: Any, target_data: pd.DataFrame|None=None) -> pd.DataFrame:
         """
@@ -542,7 +542,7 @@ class PycaretInterface:
         """
         if self.objective == "classification":
             pred = self.pycaret.predict_model(estimador, data=target_data, 
-                                        verbose=False, raw_score=True)
+                                        verbose=False, raw_score=True) # type: ignore
         else:
             pred = self.pycaret.predict_model(estimador, data=target_data, 
                                               verbose=False)
@@ -642,8 +642,8 @@ class Trainer:
 
         return pd.concat(sorted_results), sorted_models
     
-    def train(self, features: DataParser, test_size: float=0.2, drop: tuple[str, ...]=(), 
-              selected_models: str | tuple[str, ...] =(), **kwargs) -> tuple[dict, dict]:
+    def train(self, features: DataParser, test_size: float=0.2, drop: Iterable[str]=(), 
+              selected_models: str | Iterable[str] =(), **kwargs) -> tuple[dict, dict]:
         """
         Train the models on the specified feature data and return the results and models.
 
@@ -666,7 +666,7 @@ class Trainer:
             A tuple containing the results and models.
         """
         # To access the transformed data
-        self.experiment.setup_training(features.features, self.num_splits, test_size, **kwargs)
+        self.experiment.setup_training(features.features, self.num_splits, test_size, **kwargs) # type: ignore
         if drop:
             self.experiment.final_models = [x for x in self.experiment.final_models if x not in drop]   
         if selected_models:
@@ -676,7 +676,7 @@ class Trainer:
         return results, returned_models
     
     def analyse_models(self, features: DataParser, scoring_fn: Callable, test_size: float=0.2,
-                       drop: tuple[str] | None=None, selected: tuple[str] | None=None, **kwargs) -> tuple[pd.DataFrame, dict, pd.Series]:
+                       drop: Iterable[str] | None=None, selected: Iterable[str] | None=None, **kwargs) -> tuple[pd.DataFrame, dict, pd.Series]:
         """
         Analyze the trained models and rank them based on the specified scoring function.
 
@@ -700,7 +700,7 @@ class Trainer:
         tuple[pd.DataFrame, dict, pd.Series]
             A tuple containing the sorted results and sorted models.
         """
-        results, returned_models = self.train(features, test_size, drop, selected, **kwargs)
+        results, returned_models = self.train(features, test_size, drop, selected, **kwargs) # type: ignore
         sorted_results, sorted_models = self.rank_results(results, returned_models, scoring_fn)
         top_params = self.experiment.get_best_params_multiple(sorted_models)
 
@@ -822,3 +822,14 @@ class Trainer:
                 return result
            
 
+@dataclass
+class Modelor(Protocol):
+    drop: Iterable[str]
+    selected: Iterable[str]
+    optimize: str
+
+    def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> int | float:
+        ...
+    
+    def run_training(self, trainer: Trainer, feature: DataParser, plot: tuple[str, ...], **kwargs: Any) -> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
+        ...
