@@ -23,8 +23,8 @@ class DataParser:
         The feature data.
     label : pd.Series or str or Iterable[int|float] or None, optional
         The label data. Defaults to None.
-    outliers : dict[str, tuple], optional
-        A dictionary containing the indices of the outliers in the feature and label data. Defaults to an empty dictionary.
+    outliers : Iterable[str], optional
+        An iterable containing the indices of the outliers in the feature and label data. Defaults to an empty ().
     sheets : str or int, optional
         The sheet name or index to read from an Excel file. Defaults to 0.
 
@@ -34,8 +34,8 @@ class DataParser:
         The feature data.
     label : pd.Series or None
         The label data.
-    outliers : dict[str, tuple]
-        A dictionary containing the indices of the outliers in the feature and label data.
+    outliers : Iterable[str]
+        An iterable containing the indices of the outliers in the feature and label data.
     sheets : str or int
         The sheet name or index to read from an Excel file.
 
@@ -52,7 +52,7 @@ class DataParser:
     """
     features: pd.DataFrame | str | list | np.ndarray
     label: pd.Series | str | Iterable[int|float] | None = None
-    outliers: tuple[str, ...] = ()
+    outliers: Iterable[str] = ()
     sheets: str | int |None = None
 
     def __post_init__(self):
@@ -63,7 +63,7 @@ class DataParser:
                 self.features = pd.concat([self.features, self.label], axis=1)
                 self.label = self.label.index.name
 
-        self.features = self.fix_outliers(self.features, self.outliers)
+        self.features = self.remove_outliers(self.features, self.outliers)
 
     def read_features(self, features: str | pd.DataFrame | list | np.ndarray) -> pd.DataFrame:
         """
@@ -103,7 +103,7 @@ class DataParser:
 
         raise TypeError("features should be a csv or excel file, an array or a pandas DataFrame")
         
-    def read_labels(self, label: str | pd.Series) -> str:
+    def read_labels(self, label: str | pd.Series) -> str | pd.Series:
         """
         Reads the label data from a file or returns the input data.
 
@@ -126,7 +126,7 @@ class DataParser:
             label.index.name = "target"
             return label
         
-        elif isinstance(label, str):
+        elif type(label) == str:
             if Path(label).exists() and Path(label).suffix == ".csv":
                 label = pd.read_csv(label, index_col=0)
                 label.index.name = "target"
@@ -136,7 +136,7 @@ class DataParser:
                     
         raise TypeError("label should be a csv file, a pandas Series or inside features")
     
-    def fix_outliers(self, training_features: pd.DataFrame, outliers: tuple[str, ...]):
+    def remove_outliers(self, training_features: pd.DataFrame, outliers: Iterable[str]):
         """
         Remove outliers from the train data
 
@@ -145,6 +145,9 @@ class DataParser:
         training_features : pd.DataFrame
             The training data.
 
+        outliers: Iterable[str]
+            An iterable containing the indices to remove from the training set
+            
         Returns
         -------
         pd.DataFrame

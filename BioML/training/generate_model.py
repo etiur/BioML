@@ -165,9 +165,9 @@ def main():
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
 
     # instantiate everything to run training
-    feature = DataParser(training_features, label, outliers=outliers, scaler=scaler, sheets=sheet)
+    feature = DataParser(training_features, label, outliers=outliers, sheets=sheet)
     
-    experiment = PycaretInterface(problem, feature.label, seed, best_model=len(selected_models), optimize=optimize, 
+    experiment = PycaretInterface(problem, feature.label, seed, scaler=scaler,best_model=len(selected_models), optimize=optimize, 
                                   output_path=model_output)
     training = Trainer(experiment, num_split)
     if problem == "classification":
