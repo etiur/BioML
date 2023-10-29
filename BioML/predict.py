@@ -405,8 +405,8 @@ def main():
         with open(outlier_train) as out_train:
             outlier_train = tuple(x.strip() for x in out_train.readlines())
 
-    feature = DataParser(training_features, label, outliers=outlier_train, scaler=scaler, sheets=sheet_name)
-    test_features = feature.fix_outliers(feature.read_features(test_features), outlier_test)
+    feature = DataParser(training_features, label, outliers=outlier_train, sheets=sheet_name)
+    test_features = feature.remove_outliers(feature.read_features(test_features), outlier_test)
     predictions = predict(test_features, model_path, problem)
     if applicability_domain:
         transformed, scaler_dict, test_x = scale(scaler, training_features, test_features)

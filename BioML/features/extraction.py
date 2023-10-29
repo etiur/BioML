@@ -596,7 +596,7 @@ def extract_and_filter(fasta_file=None, pssm_dir="pssm", ifeature_out="ifeature_
     if "filter" in purpose:
         # feature filtering
         if not selected:
-            raise ValueError("you have not defined the selected feature sets")
+            raise ("you have not defined the selected feature sets")
         filtering = ReadFeatures(fasta_file, ifeature_out, possum_out, extracted_out, types, type_file,
                                  excel_feature_file, selected)
         filtering.filter_features()

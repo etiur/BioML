@@ -125,11 +125,6 @@ class GenerateModel:
         Any
             the trained models
 
-        Raises
-        ------
-        ValueError
-            If the `model_strategy` parameter is not one of the supported strategies.
-
         Examples
         --------
         >>> sorted_models = {"model_1": model_1, "model_2": model_2, "model_3": model_3}

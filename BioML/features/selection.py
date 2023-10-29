@@ -13,13 +13,13 @@ import numpy as np
 import random
 from multiprocessing import get_context  # https://pythonspeed.com/articles/python-multiprocessing/
 import time
-from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, ShuffleSplit
-from typing import Iterable
+from sklearn.model_selection import train_test_split
+from typing import Iterable, Any
 from dataclasses import dataclass
 from . import methods
 from sklearn.ensemble import RandomForestClassifier as rfc
 from sklearn.ensemble import RandomForestRegressor as rfr
-from typing import Any
+from ..custom_errors import NotSupportedError
 
 
 def arg_parse():
@@ -128,6 +128,7 @@ class DataReader:
         self.features = self.read_feature(self.features)
         self.label = self.read_label(self.label)
         self._check_label(self.checked_label_path)
+        self.label = self.label.to_numpy().flatten()
         self.preprocess()
         self.analyse_composition(self.features)
     
@@ -169,7 +170,7 @@ class DataReader:
 
         Raises
         ------
-        TypeError
+        NotSupportedError
             If the features are not in a valid format.
 
         Returns
@@ -177,14 +178,14 @@ class DataReader:
         pd.DataFrame
             The feature data.
         """
-        if isinstance(features, str) and features.endswith(".csv"):
+        if type(features) == str and features.endswith(".csv"):
             return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
         elif isinstance(features, pd.DataFrame):
             return features
         elif isinstance(features, (list, np.ndarray)):
             return pd.DataFrame(features)
 
-        raise TypeError("features should be a csv file, an array or a pandas DataFrame")
+        raise NotSupportedError("features should be a csv file, an array or a pandas DataFrame")
 
     def read_label(self,  labels: str | pd.Series | Iterable[int]) -> pd.Series | pd.DataFrame:
         """
@@ -197,7 +198,7 @@ class DataReader:
 
         Raises
         ------
-        TypeError
+        NotSupportedError
             If the features are not in a valid format.
 
         Returns
@@ -206,20 +207,20 @@ class DataReader:
             The feature data.
         """
         if isinstance(labels, (pd.Series, pd.DataFrame)):
-            return labels.values.to_numpy().flatten()
+            return labels
         elif isinstance(labels, (list, np.ndarray)):
-            return pd.Series(labels, index=self.features.index, name="target").to_numpy().flatten()
+            return pd.Series(labels, index=self.features.index, name="target")
 
-        elif isinstance(labels, str) and labels.endswith(".csv"):
+        elif type(labels) == str and labels.endswith(".csv"):
             if Path(labels).exists():
-                return pd.read_csv(labels, index_col=0).to_numpy().flatten()
+                return pd.read_csv(labels, index_col=0)
             
             elif labels in self.features.columns:
                 label = self.features[labels]
                 self.features.drop(labels, axis=1, inplace=True)
-                return label.to_numpy().flatten()
+                return label
             
-        raise TypeError("label should be a csv file, a pandas Series, an array or inside features")
+        raise NotSupportedError("label should be a csv file, a pandas Series, an array or inside features")
 
     def preprocess(self) -> None:
         """
@@ -544,12 +545,12 @@ class FeatureClassification:
         KeyError
             If the filter name is not a valid filter.
         """
-        if isinstance(value, dict):
+        if type(value) == dict:
             for key, val in value.items():
                 if key not in self._filter_args:
                     raise KeyError(f"filter {key} is not a valid filter")
                 self._filter_args[key] = val
-        elif isinstance(value, tuple):
+        elif type(value) == tuple:
             self._filter_args[value[0]] = tuple(value[1])
 
 

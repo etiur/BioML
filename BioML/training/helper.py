@@ -10,6 +10,7 @@ import warnings
 import json
 import yaml
 from typing import Any
+from ..custom_errors import NotSupportedError
 
 
 @dataclass(slots=True)
@@ -81,7 +82,7 @@ class DataParser:
 
         Raises
         ------
-        TypeError
+        NotSupportedError
             If the input data type is not supported.
         """
         # concatenate features and labels
@@ -101,7 +102,7 @@ class DataParser:
         elif isinstance(features, (list, np.ndarray)):
             return pd.DataFrame(features)
 
-        raise TypeError("features should be a csv or excel file, an array or a pandas DataFrame")
+        raise NotSupportedError("features should be a csv or excel file, an array or a pandas DataFrame")
         
     def read_labels(self, label: str | pd.Series) -> str | pd.Series:
         """
@@ -134,7 +135,7 @@ class DataParser:
             elif label in self.features.columns:
                 return label
                     
-        raise TypeError("label should be a csv file, a pandas Series or inside features")
+        raise NotSupportedError("label should be a csv file, a pandas Series or inside features")
     
     def remove_outliers(self, training_features: pd.DataFrame, outliers: Iterable[str]):
         """
@@ -196,7 +197,7 @@ class FileParser:
             elif extension == "yaml":
                 return yaml.load(file, Loader=yaml.FullLoader)
             else:
-                raise ValueError(f"Unsupported file extension: {extension}")
+                raise NotSupportedError(f"Unsupported file extension: {extension}")
 
 
 def generate_training_results(model, training: Trainer, feature: DataParser, plot: tuple, 
