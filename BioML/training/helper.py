@@ -25,8 +25,6 @@ class DataParser:
         The label data. Defaults to None.
     outliers : dict[str, tuple], optional
         A dictionary containing the indices of the outliers in the feature and label data. Defaults to an empty dictionary.
-    scaler : str, optional
-        The type of scaler to use for feature scaling. Defaults to "robust".
     sheets : str or int, optional
         The sheet name or index to read from an Excel file. Defaults to 0.
 
@@ -38,8 +36,6 @@ class DataParser:
         The label data.
     outliers : dict[str, tuple]
         A dictionary containing the indices of the outliers in the feature and label data.
-    scaler : str
-        The type of scaler to use for feature scaling.
     sheets : str or int
         The sheet name or index to read from an Excel file.
 
@@ -57,7 +53,6 @@ class DataParser:
     features: pd.DataFrame | str | list | np.ndarray
     label: pd.Series | str | Iterable[int|float] | None = None
     outliers: tuple[str, ...] = ()
-    scaler: str="robust"
     sheets: str | int |None = None
 
     def __post_init__(self):
@@ -353,8 +348,8 @@ def sort_classification_prediction(dataframe: pd.DataFrame, optimize:str="MCC", 
     return sort
 
 
-def iterate_multiple_features(iterator: Iterator, model, label: str | list[int | float], scaler: str, 
-                              training: Trainer, outliers: dict[str,tuple[str, ...]],
+def iterate_multiple_features(iterator: Iterator, model, label: str | list[int | float], 
+                              training: Trainer, outliers: Iterable[str],
                               training_output: Path, **kwargs) -> None:
     
     """
@@ -368,12 +363,10 @@ def iterate_multiple_features(iterator: Iterator, model, label: str | list[int |
         The machine learning model to use for training.
     label : str or list[int or float]
         The label or list of labels to use for training.
-    scaler : str
-        The type of scaler to use for preprocessing the data.
     training : Trainer
         The training object to use for training the model.
-    outliers : dict[str,tuple[str, ...]]
-        A dictionary containing the names of the outlier detection methods to use for each sheet.
+    outliers : Iterable[str]
+        An iterable containing the names of the outlier detection methods to use for each sheet.
     training_output : Path
         The path to the directory where the training results will be saved.
 
@@ -384,7 +377,7 @@ def iterate_multiple_features(iterator: Iterator, model, label: str | list[int |
 
     performance_list = []
     for input_feature, sheet in iterator:
-        feature = DataParser(input_feature, label=label, scaler=scaler, sheets=sheet, outliers=outliers)
+        feature = DataParser(input_feature, label=label, sheets=sheet, outliers=outliers)
         sorted_results, sorted_models, top_params = model.run_training(training, feature, plot=(), **kwargs)
         index = sorted_results.index.unique(0)[:training.experiment.best_model]
         score = 0

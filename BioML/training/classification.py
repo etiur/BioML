@@ -80,7 +80,7 @@ class Classifier:
         # change the ranking parameters
         ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
                             difference_weight=1.2)
-        if isinstance(ranking_params, dict):
+        if type(ranking_params) == dict:
             for key, value in ranking_params.items():
                 if key not in ranking_dict:
                     raise KeyError(f"The key {key} is not found in the ranking params use theses keys: {', '.join(ranking_dict.keys())}")
@@ -180,8 +180,8 @@ def main():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
     
-    feature = DataParser(excel, label, outliers=outliers, scaler=scaler, sheets=sheet)
-    experiment = PycaretInterface("classification", feature.label, seed, budget_time=budget_time, best_model=best_model, 
+    feature = DataParser(excel, label, outliers=outliers, sheets=sheet)
+    experiment = PycaretInterface("classification", feature.label, seed, scaler=scaler, budget_time=budget_time, best_model=best_model, 
                                   output_path=training_output, optimize=optimize)
     training = Trainer(experiment, num_split)
     ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight,

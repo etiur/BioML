@@ -174,8 +174,8 @@ def main():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
     
-    feature = DataParser(excel, label,  outliers=outliers, scaler=scaler, sheets=sheet)
-    experiment = PycaretInterface("regression", feature.label, seed, budget_time=trial_time, best_model=best_model, 
+    feature = DataParser(excel, label,  outliers=outliers, sheets=sheet)
+    experiment = PycaretInterface("regression", feature.label, seed, scaler=scaler, budget_time=trial_time, best_model=best_model, 
                                   output_path=training_output, optimize=optimize)
 
     ranking_dict = dict(difference_weight=difference_weight)

@@ -31,6 +31,8 @@ class PycaretInterface:
         The metric to optimize for. Defaults to "MCC".
     seed : None or int, optional
         The random seed to use for reproducibility. Defaults to None.
+    scaler : str
+        The scaler to use.
     budget_time : None or int, optional
         The time budget for training the models in minutes. Defaults to None.
     log : Log
@@ -81,6 +83,7 @@ class PycaretInterface:
     seed: None | int = None
     optimize: str = "MCC"
     #verbose: bool = False
+    scaler: str = "robust"
     budget_time: None | int = None
     log = Log("model_training")
     best_model: int = 3
@@ -135,7 +138,7 @@ class PycaretInterface:
         return value
 
     @property
-    def plots(self) -> list[str]:
+    def plots(self) -> list[str] | tuple[str, ...]:
         """
         The plots that should be saved
         """
@@ -206,7 +209,7 @@ class PycaretInterface:
     def final_models(self, value: str |Iterable[str]) -> None:
         self._final_models = self._check_value(value, self._final_models, "models")
 
-    def setup_training(self, features: pd.DataFrame, fold: int=5, test_size:float=0.2, scaler:str="robust",
+    def setup_training(self, features: pd.DataFrame, fold: int=5, test_size:float=0.2,
                        **kwargs):
         """
         Call pycaret set_up for the training.
@@ -221,8 +224,6 @@ class PycaretInterface:
             The number of cross-validation folds to use.
         test_size : float
             The proportion of the dataset to include in the test split.
-        scaler : str
-            The scaler to use.
         kwargs : dict
             Other parameters to pass to pycaret.setup.
         Returns
@@ -231,7 +232,7 @@ class PycaretInterface:
             PycaretInterface object.
         """
         self.pycaret.setup(data=features, target=self.label_name, normalize=True, preprocess=True, 
-                           log_experiment=True, experiment_name=self.objective.capitalize(), normalize_method=scaler,
+                           log_experiment=True, experiment_name=self.objective.capitalize(), normalize_method=self.scaler,
                            session_id = self.seed, fold_shuffle=True, fold=fold, verbose=False, train_size=1-test_size, 
                            **kwargs)
 
@@ -239,8 +240,9 @@ class PycaretInterface:
             self.pycaret.add_metric("averagePre", "Average Precision Score", average_precision_score, 
                                    average="weighted", target="pred_proba", multiclass=False)
 
-        config = self.pycaret.pull(pop=True)
-        config.to_csv(self.output_path / f"config_setup_pycaret.csv")
+        config: pd.DataFrame = self.pycaret.pull(pop=True)
+        if not (self.output_path / f"config_setup_pycaret.csv").exists():
+            config.to_csv(self.output_path / f"config_setup_pycaret.csv")
         return self
 
     def train(self):
@@ -267,7 +269,7 @@ class PycaretInterface:
             model =self.pycaret.create_model(m, return_train_score=True, verbose=False)
             model_results = self.pycaret.pull(pop=True)
             model_results = model_results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
-            if not isinstance(m, str):
+            if not type(m) == str:
                 m = f"custom_model_{count}"
                 count += 1
             returned_models[m] = model
@@ -517,7 +519,7 @@ class PycaretInterface:
         save : bool | str, optional
             Save the plots, by default False but you can also indicate the path for the plot
         """
-        if not isinstance(save, bool):
+        if type(save) == str:
             Path(save).mkdir(parents=True, exist_ok=True)
         self.pycaret.plot_model(model, "learning", save=save)
 
@@ -664,8 +666,7 @@ class Trainer:
             A tuple containing the results and models.
         """
         # To access the transformed data
-        self.experiment.setup_training(features.features, self.num_splits, test_size, features.scaler,
-                                        **kwargs)
+        self.experiment.setup_training(features.features, self.num_splits, test_size, **kwargs)
         if drop:
             self.experiment.final_models = [x for x in self.experiment.final_models if x not in drop]   
         if selected_models:
