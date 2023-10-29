@@ -822,7 +822,6 @@ class Trainer:
                 return result
            
 
-@dataclass
 class Modelor(Protocol):
     drop: Iterable[str]
     selected: Iterable[str]

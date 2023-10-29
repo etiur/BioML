@@ -75,7 +75,7 @@ def arg_parse():
 
 class Classifier:
     def __init__(self, ranking_params: dict[str, float] | None=None, drop: Iterable[str] = ("ada", "gpc", "lightgbm"), 
-                 selected: Iterable[str] | None=None, test_size: float=0.2, optimize: str="MCC"):
+                 selected: Iterable[str] =(), test_size: float=0.2, optimize: str="MCC"):
 
         # change the ranking parameters
         ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
