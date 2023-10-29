@@ -178,14 +178,17 @@ class DataReader:
         pd.DataFrame
             The feature data.
         """
-        if type(features) == str and features.endswith(".csv"):
-            return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
-        elif isinstance(features, pd.DataFrame):
-            return features
-        elif isinstance(features, (list, np.ndarray)):
-            return pd.DataFrame(features)
-
-        raise NotSupportedError("features should be a csv file, an array or a pandas DataFrame")
+        match features:
+            case str(feat) if feat.endswith(".csv"):
+                return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
+            case str(feat) if feat.endswith(".xlsx"):
+                return pd.read_excel(f"{features}", index_col=0) # the first column should contain the sample names
+            case pd.DataFrame(feat):
+                return feat
+            case list(feat) | np.array(feat):
+                return pd.DataFrame(feat)
+            case _:
+                raise NotSupportedError("features should be a csv file, an array or a pandas DataFrame")
 
     def read_label(self,  labels: str | pd.Series | Iterable[int]) -> pd.Series | pd.DataFrame:
         """
@@ -206,21 +209,21 @@ class DataReader:
         pd.Series
             The feature data.
         """
-        if isinstance(labels, (pd.Series, pd.DataFrame)):
-            return labels
-        elif isinstance(labels, (list, np.ndarray)):
-            return pd.Series(labels, index=self.features.index, name="target")
-
-        elif type(labels) == str and labels.endswith(".csv"):
-            if Path(labels).exists():
-                return pd.read_csv(labels, index_col=0)
-            
-            elif labels in self.features.columns:
-                label = self.features[labels]
-                self.features.drop(labels, axis=1, inplace=True)
+        match labels:
+            case pd.Series(label) | pd.DataFrame(label):
                 return label
-            
-        raise NotSupportedError("label should be a csv file, a pandas Series, an array or inside features")
+            case str(label): 
+                if label.endswith(".csv"):
+                    return pd.read_csv(f"{label}", index_col=0) # the first column should contain the sample names
+                            
+                elif label in self.features.columns:
+                    lab = self.features[label]
+                    self.features.drop(label, axis=1, inplace=True)
+                    return lab
+            case list(label) | np.array(label):
+                return pd.Series(label, index=self.features.index, name="target")
+            case _:
+                raise NotSupportedError("label should be a csv file, a pandas Series, an array or inside features")
 
     def preprocess(self) -> None:
         """

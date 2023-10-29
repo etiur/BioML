@@ -124,18 +124,18 @@ class DataParser:
             If the input data type is not supported.
         """
         match label:
-            case pd.Series(label):
-                label.index.name = "target"
-                return label
-            case str(label):
-                if Path(label).exists() and Path(label).suffix == ".csv":
-                    label = pd.read_csv(label, index_col=0)
-                    label.index.name = "target"
-                    return label
-                elif label in self.features.columns:
-                    return label
-            case list(label) | np.array(label):
-                return pd.Series(label, index=self.features.index, columns=["target"])
+            case pd.Series(labels):
+                labels.index.name = "target"
+                return labels
+            case str(labels):
+                if Path(labels).exists() and Path(labels).suffix == ".csv":
+                    labels = pd.read_csv(labels, index_col=0)
+                    labels.index.name = "target"
+                    return labels
+                elif labels in self.features.columns:
+                    return labels
+            case list(labels) | np.array(labels):
+                return pd.Series(labels, index=self.features.index, columns=["target"])
             case _:
                 raise NotSupportedError("label should be a csv file, an array, a pandas Series or inside features")
     
