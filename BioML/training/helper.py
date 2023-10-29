@@ -237,7 +237,7 @@ def generate_training_results(model: Modelor, training: Trainer, feature: DataPa
     stacked_results, stacked_models, stacked_params = training.stack_models(sorted_models)
     results["not_tuned"]["stacked"] = stacked_results, stacked_params
     majority_results, majority_models = training.create_majority_model(sorted_models)
-    results["not_tuned"]["majority"] = majority_results
+    results["not_tuned"]["majority"] = majority_results, 
     #satev the models
     models_dict["not_tuned"]["holdout"] = sorted_models
     models_dict["not_tuned"]["stacked"] = stacked_models
@@ -250,7 +250,7 @@ def generate_training_results(model: Modelor, training: Trainer, feature: DataPa
         stacked_results_tune, stacked_models_tune, stacked_params_tune = training.stack_models(sorted_models_tune)
         results["tuned"]["stacked"] = stacked_results_tune, stacked_params_tune
         majority_results_tune, majority_models_tune = training.create_majority_model(sorted_models_tune)
-        results["tuned"]["majority"] = majority_results_tune   
+        results["tuned"]["majority"] = majority_results_tune,   
 
         #save the models
         models_dict["tuned"]["holdout"] = sorted_models_tune
