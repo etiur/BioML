@@ -183,9 +183,9 @@ class DataReader:
                 return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
             case str(feat) if feat.endswith(".xlsx"):
                 return pd.read_excel(f"{features}", index_col=0) # the first column should contain the sample names
-            case pd.DataFrame(feat):
+            case pd.DataFrame() as feat:
                 return feat
-            case list(feat) | np.array(feat):
+            case list() | np.ndarray() as feat:
                 return pd.DataFrame(feat)
             case _:
                 raise NotSupportedError("features should be a csv file, an array or a pandas DataFrame")
@@ -210,17 +210,15 @@ class DataReader:
             The feature data.
         """
         match labels:
-            case pd.Series(label) | pd.DataFrame(label):
+            case pd.Series() | pd.DataFrame() as label:
                 return label
-            case str(label): 
-                if label.endswith(".csv"):
-                    return pd.read_csv(f"{label}", index_col=0) # the first column should contain the sample names
-                            
-                elif label in self.features.columns:
-                    lab = self.features[label]
-                    self.features.drop(label, axis=1, inplace=True)
-                    return lab
-            case list(label) | np.array(label):
+            case str(label) if label.endswith(".csv"): 
+                return pd.read_csv(f"{label}", index_col=0) # the first column should contain the sample names
+            case str(label) if label in self.features.columns:            
+                lab = self.features[label]
+                self.features.drop(label, axis=1, inplace=True)
+                return lab
+            case list() | np.ndarray() as label:
                 return pd.Series(label, index=self.features.index, name="target")
             case _:
                 raise NotSupportedError("label should be a csv file, a pandas Series, an array or inside features")

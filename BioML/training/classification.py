@@ -1,7 +1,6 @@
 from typing import Iterable
 import pandas as pd
 from .base import PycaretInterface, Trainer
-from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
 import argparse
 from pathlib import Path
 from .helper import write_results, generate_training_results, evaluate_all_models, DataParser, sort_classification_prediction

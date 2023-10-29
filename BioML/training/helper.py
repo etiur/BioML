@@ -87,19 +87,17 @@ class DataParser:
         """
         # concatenate features and labels
         match features:
-            case str(feature):
-                if feature.endswith(".csv"):
-                    return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
-                if feature.endswith(".xlsx"):
-                    sheets = self.sheets if self.sheets else 0
-                    with pd.ExcelFile(features) as file:
-                        if len(file.sheet_names) > 1:
-                            warnings.warn(f"The excel file contains more than one sheet, only the sheet {sheets} will be used")
-                    return pd.read_excel(features, index_col=0, engine='openpyxl', sheet_name=sheets)
-                    
-            case pd.DataFrame(feature):
+            case str(feature) if feature.endswith(".csv"):
+                return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
+            case str(feature) if feature.endswith(".xlsx"):
+                sheets = self.sheets if self.sheets else 0
+                with pd.ExcelFile(features) as file:
+                    if len(file.sheet_names) > 1:
+                        warnings.warn(f"The excel file contains more than one sheet, only the sheet {sheets} will be used")
+                return pd.read_excel(features, index_col=0, engine='openpyxl', sheet_name=sheets)
+            case pd.DataFrame() as feature:
                 return feature
-            case list(feature) | np.array(feature):
+            case list() | np.ndarray() as feature:
                 return pd.DataFrame(feature)
             case _:
                 raise NotSupportedError("features should be a csv or excel file, an array or a pandas DataFrame")
@@ -124,20 +122,19 @@ class DataParser:
             If the input data type is not supported.
         """
         match label:
-            case pd.Series(labels):
+            case pd.Series() as labels:
                 labels.index.name = "target"
                 return labels
-            case str(labels):
-                if Path(labels).exists() and Path(labels).suffix == ".csv":
-                    labels = pd.read_csv(labels, index_col=0)
-                    labels.index.name = "target"
-                    return labels
-                elif labels in self.features.columns:
-                    return labels
-            case list(labels) | np.array(labels):
+            case str(labels) if Path(labels).exists() and Path(labels).suffix == ".csv":
+                labels = pd.read_csv(labels, index_col=0)
+                labels.index.name = "target"
+                return labels
+            case str(labels) if labels in self.features.columns:
+                return labels
+            case list() | np.ndarray() as labels:
                 return pd.Series(labels, index=self.features.index, columns=["target"])
             case _:
-                raise NotSupportedError("label should be a csv file, an array, a pandas Series or inside features")
+                raise NotSupportedError(f"label should be a csv file, an array, a pandas Series or inside features: you provided {label}")
     
     def remove_outliers(self, training_features: pd.DataFrame, outliers: Iterable[str]):
         """

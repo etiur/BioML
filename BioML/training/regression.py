@@ -1,4 +1,3 @@
-from sklearn.model_selection import train_test_split, ShuffleSplit
 from pathlib import Path
 import argparse
 from .base import PycaretInterface, Trainer
