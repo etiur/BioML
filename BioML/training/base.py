@@ -10,6 +10,7 @@ from ..utilities import Log
 from sklearn.metrics import average_precision_score   
 from typing import Iterable
 from ..custom_errors import NotSupportedDataError
+from functools import cached_property
 
 
 @dataclass(slots=True)
@@ -157,31 +158,16 @@ class DataParser:
 
         return training_features
     
-    def process(self, transformed_x: pd.DataFrame, test_x: pd.DataFrame, y_train: pd.Series, 
-                y_test: pd.Series)-> tuple[pd.DataFrame, pd.DataFrame]:
+    def drop(self)-> pd.DataFrame:
         """
-        Concatenate the transformed feature data with the label data.
-
-        Parameters
-        ----------
-        transformed_x : pd.DataFrame
-            The transformed training feature data.
-        test_x : pd.DataFrame
-            The transformed testing feature data.
-        y_train : pd.Series
-            The training label data.
-        y_test : pd.Series
-            The testing label data.
+        Retunr the feature without the labels in it
 
         Returns
         -------
-        Tuple[pd.DataFrame, pd.DataFrame]
-            A tuple containing the concatenated training feature and label data, 
-            and the concatenated testing feature and label data.
+        pd.DataFrame
+            The training feature without the label data, 
         """
-        transformed_x = pd.concat([transformed_x, y_train], axis=1) 
-        test_x = pd.concat([test_x, y_test], axis=1)
-        return transformed_x, test_x
+        return self.features.drop(columns=self.label)
 
 
 @dataclass
@@ -213,6 +199,8 @@ class PycaretInterface:
         The number of best models to select. Defaults to 3.
     output_path : Path or str or None, optional
         The path to save the output files. Defaults to None.
+    experiment_name : str or None, optional
+        The name of the experiment which is used by mlruns to log the results. Defaults to None.
     _plots : list of str
         The list of plots to generate for the models.
     model : ClassificationExperiment or RegressionExperiment
@@ -259,8 +247,12 @@ class PycaretInterface:
     budget_time: None | int = None
     log = Log("model_training")
     best_model: int = 3
-    output_path: Path | str | None= None 
+    output_path: Path | str | None= None
+    experiment_name: str | None = None
     _plots: list[str] = field(init=False)
+    _final_models: list[str] = field(init=False)
+    original_plots: list[str] = field(init=False)
+    original_models: list[str] = field(init=False)
     model: ClassificationExperiment | RegressionExperiment = field(init=False)
     
     def __post_init__(self):
@@ -270,13 +262,15 @@ class PycaretInterface:
             self._final_models = ('lr', 'knn', 'nb', 'dt', 'svm', 'rbfsvm', 'gpc', 
                                 'mlp', 'ridge', 'rf', 'qda', 'ada', 'gbc', 'lda', 'et', 'xgboost', 
                                 'lightgbm', 'catboost', 'dummy')
-            
-        elif self.objective == "regression":
+        elif self.objective == "regression":    
             self.pycaret = RegressionExperiment()
             self._plots = ["residuals", "error", "learning"]
             self._final_models = ['lr', 'lasso', 'ridge', 'en', 'lar', 'llar', 'omp', 'br', 'ard', 'par', 'ransac', 
                                  'tr', 'huber', 'kr', 'svm', 'knn', 'dt', 'rf', 'et', 'ada', 'gbr', 'mlp', 'xgboost', 
                                  'lightgbm', 'catboost', 'dummy']
+        self.experiment_name = self.objective.capitalize() if self.experiment_name is None else self.experiment_name
+        self.original_plots = self._plots.copy()
+        self.original_models = self._final_models.copy()
         if not self.seed:
             self.seed = int(time.time())
         if isinstance(self.budget_time, (int, float)):
@@ -318,7 +312,7 @@ class PycaretInterface:
     
     @plots.setter
     def plots(self, value):
-        self._plots = self._check_value(value, self._plots, "plots") # type: ignore
+        self._plots = self._check_value(value, self.original_plots, "plots") # type: ignore
 
     @property
     def final_models(self) -> list[str]:
@@ -379,7 +373,7 @@ class PycaretInterface:
      
     @final_models.setter
     def final_models(self, value: str |Iterable[str]) -> None:
-        self._final_models = self._check_value(value, self._final_models, "models") # type: ignore
+        self._final_models = self._check_value(value, self.original_models, "models") # type: ignore
 
     def setup_training(self, features: pd.DataFrame, fold: int=5, test_size:float=0.2,
                        **kwargs):
@@ -404,7 +398,7 @@ class PycaretInterface:
             PycaretInterface object.
         """
         self.pycaret.setup(data=features, target=self.label_name, normalize=True, preprocess=True, 
-                           log_experiment=True, experiment_name=self.objective.capitalize(), normalize_method=self.scaler,
+                           log_experiment=True, experiment_name=self.experiment_name, normalize_method=self.scaler,
                            session_id = self.seed, fold_shuffle=True, fold=fold, verbose=False, train_size=1-test_size, 
                            **kwargs)
 
@@ -414,6 +408,7 @@ class PycaretInterface:
 
         config: pd.DataFrame = self.pycaret.pull(pop=True)
         if not (self.output_path / f"config_setup_pycaret.csv").exists(): # type: ignore
+            self.output_path.mkdir(parents=True, exist_ok=True)
             config.to_csv(self.output_path / f"config_setup_pycaret.csv") # type: ignore
         return self
 
@@ -455,7 +450,7 @@ class PycaretInterface:
                 )
                 break
             
-        self.log.info(f"Traininf over: Total runtime {total_runtime} minutes") # type: ignore
+        self.log.info(f"Training over: Total runtime {total_runtime} minutes") # type: ignore
 
         return results, returned_models
     
@@ -723,7 +718,7 @@ class PycaretInterface:
             return results
         return pred
     
-    def save(self, model, filename: str):
+    def save(self, model: Any, filename: str):
         """
         Save the model
 
@@ -749,6 +744,7 @@ class PycaretInterface:
 
     def get_logs(self):
         return self.pycaret.get_logs()
+
 
 class Trainer:
     def __init__(self, caret_interface: PycaretInterface, num_splits: int=5):
@@ -878,7 +874,7 @@ class Trainer:
 
         return sorted_results, sorted_models, top_params
     
-    def retune_best_models(self, sorted_models:dict[str, Any], num_iter: int=5):
+    def retune_best_models(self, sorted_models:dict[str, Any], num_iter: int=10):
         """
         Retune the best models using the specified optimization metric and number of iterations.
 
@@ -887,7 +883,7 @@ class Trainer:
         sorted_models : dict[str, Any]
             A dictionary of sorted models.
         num_iter : int, optional
-            The number of iterations to use for retuning. Defaults to 5.
+            The number of iterations to use for retuning. Defaults to 10.
 
         Returns
         -------
@@ -962,8 +958,6 @@ class Trainer:
         ----------
         sorted_models : dict or list
             The sorted models to use for prediction.
-        name : str
-            The name of the test set.
 
         Returns
         -------
@@ -982,9 +976,10 @@ class Trainer:
             
             case {**dict_models}: # for single models
                 final = []
-                for model in list(dict_models.values())[:self.experiment.best_model]:
+                for name, model in list(dict_models.items())[:self.experiment.best_model]:
                     result = self.experiment.predict(model)
                     result = result.set_index("Model")
+                    result.index = [f"{name}_{x}" for x in result.index]
                     final.append(result)
                 return pd.concat(final)
 

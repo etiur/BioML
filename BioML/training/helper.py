@@ -41,7 +41,7 @@ class FileParser:
 
 
 def generate_training_results(model: Modelor, training: base.Trainer, feature: base.DataParser, plot: tuple, 
-                              tune: bool=False, **kwargs: Any) -> tuple[dict[str, dict], dict[str, dict]]:
+                              tune: bool=False, num_iter: int=10, **kwargs: Any) -> tuple[dict[str, dict], dict[str, dict]]:
     """
     Generate training results for a given model, training object, and feature data.
 
@@ -57,6 +57,8 @@ def generate_training_results(model: Modelor, training: base.Trainer, feature: b
         A tuple containing the plot title and axis labels.
     tune : bool, optional
         Whether to tune the hyperparameters. Defaults to True.
+    num_iter : int, optional
+        The number of iterations to use for tuning the hyperparameters. Defaults to 10.
     **kwargs : dict
         Additional keyword arguments to pass to the pycaret setup function.
 
@@ -86,7 +88,7 @@ def generate_training_results(model: Modelor, training: base.Trainer, feature: b
 
     if tune:
         # save the results
-        sorted_result_tune, sorted_models_tune, top_params_tune = training.retune_best_models(sorted_models)
+        sorted_result_tune, sorted_models_tune, top_params_tune = training.retune_best_models(sorted_models, num_iter=num_iter)
         results["tuned"]["holdout"] = sorted_result_tune, top_params_tune
         stacked_results_tune, stacked_models_tune, stacked_params_tune = training.stack_models(sorted_models_tune)
         results["tuned"]["stacked"] = stacked_results_tune, stacked_params_tune

@@ -137,9 +137,9 @@ class GenerateModel:
         """
 
         if "majority" in model_strategy:
-            models = self.trainer.create_majority_model(sorted_models)
+            _, models = self.trainer.create_majority_model(sorted_models)
         elif "stacking" in model_strategy:
-            models = self.trainer.stack_models(sorted_models)
+            _, models, _ = self.trainer.stack_models(sorted_models)
         elif "simple" in model_strategy:
             index = int(model_strategy.split(":")[1])
             models = list(sorted_models.values())[index]
