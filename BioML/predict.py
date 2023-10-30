@@ -132,7 +132,7 @@ class ApplicabilityDomain:
 
         # replacing 0's with the min val
         n_allowed = [n if n != 0 else min_val[0] for n in n_allowed]
-        all_d = [sum(all_allowed[i]) for i, d in enumerate(d_no_ii)]
+        all_d = [sum(all_allowed[i]) for i, _ in enumerate(d_no_ii)]
         self.thresholds = np.divide(all_d, n_allowed)  # threshold computation
         self.thresholds[np.isinf(self.thresholds)] = min(self.thresholds)  # setting to the minimum value where infinity
         return self.thresholds
@@ -181,9 +181,9 @@ class ApplicabilityDomain:
         """
   
         filtered_index = [f"sample_{x}" for x, similarity_score in enumerate(self.n_insiders) if similarity_score >= min_num]
-        filtered_names = [pred_index for x, (pred_index, similarity_score) in enumerate(zip(predictions.index, self.n_insiders)) if similarity_score >= min_num]
+        filtered_names = [pred_index for _, (pred_index, similarity_score) in enumerate(zip(predictions.index, self.n_insiders)) if similarity_score >= min_num]
         filtered_pred = predictions.loc[filtered_names]
-        filtered_n_insiders = pd.Series([d for s, d in enumerate(self.n_insiders) if d >= min_num], name="AD_number", index=filtered_names)
+        filtered_n_insiders = pd.Series([d for _, d in enumerate(self.n_insiders) if d >= min_num], name="AD_number", index=filtered_names)
         pred = pd.concat([filtered_pred, filtered_n_insiders], axis=1)
         pred.index = filtered_index
  
@@ -409,10 +409,10 @@ def main():
     test_features = feature.remove_outliers(feature.read_features(test_features), outlier_test)
     predictions = predict(test_features, model_path, problem)
     if applicability_domain:
-        transformed, scaler_dict, test_x = scale(scaler, training_features, test_features)
+        transformed, _, test_x = scale(scaler, training_features, test_features)
         predictions = domain_filter(predictions, transformed , test_x, res_dir, number_similar_samples)
     else:
-        test_index = [f"sample_{x}" for x, ind in enumerate(predictions.index)]
+        test_index = [f"sample_{x}" for x, _ in enumerate(predictions.index)]
         predictions.index = test_index
     extractor = FastaExtractor(fasta, res_dir)
     positive, negative = extractor.separate_negative_positive(predictions)

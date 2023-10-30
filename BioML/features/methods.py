@@ -43,7 +43,7 @@ def calculate_shap_importance(model: xgb.XGBClassifier | xgb.XGBRegressor, X_tra
     return shap_importance, shap_values
 
 
-def plot_shap_importance(shap_values, feature_names: Iterable[str], output_path: Path, 
+def plot_shap_importance(shap_values: np.ndarray, feature_names: Iterable[str], output_path: Path, 
                          X_train: pd.DataFrame | np.ndarray | None=None, plot_num_features: int=20, dpi=500):
     """
     Plots the SHAP importance values for the given feature names.
