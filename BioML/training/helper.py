@@ -1,6 +1,6 @@
 from ..utilities import write_excel
 from pathlib import Path
-from .base import Trainer, Modelor
+from . import base
 from collections import defaultdict
 from typing import Callable, Iterable, Iterator
 import pandas as pd
@@ -9,181 +9,22 @@ import numpy as np
 import warnings
 import json
 import yaml
-from typing import Any, Callable
-from ..custom_errors import NotSupportedError
+from typing import Any, Callable, Protocol
+from ..custom_errors import NotSupportedDataError
 
 
-@dataclass(slots=True)
-class DataParser:
-    """
-    A class for parsing feature and label data.
+class Modelor(Protocol):
+    drop: Iterable[str]
+    selected: Iterable[str]
+    optimize: str
 
-    Parameters
-    ----------
-    features : pd.DataFrame or str or list or np.ndarray
-        The feature data.
-    label : pd.Series or str or Iterable[int|float] or None, optional
-        The label data. Defaults to None.
-    outliers : Iterable[str], optional
-        An iterable containing the indices of the outliers in the feature and label data. Defaults to an empty ().
-    sheets : str or int, optional
-        The sheet name or index to read from an Excel file. Defaults to 0.
-
-    Attributes
-    ----------
-    features : pd.DataFrame
-        The feature data.
-    label : pd.Series or None
-        The label data.
-    outliers : Iterable[str]
-        An iterable containing the indices of the outliers in the feature and label data.
-    sheets : str or int
-        The sheet name or index to read from an Excel file.
-
-    Methods
-    -------
-    read_features(features)
-        Reads the feature data from a file or returns the input data.
-    read_labels(label)
-        Reads the label data from a file or returns the input data.
-    scale(X_train, X_test)
-        Scales the feature data.
-    process(transformed_x, test_x, y_train, y_test)
-        Concatenates the feature and label data so that it can be used by pycaret.
-    """
-    features: pd.DataFrame | str | list | np.ndarray
-    label: pd.Series | str | Iterable[int|float] | None = None
-    outliers: Iterable[str] = ()
-    sheets: str | int |None = None
-
-    def __post_init__(self):
-        self.features = self.read_features(self.features)
-        if self.label:
-            self.label = self.read_labels(self.label) # type: ignore
-            if not isinstance(self.label, str):
-                self.features = pd.concat([self.features, self.label], axis=1)
-                self.label = self.label.index.name
-
-        self.features = self.remove_outliers(self.features, self.outliers)
-
-    def read_features(self, features: str | pd.DataFrame | list | np.ndarray) -> pd.DataFrame:
-        """
-        Reads the feature data from a file or returns the input data.
-
-        Parameters
-        ----------
-        features : str or pd.DataFrame or list or np.ndarray
-            The feature data.
-
-        Returns
-        -------
-        pd.DataFrame
-            The feature data as a pandas DataFrame.
-
-        Raises
-        ------
-        NotSupportedError
-            If the input data type is not supported.
-        """
-        # concatenate features and labels
-        match features:
-            case str(feature) if feature.endswith(".csv"):
-                return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
-            case str(feature) if feature.endswith(".xlsx"):
-                sheets = self.sheets if self.sheets else 0
-                with pd.ExcelFile(features) as file:
-                    if len(file.sheet_names) > 1:
-                        warnings.warn(f"The excel file contains more than one sheet, only the sheet {sheets} will be used")
-                return pd.read_excel(features, index_col=0, engine='openpyxl', sheet_name=sheets)
-            case pd.DataFrame() as feature:
-                return feature
-            case list() | np.ndarray() as feature:
-                return pd.DataFrame(feature)
-            case _:
-                raise NotSupportedError("features should be a csv or excel file, an array or a pandas DataFrame")
-        
-    def read_labels(self, label: str | pd.Series) -> str | pd.Series:
-        """
-        Reads the label data from a file or returns the input data.
-
-        Parameters
-        ----------
-        label : str or pd.Series
-            The label data.
-
-        Returns
-        -------
-        pd.Series
-            The label data as a pandas Series.
-
-        Raises
-        ------
-        TypeError
-            If the input data type is not supported.
-        """
-        match label:
-            case pd.Series() as labels:
-                labels.index.name = "target"
-                return labels
-            case str(labels) if Path(labels).exists() and Path(labels).suffix == ".csv":
-                labels = pd.read_csv(labels, index_col=0)
-                labels.index.name = "target"
-                return labels # type: ignore
-            case str(labels) if labels in self.features.columns: # type: ignore
-                return labels
-            case list() | np.ndarray() as labels:
-                return pd.Series(labels, index=self.features.index, columns=["target"]) # type: ignore
-            case _:
-                raise NotSupportedError(f"label should be a csv file, an array, a pandas Series or inside features: you provided {label}")
+    def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> int | float:
+        ...
     
-    def remove_outliers(self, training_features: pd.DataFrame, outliers: Iterable[str]):
-        """
-        Remove outliers from the train data
+    def run_training(self, trainer: base.Trainer, feature: base.DataParser, plot: tuple[str, ...], 
+                     **kwargs: Any) -> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
+        ...
 
-        Parameters
-        ----------
-        training_features : pd.DataFrame
-            The training data.
-
-        outliers: Iterable[str]
-            An iterable containing the indices to remove from the training set
-            
-        Returns
-        -------
-        pd.DataFrame
-            The data with outliers removed.
-        """
-        #remove outliers
-        training_features.loc[[x for x in training_features.index if x not in outliers]]
-
-        return training_features
-    
-    def process(self, transformed_x: pd.DataFrame, test_x: pd.DataFrame, y_train: pd.Series, 
-                y_test: pd.Series)-> tuple[pd.DataFrame, pd.DataFrame]:
-        """
-        Concatenate the transformed feature data with the label data.
-
-        Parameters
-        ----------
-        transformed_x : pd.DataFrame
-            The transformed training feature data.
-        test_x : pd.DataFrame
-            The transformed testing feature data.
-        y_train : pd.Series
-            The training label data.
-        y_test : pd.Series
-            The testing label data.
-
-        Returns
-        -------
-        Tuple[pd.DataFrame, pd.DataFrame]
-            A tuple containing the concatenated training feature and label data, 
-            and the concatenated testing feature and label data.
-        """
-        transformed_x = pd.concat([transformed_x, y_train], axis=1) 
-        test_x = pd.concat([test_x, y_test], axis=1)
-        return transformed_x, test_x
-    
 
 @dataclass(slots=True)
 class FileParser:
@@ -196,11 +37,11 @@ class FileParser:
             elif extension == "yaml":
                 return yaml.load(file, Loader=yaml.FullLoader)
             else:
-                raise NotSupportedError(f"Unsupported file extension: {extension}")
+                raise NotSupportedDataError(f"Unsupported file extension: {extension}")
 
 
-def generate_training_results(model: Modelor, training: Trainer, feature: DataParser, plot: tuple, 
-                              tune: bool=False, **kwargs: Any) -> tuple[dict[str, dict], dict[str, dict]]:
+def generate_training_results(model: Modelor, training: base.Trainer, feature: base.DataParser, plot: tuple, 
+                              tune: bool=False, num_iter: int=10, **kwargs: Any) -> tuple[dict[str, dict], dict[str, dict]]:
     """
     Generate training results for a given model, training object, and feature data.
 
@@ -216,6 +57,8 @@ def generate_training_results(model: Modelor, training: Trainer, feature: DataPa
         A tuple containing the plot title and axis labels.
     tune : bool, optional
         Whether to tune the hyperparameters. Defaults to True.
+    num_iter : int, optional
+        The number of iterations to use for tuning the hyperparameters. Defaults to 10.
     **kwargs : dict
         Additional keyword arguments to pass to the pycaret setup function.
 
@@ -245,7 +88,7 @@ def generate_training_results(model: Modelor, training: Trainer, feature: DataPa
 
     if tune:
         # save the results
-        sorted_result_tune, sorted_models_tune, top_params_tune = training.retune_best_models(sorted_models)
+        sorted_result_tune, sorted_models_tune, top_params_tune = training.retune_best_models(sorted_models, num_iter=num_iter)
         results["tuned"]["holdout"] = sorted_result_tune, top_params_tune
         stacked_results_tune, stacked_models_tune, stacked_params_tune = training.stack_models(sorted_models_tune)
         results["tuned"]["stacked"] = stacked_results_tune, stacked_params_tune
@@ -289,7 +132,8 @@ def evaluate_all_models(evaluation_fn: Callable, results: dict[str, dict[str, tu
                     evaluation_fn(model, save=f"{training_output}/evaluation_plots/{tune_status}/{key}/{mod_name}")
 
 
-def generate_test_prediction(models_dict: dict[str, dict], training: Trainer, sorting_function: Callable) -> dict[str, pd.DataFrame]:
+def generate_test_prediction(models_dict: dict[str, dict], training: base.Trainer, 
+                             sorting_function: Callable) -> dict[str, pd.DataFrame]:
     """
     Generate test set predictions for a given set of models.
 
@@ -394,8 +238,8 @@ def sort_classification_prediction(dataframe: pd.DataFrame, optimize:str="MCC", 
     return sort
 
 
-def iterate_multiple_features(iterator: Iterator, model: Modelor, label: str | list[int | float], 
-                              training: Trainer, outliers: Iterable[str],
+def iterate_multiple_features(iterator: Iterator, model: Modelor, parser:base.DataParser, label: str | list[int | float], 
+                              training: base.Trainer, outliers: Iterable[str],
                               training_output: Path, **kwargs: Any) -> None:
     
     """
@@ -407,6 +251,8 @@ def iterate_multiple_features(iterator: Iterator, model: Modelor, label: str | l
         An iterator that yields a tuple of input features and sheet names.
     model : Any
         The machine learning model to use for training.
+    parser : DataParser
+        The data parser to use for parsing the input features.
     label : str or list[int or float]
         The label or list of labels to use for training.
     training : Trainer
@@ -423,7 +269,7 @@ def iterate_multiple_features(iterator: Iterator, model: Modelor, label: str | l
 
     performance_list = []
     for input_feature, sheet in iterator:
-        feature = DataParser(input_feature, label=label, sheets=sheet, outliers=outliers)
+        feature = parser(input_feature, label=label, sheets=sheet, outliers=outliers)
         sorted_results, sorted_models, top_params = model.run_training(training, feature, plot=(), **kwargs)
         index = sorted_results.index.unique(0)[:training.experiment.best_model]
         score = 0

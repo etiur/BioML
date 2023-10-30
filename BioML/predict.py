@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
 from functools import cached_property
-from .training.helper import DataParser
+from .training.base import DataParser
 import argparse
 from scipy.spatial import distance
 from Bio import SeqIO
@@ -51,7 +51,7 @@ def arg_parse():
              args.res_dir, args.number_similar_samples, args.outlier_train, args.outlier_test, args.problem, args.label,
              args.applicability_domain, args.sheet_name]
 
-@dataclass(slots=True)
+@dataclass
 class Predictor:
     """
     A class to perform predictions
@@ -159,8 +159,7 @@ class ApplicabilityDomain:
 
         return self.n_insiders
 
-    def filter_model_predictions(self, predictions: pd.DataFrame, min_num: int=1,
-                                 path_name: str | Path = "filtered_predictions.parquet") -> pd.DataFrame:
+    def filter_model_predictions(self, predictions: pd.DataFrame, min_num: int=1) -> pd.DataFrame:
         """
         Eliminate the models individual predictions of sequences that did not pass the applicability domain threshold
 
@@ -187,10 +186,6 @@ class ApplicabilityDomain:
         pred = pd.concat([filtered_pred, filtered_n_insiders], axis=1)
         pred.index = filtered_index
  
-        col_name = ["prediction_score", "prediction_label", "AD_number"]
-
-        pred = pred.loc[:, pred.columns.str.contains("|".join(col_name))]
-        pred.to_parquet(path_name)
         return pred
 
 @dataclass(slots=True)
@@ -337,7 +332,7 @@ def predict(test_features: pd.DataFrame, model_path: str | Path, problem: str="c
 
 
 def domain_filter(predictions: pd.DataFrame, scaled_training_features: pd.DataFrame, scaled_test_features: pd.DataFrame,
-                  res_dir: str | Path="prediction_results", min_num: int=1) -> pd.DataFrame:
+                  min_num: int=1) -> pd.DataFrame:
     """
     Filter predictions using the applicability domain.
 
@@ -349,8 +344,6 @@ def domain_filter(predictions: pd.DataFrame, scaled_training_features: pd.DataFr
         The scaled training data.
     scaled_test_features : pandas DataFrame object
         The scaled test data.
-    res_dir : str, default="prediction_results"
-        The path to the directory to save the filtered predictions.
     min_num : int, default=1
         The minimum number of samples required to be within the applicability domain.
 
@@ -368,8 +361,7 @@ def domain_filter(predictions: pd.DataFrame, scaled_training_features: pd.DataFr
       The function creates an instance of the `ApplicabilityDomain` class and fits it to the scaled training data. 
       It then predicts the applicability domain for the scaled test data. The function calls the `filter_model_predictions` 
       method of the `ApplicabilityDomain` object to filter the predictions based on the applicability domain. 
-      The function saves the filtered predictions to the specified directory as a parquet file. 
-      The function returns the filtered predictions as a numpy ndarray.
+      The function returns the filtered predictions as a pd.DataFrame object.
 
     Examples
     --------
@@ -382,13 +374,11 @@ def domain_filter(predictions: pd.DataFrame, scaled_training_features: pd.DataFr
     >>> filtered_predictions = domain_filter(predictions, scaled_training_features, 
     >>> scaled_test_features, res_dir="results", min_num=2)
     """
-    res_dir = Path(res_dir)
     domain = ApplicabilityDomain()
     domain.fit(scaled_training_features)
     domain.predict(scaled_test_features)
     # return the prediction after the applicability domain filter of SVC (the filter depends on the feature space)
-    pred = domain.filter_model_predictions(predictions, min_num, 
-                                           path_name=res_dir/"filtered_predictions.parquet")
+    pred = domain.filter_model_predictions(predictions, min_num)
 
     return pred
 
@@ -409,14 +399,22 @@ def main():
     test_features = feature.remove_outliers(feature.read_features(test_features), outlier_test)
     predictions = predict(test_features, model_path, problem)
     if applicability_domain:
-        transformed, _, test_x = scale(scaler, training_features, test_features)
+        transformed, _, test_x = scale(scaler, feature.drop(), test_features)
         predictions = domain_filter(predictions, transformed , test_x, res_dir, number_similar_samples)
     else:
         test_index = [f"sample_{x}" for x, _ in enumerate(predictions.index)]
         predictions.index = test_index
-    extractor = FastaExtractor(fasta, res_dir)
-    positive, negative = extractor.separate_negative_positive(predictions)
-    extractor.extract(positive, negative, positive_fasta=f"positive.fasta", negative_fasta=f"negative.fasta")   
+    
+    # save the predictions
+    col_name = ["prediction_score", "prediction_label", "AD_number"]
+    predictions = predictions.loc[:, predictions.columns.str.contains("|".join(col_name))]
+    Path(res_dir).mkdir(exist_ok=True, parents=True)
+    predictions.to_parquet(f"{res_dir}/predictions.csv")
+
+    if problem == "classification":
+        extractor = FastaExtractor(fasta, res_dir)
+        positive, negative = extractor.separate_negative_positive(predictions)
+        extractor.extract(positive, negative, positive_fasta=f"positive.fasta", negative_fasta=f"negative.fasta")   
 
 if __name__ == "__main__":
     # Run this if this file is executed from command line but not if is imported as API

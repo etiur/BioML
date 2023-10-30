@@ -66,7 +66,7 @@ def arg_parse():
             args.excel_file, args.kfold_parameters, args.rfe_steps, args.plot, args.plot_num_features, args.num_filters,
             args.seed, args.strategy, args.problem]
 
-@dataclass
+@dataclass(slots=True)
 class DataReader:
     """
     A class for reading data from CSV files.
@@ -91,6 +91,8 @@ class DataReader:
     checked_label_path : str, optional
         The file path for the corrected label values if the length between features and labels are different. 
         Default is "labels_corrected.csv".
+    sheet: str or int or None, optional
+        The sheet_name for the excel file. Default is None.
 
     Attributes
     ----------
@@ -104,6 +106,8 @@ class DataReader:
         The type of scaler used for preprocessing the features.
     checked_label_path : str
         The file path for the corrected label values if the length between features and labels are different.
+    sheet: str or int
+        The sheet_name for the excel file
 
     Methods
     -------
@@ -118,11 +122,12 @@ class DataReader:
     analyse_composition(features)
         Analyses the composition of the feature data.
     """
-    label: pd.Series | str | Iterable[int|float]
+    label: pd.Series | pd.DataFrame | str | Iterable[int|float]
     features: pd.DataFrame | str | list | np.ndarray
     variance_thres: float | None = 0
     scaler: str = "robust"
     checked_label_path: str = "labels_corrected.csv"
+    sheet: str | int | None = None
 
     def __post_init__(self):
         self.features = self.read_feature(self.features)
@@ -182,7 +187,8 @@ class DataReader:
             case str(feat) if feat.endswith(".csv"):
                 return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
             case str(feat) if feat.endswith(".xlsx"):
-                return pd.read_excel(f"{features}", index_col=0) # the first column should contain the sample names
+                sheet = self.sheet if self.sheet else 0
+                return pd.read_excel(f"{features}", index_col=0, sheet_name=sheet) # the first column should contain the sample names
             case pd.DataFrame() as feat:
                 return feat
             case list() | np.ndarray() as feat:
@@ -221,7 +227,7 @@ class DataReader:
             case list() | np.ndarray() as label:
                 return pd.Series(label, index=self.features.index, name="target")
             case _:
-                raise NotSupportedError("label should be a csv file, a pandas Series, an array or inside features")
+                raise NotSupportedError("label should be a csv file, a pandas Series, DataFrame, an array or inside features")
 
     def preprocess(self) -> None:
         """

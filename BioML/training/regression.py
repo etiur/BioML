@@ -1,8 +1,8 @@
 from pathlib import Path
 import argparse
-from .base import PycaretInterface, Trainer
+from .base import PycaretInterface, Trainer, DataParser
 import pandas as pd
-from .helper import DataParser, generate_training_results, evaluate_all_models, write_results, sort_regression_prediction
+from .helper import generate_training_results, evaluate_all_models, write_results, sort_regression_prediction
 from .helper import generate_test_prediction
 from functools import partial
 from typing import Iterable, Any

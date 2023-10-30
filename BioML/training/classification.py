@@ -1,9 +1,9 @@
 from typing import Iterable, Any
 import pandas as pd
-from .base import PycaretInterface, Trainer
+from .base import PycaretInterface, Trainer, DataParser
 import argparse
 from pathlib import Path
-from .helper import write_results, generate_training_results, evaluate_all_models, DataParser, sort_classification_prediction
+from .helper import write_results, generate_training_results, evaluate_all_models, sort_classification_prediction
 from .helper import generate_test_prediction
 from functools import partial
 
