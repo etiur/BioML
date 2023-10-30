@@ -7,9 +7,181 @@ import time
 from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
 from ..utilities import Log
-from sklearn.metrics import average_precision_score
-from .helper import DataParser       
-from typing import Iterable, Protocol
+from sklearn.metrics import average_precision_score   
+from typing import Iterable
+from ..custom_errors import NotSupportedDataError
+
+
+@dataclass(slots=True)
+class DataParser:
+    """
+    A class for parsing feature and label data.
+
+    Parameters
+    ----------
+    features : pd.DataFrame or str or list or np.ndarray
+        The feature data.
+    label : pd.Series or str or Iterable[int|float] or None, optional
+        The label data. Defaults to None.
+    outliers : Iterable[str], optional
+        An iterable containing the indices of the outliers in the feature and label data. Defaults to an empty ().
+    sheets : str or int, optional
+        The sheet name or index to read from an Excel file. Defaults to 0.
+
+    Attributes
+    ----------
+    features : pd.DataFrame
+        The feature data.
+    label : pd.Series or None
+        The label data.
+    outliers : Iterable[str]
+        An iterable containing the indices of the outliers in the feature and label data.
+    sheets : str or int
+        The sheet name or index to read from an Excel file.
+
+    Methods
+    -------
+    read_features(features)
+        Reads the feature data from a file or returns the input data.
+    read_labels(label)
+        Reads the label data from a file or returns the input data.
+    scale(X_train, X_test)
+        Scales the feature data.
+    process(transformed_x, test_x, y_train, y_test)
+        Concatenates the feature and label data so that it can be used by pycaret.
+    """
+    features: pd.DataFrame | str | list | np.ndarray
+    label: pd.Series | pd.DataFrame | str | Iterable[int|float|str] | None = None
+    outliers: Iterable[str] = ()
+    sheets: str | int | None = None
+
+    def __post_init__(self):
+        self.features = self.read_features(self.features)
+        if self.label is not None:
+            self.label = self.read_labels(self.label) # type: ignore
+            if not isinstance(self.label, str):
+                self.features = pd.concat([self.features, self.label], axis=1)
+                self.label = self.label.index.name
+
+        self.features = self.remove_outliers(self.features, self.outliers)
+
+    def read_features(self, features: str | pd.DataFrame | list | np.ndarray) -> pd.DataFrame:
+        """
+        Reads the feature data from a file or returns the input data.
+
+        Parameters
+        ----------
+        features : str or pd.DataFrame or list or np.ndarray
+            The feature data.
+
+        Returns
+        -------
+        pd.DataFrame
+            The feature data as a pandas DataFrame.
+
+        Raises
+        ------
+        NotSupportedDataError
+            If the input data type is not supported.
+        """
+        # concatenate features and labels
+        match features:
+            case str(feature) if feature.endswith(".csv"):
+                return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
+            case str(feature) if feature.endswith(".xlsx"):
+                sheets = self.sheets if self.sheets else 0
+                with pd.ExcelFile(features) as file:
+                    if len(file.sheet_names) > 1:
+                        warnings.warn(f"The excel file contains more than one sheet, only the sheet {sheets} will be used")
+                return pd.read_excel(features, index_col=0, engine='openpyxl', sheet_name=sheets)
+            case pd.DataFrame() as feature:
+                return feature
+            case list() | np.ndarray() as feature:
+                return pd.DataFrame(feature)
+            case _:
+                raise NotSupportedDataError("features should be a csv or excel file, an array or a pandas DataFrame")
+        
+    def read_labels(self, label: str | pd.Series) -> str | pd.Series:
+        """
+        Reads the label data from a file or returns the input data.
+
+        Parameters
+        ----------
+        label : str or pd.Series
+            The label data.
+
+        Returns
+        -------
+        pd.Series
+            The label data as a pandas Series.
+
+        Raises
+        ------
+        TypeError
+            If the input data type is not supported.
+        """
+        match label:
+            case pd.Series() | pd.DataFrame() as labels:
+                labels.index.name = "target"
+                return labels
+            case str(labels) if Path(labels).exists() and Path(labels).suffix == ".csv":
+                labels = pd.read_csv(labels, index_col=0)
+                labels.index.name = "target"
+                return labels # type: ignore
+            case str(labels) if labels in self.features.columns: # type: ignore
+                return labels
+            case list() | np.ndarray() as labels:
+                return pd.Series(labels, index=self.features.index, columns=["target"]) # type: ignore
+            case _:
+                raise NotSupportedDataError(f"label should be a csv file, an array, a pandas Series, DataFrame or inside features: you provided {label}")
+    
+    def remove_outliers(self, training_features: pd.DataFrame, outliers: Iterable[str]):
+        """
+        Remove outliers from the train data
+
+        Parameters
+        ----------
+        training_features : pd.DataFrame
+            The training data.
+
+        outliers: Iterable[str]
+            An iterable containing the indices to remove from the training set
+            
+        Returns
+        -------
+        pd.DataFrame
+            The data with outliers removed.
+        """
+        #remove outliers
+        training_features.loc[[x for x in training_features.index if x not in outliers]]
+
+        return training_features
+    
+    def process(self, transformed_x: pd.DataFrame, test_x: pd.DataFrame, y_train: pd.Series, 
+                y_test: pd.Series)-> tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Concatenate the transformed feature data with the label data.
+
+        Parameters
+        ----------
+        transformed_x : pd.DataFrame
+            The transformed training feature data.
+        test_x : pd.DataFrame
+            The transformed testing feature data.
+        y_train : pd.Series
+            The training label data.
+        y_test : pd.Series
+            The testing label data.
+
+        Returns
+        -------
+        Tuple[pd.DataFrame, pd.DataFrame]
+            A tuple containing the concatenated training feature and label data, 
+            and the concatenated testing feature and label data.
+        """
+        transformed_x = pd.concat([transformed_x, y_train], axis=1) 
+        test_x = pd.concat([test_x, y_test], axis=1)
+        return transformed_x, test_x
 
 
 @dataclass
@@ -649,7 +821,7 @@ class Trainer:
 
         Parameters
         ----------
-        features : pd.DataFrame
+        features : DataParser
             The training feature data.
         test_size : float, 
             The proportion of the data to use as a test set. Defaults to 0.2.
@@ -821,14 +993,3 @@ class Trainer:
                 result = result.set_index("Model")
                 return result
            
-
-class Modelor(Protocol):
-    drop: Iterable[str]
-    selected: Iterable[str]
-    optimize: str
-
-    def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> int | float:
-        ...
-    
-    def run_training(self, trainer: Trainer, feature: DataParser, plot: tuple[str, ...], **kwargs: Any) -> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
-        ...

@@ -10,7 +10,7 @@ from pyod.models.ocsvm import OCSVM
 from pyod.models.ecod import ECOD
 from openpyxl import load_workbook
 import pandas as pd
-from BioML.utilities import scale
+from .utilities import scale
 from pathlib import Path
 import random
 import argparse

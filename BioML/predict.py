@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
 from functools import cached_property
-from .training.helper import DataParser
+from .training.base import DataParser
 import argparse
 from scipy.spatial import distance
 from Bio import SeqIO
