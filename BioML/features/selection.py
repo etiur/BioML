@@ -239,9 +239,6 @@ class DataReader:
             self.features = pd.DataFrame(fit, index=self.features.index, 
                                          columns=variance.get_feature_names_out())
 
-
-    
-
     def analyse_composition(self, dataframe: pd.DataFrame) -> int | tuple[int, int]:
         """
         Analyses the composition of the given pandas DataFrame.
@@ -286,7 +283,7 @@ class DataReader:
             The scaled training data as a numpy array.
         """
         transformed, scaler_dict = scale(self.scaler, X_train)
-        return transformed.to_numpy()
+        return transformed
 
 
 class FeatureSelection:
@@ -680,7 +677,7 @@ class FeatureRegression:
                                                             random_state=self.seed)
         transformed_x = features.scale(X_train)
         feature_dict = selector.generate_features(self.filter_args, transformed_x, Y_train, 
-                                    feature_range, features.features, rfe_step, plot, plot_num_features)
+                                            feature_range, features.features, rfe_step, plot, plot_num_features)
         selector._write_dict(feature_dict)
 
    
@@ -705,11 +702,11 @@ def get_range_features(features: pd.DataFrame, num_features_min: int | None=None
         A list of integers representing the range of numbers for the number of features to select.
     """
     if not num_features_min:
-        num_features_min = len(features.columns) // 10
+        num_features_min = min(2, len(features.columns) // 10)
         if not num_features_max:
-            num_features_max = len(features.columns) // 2 + 1
+            num_features_max = max(4, len(features.columns) // 1.5 + 1)
         if not step_range:
-            step_range = (num_features_max - num_features_min) // 4
+            step_range = max(1, (num_features_max - num_features_min) // 4)
         feature_range = list(range(num_features_min, num_features_max, step_range))
     elif num_features_min and step_range and num_features_max:
         feature_range = list(range(num_features_min, num_features_max, step_range))
