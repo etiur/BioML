@@ -409,7 +409,7 @@ def main():
     col_name = ["prediction_score", "prediction_label", "AD_number"]
     pred = pred.loc[:, pred.columns.str.contains("|".join(col_name))]
     Path(res_dir).mkdir(exist_ok=True, parents=True)
-    pred.to_parquet(f"{res_dir}/predictions.csv")
+    pred.to_csv(f"{res_dir}/predictions.csv")
 
     if problem == "classification":
         extractor = FastaExtractor(fasta, res_dir)
