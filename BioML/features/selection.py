@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from . import methods
 from sklearn.ensemble import RandomForestClassifier as rfc
 from sklearn.ensemble import RandomForestRegressor as rfr
-from ..custom_errors import NotSupportedDataError
+from ..custom_errors import NotSupportedDataError, DifferentLabelFeatureIndexError
 
 
 def arg_parse():
@@ -162,7 +162,7 @@ class DataReader:
                 if not label_path.exists():
                     self.label.to_csv(label_path)
             except KeyError as e:
-                raise KeyError(f"feature dataframe and labels have different index names: {e}")
+                raise DifferentLabelFeatureIndexError(f"feature dataframe and labels have different index names: {e}")
         
     def read_feature(self, features: str | pd.DataFrame | list | np.ndarray) -> pd.DataFrame:
         """
@@ -702,9 +702,9 @@ def get_range_features(features: pd.DataFrame, num_features_min: int | None=None
         A list of integers representing the range of numbers for the number of features to select.
     """
     if not num_features_min:
-        num_features_min = min(2, len(features.columns) // 10)
+        num_features_min = max(2, len(features.columns) // 10)
         if not num_features_max:
-            num_features_max = max(4, len(features.columns) // 1.5 + 1)
+            num_features_max = max(4, int(len(features.columns) // 1.6) + 1)
         if not step_range:
             step_range = max(1, (num_features_max - num_features_min) // 4)
         feature_range = list(range(num_features_min, num_features_max, step_range))

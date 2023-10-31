@@ -9,9 +9,8 @@ from pycaret.regression import RegressionExperiment
 from ..utilities import Log
 from sklearn.metrics import average_precision_score   
 from typing import Iterable
-from ..custom_errors import NotSupportedDataError
-from functools import cached_property
-
+from ..custom_errors import NotSupportedDataError, DifferentLabelFeatureIndexError
+import warnings
 
 @dataclass(slots=True)
 class DataParser:
@@ -61,8 +60,10 @@ class DataParser:
         if self.label is not None:
             self.label = self.read_labels(self.label) # type: ignore
             if not isinstance(self.label, str):
-                self.features = pd.concat([self.features, self.label], axis=1)
-                self.label = self.label.index.name
+                if len(self.features.index.difference(self.label.index)):
+                    raise DifferentLabelFeatureIndexError("The label and feature indices are different")
+                self.features = pd.concat([self.features, self.label.rename("target")], axis=1)
+                self.label = "target"
 
         self.features = self.remove_outliers(self.features, self.outliers)
 
@@ -89,18 +90,22 @@ class DataParser:
         match features:
             case str(feature) if feature.endswith(".csv"):
                 return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
+            
             case str(feature) if feature.endswith(".xlsx"):
                 sheets = self.sheets if self.sheets else 0
                 with pd.ExcelFile(features) as file:
                     if len(file.sheet_names) > 1:
                         warnings.warn(f"The excel file contains more than one sheet, only the sheet {sheets} will be used")
                 return pd.read_excel(features, index_col=0, engine='openpyxl', sheet_name=sheets)
+            
             case pd.DataFrame() as feature:
                 return feature
+            
             case list() | np.ndarray() as feature:
                 return pd.DataFrame(feature)
+            
             case _:
-                raise NotSupportedDataError("features should be a csv or excel file, an array or a pandas DataFrame")
+                raise NotSupportedDataError("features should be a csv or excel file, an array or a pandas DataFrame, you provided {features}")
         
     def read_labels(self, label: str | pd.Series) -> str | pd.Series:
         """
@@ -118,21 +123,26 @@ class DataParser:
 
         Raises
         ------
-        TypeError
+        NotSupportedDataError
             If the input data type is not supported.
         """
         match label:
-            case pd.Series() | pd.DataFrame() as labels:
-                labels.index.name = "target"
+            case pd.Series() as labels:
                 return labels
+            
+            case pd.DataFrame() as labels:
+                return labels.squeeze()
+            
             case str(labels) if Path(labels).exists() and Path(labels).suffix == ".csv":
                 labels = pd.read_csv(labels, index_col=0)
-                labels.index.name = "target"
-                return labels # type: ignore
-            case str(labels) if labels in self.features.columns: # type: ignore
+                return labels.squeeze()
+            
+            case str(labels) if labels in self.features.columns:
                 return labels
+            
             case list() | np.ndarray() as labels:
-                return pd.Series(labels, index=self.features.index, columns=["target"]) # type: ignore
+                return pd.Series(labels, index=self.features.index, name="target")
+            
             case _:
                 raise NotSupportedDataError(f"label should be a csv file, an array, a pandas Series, DataFrame or inside features: you provided {label}")
     
@@ -249,6 +259,7 @@ class PycaretInterface:
     best_model: int = 3
     output_path: Path | str | None= None
     experiment_name: str | None = None
+    # No need to provide values
     _plots: list[str] = field(init=False)
     _final_models: list[str] = field(init=False)
     original_plots: list[str] = field(init=False)
@@ -259,9 +270,9 @@ class PycaretInterface:
         if self.objective == "classification":
             self.pycaret = ClassificationExperiment()
             self._plots = ["confusion_matrix", "learning", "class_report", "auc", "pr"]
-            self._final_models = ('lr', 'knn', 'nb', 'dt', 'svm', 'rbfsvm', 'gpc', 
+            self._final_models = ['lr', 'knn', 'nb', 'dt', 'svm', 'rbfsvm', 'gpc', 
                                 'mlp', 'ridge', 'rf', 'qda', 'ada', 'gbc', 'lda', 'et', 'xgboost', 
-                                'lightgbm', 'catboost', 'dummy')
+                                'lightgbm', 'catboost', 'dummy']
         elif self.objective == "regression":    
             self.pycaret = RegressionExperiment()
             self._plots = ["residuals", "error", "learning"]
@@ -279,7 +290,7 @@ class PycaretInterface:
         elif self.budget_time is not None:
             raise ValueError("The budget time should be greater than 0 or None")
         
-        self.output_path = Path.cwd() if self.output_path is None else Path(self.output_path)
+        self.output_path: Path = Path.cwd() if self.output_path is None else Path(self.output_path)
         
         self.log.info("------------------------------------------------------------------------------")
         self.log.info("PycaretInterface parameters")
@@ -290,7 +301,7 @@ class PycaretInterface:
         self.log.info(f"Output path: {self.output_path}")
     
     @staticmethod
-    def _check_value(value: str | Iterable[str], element_list: list[str], element_name: str):
+    def _check_value(value: str | Iterable[str], element_list: list[str], element_name: str) -> list[str]:
         if isinstance(value, (list, np.ndarray, tuple, set)):
             test = list(set(value).difference(element_list))
             if test:
@@ -301,10 +312,10 @@ class PycaretInterface:
             value = [value]
         else:
             raise TypeError(f"the {element_name} should be a string or an array of strings")
-        return value
+        return list(value)
 
     @property
-    def plots(self) -> list[str] | tuple[str, ...]:
+    def plots(self) -> list[str]:
         """
         The plots that should be saved
         """
@@ -312,7 +323,7 @@ class PycaretInterface:
     
     @plots.setter
     def plots(self, value):
-        self._plots = self._check_value(value, self.original_plots, "plots") # type: ignore
+        self._plots = self._check_value(value, self.original_plots, "plots")
 
     @property
     def final_models(self) -> list[str]:
@@ -369,11 +380,11 @@ class PycaretInterface:
         'catboost': 'CatBoost Regressor',
         'dummy': 'Dummy Regressor'}
         """
-        return self._final_models # type: ignore
+        return self._final_models
      
     @final_models.setter
     def final_models(self, value: str |Iterable[str]) -> None:
-        self._final_models = self._check_value(value, self.original_models, "models") # type: ignore
+        self._final_models = self._check_value(value, self.original_models, "models")
 
     def setup_training(self, features: pd.DataFrame, fold: int=5, test_size:float=0.2,
                        **kwargs: Any):
@@ -407,9 +418,9 @@ class PycaretInterface:
                                    average="weighted", target="pred_proba", multiclass=False)
 
         config: pd.DataFrame = self.pycaret.pull(pop=True)
-        if not (self.output_path / f"config_setup_pycaret.csv").exists(): # type: ignore
+        if not (self.output_path / f"config_setup_pycaret.csv").exists():
             self.output_path.mkdir(parents=True, exist_ok=True)
-            config.to_csv(self.output_path / f"config_setup_pycaret.csv") # type: ignore
+            config.to_csv(self.output_path / f"config_setup_pycaret.csv") 
         return self
 
     def train(self):
