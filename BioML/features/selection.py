@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from . import methods
 from sklearn.ensemble import RandomForestClassifier as rfc
 from sklearn.ensemble import RandomForestRegressor as rfr
-from ..custom_errors import NotSupportedError
+from ..custom_errors import NotSupportedDataError
 
 
 def arg_parse():
@@ -175,7 +175,7 @@ class DataReader:
 
         Raises
         ------
-        NotSupportedError
+        NotSupportedDataError
             If the features are not in a valid format.
 
         Returns
@@ -194,7 +194,7 @@ class DataReader:
             case list() | np.ndarray() as feat:
                 return pd.DataFrame(feat)
             case _:
-                raise NotSupportedError("features should be a csv file, an array or a pandas DataFrame")
+                raise NotSupportedDataError("features should be a csv file, an array or a pandas DataFrame")
 
     def read_label(self,  labels: str | pd.Series | Iterable[int]) -> pd.Series | pd.DataFrame:
         """
@@ -207,7 +207,7 @@ class DataReader:
 
         Raises
         ------
-        NotSupportedError
+        NotSupportedDataError
             If the features are not in a valid format.
 
         Returns
@@ -227,7 +227,7 @@ class DataReader:
             case list() | np.ndarray() as label:
                 return pd.Series(label, index=self.features.index, name="target")
             case _:
-                raise NotSupportedError("label should be a csv file, a pandas Series, DataFrame, an array or inside features")
+                raise NotSupportedDataError("label should be a csv file, a pandas Series, DataFrame, an array or inside features")
 
     def preprocess(self) -> None:
         """
