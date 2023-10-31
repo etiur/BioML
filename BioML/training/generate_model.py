@@ -4,6 +4,7 @@ import argparse
 from .classification import Classifier
 from .regression import Regressor
 from .helper import FileParser
+from typing import Any
 
 
 
@@ -61,7 +62,8 @@ class GenerateModel:
     def  __init__(self, trainer: Trainer):
         self.trainer = trainer
 
-    def finalize_model(self, sorted_model, index: int | None = None):
+    def finalize_model(self, sorted_model: list[Any] | dict[str, Any] | Any, 
+                       index: int | None = None):
         """
         Finalize the model by training it with all the data including the test set.
 
@@ -92,7 +94,7 @@ class GenerateModel:
                 final = self.trainer.experiment.finalize_model(model)
                 return final
             
-    def save_model(self, model, filename: str):
+    def save_model(self, model: Any, filename: str):
         """
         Save the model
 

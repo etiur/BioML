@@ -50,7 +50,8 @@ def scale(scaler: str, X_train: pd.DataFrame,
         return transformed, scaler_dict, test_x
 
 
-def write_excel(file, dataframe: pd.DataFrame | pd.Series, sheet_name: str, overwrite: bool=False) -> None:
+def write_excel(file: str | pd.io.excel._openpyxl.OpenpyxlWriter, 
+                dataframe: pd.DataFrame | pd.Series, sheet_name: str, overwrite: bool=False) -> None:
     """
     Write a pandas DataFrame to an Excel file.
 
@@ -141,7 +142,7 @@ class Log:
     A class to keep log of the output from different modules
     """
 
-    def __init__(self, name):
+    def __init__(self, name: str):
         """
         Initialize the Log class
 
@@ -163,7 +164,7 @@ class Log:
         self._logger.addHandler(self.fh)
         self._logger.addHandler(self.ch)
 
-    def debug(self, messages, exc_info=False):
+    def debug(self, messages: str, exc_info: bool=False):
         """
         It pulls a debug message.
 
@@ -176,7 +177,7 @@ class Log:
         """
         self._logger.debug(messages, exc_info=exc_info)
 
-    def info(self, messages, exc_info=False):
+    def info(self, messages: str, exc_info: bool=False):
         """
         It pulls an info message.
 
@@ -189,7 +190,7 @@ class Log:
         """
         self._logger.info(messages, exc_info=exc_info)
 
-    def warning(self, messages, exc_info=False):
+    def warning(self, messages: str, exc_info: bool=False):
         """
         It pulls a warning message.
 
@@ -202,7 +203,7 @@ class Log:
         """
         self._logger.warning(messages, exc_info=exc_info)
 
-    def error(self, messages, exc_info=False):
+    def error(self, messages: str, exc_info: bool=False):
         """
         It pulls a error message.
 
@@ -215,7 +216,7 @@ class Log:
         """
         self._logger.error(messages, exc_info=exc_info)
 
-    def critical(self, messages, exc_info=False):
+    def critical(self, messages: str, exc_info: bool=False):
         """
         It pulls a critical message.
 
@@ -316,6 +317,6 @@ class Threshold:
         print(f"using the threshold {threshold} returns these proportions", Counter(data))
         return data
 
-    def save_csv(self, threshold, greater=True, column_name='temperature'):
+    def save_csv(self, threshold: int | float, greater: bool=True, column_name: str='temperature'):
         data = self.apply_threshold(threshold, greater, column_name)
         data.to_csv(self.output_csv)

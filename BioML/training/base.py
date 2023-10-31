@@ -376,7 +376,7 @@ class PycaretInterface:
         self._final_models = self._check_value(value, self.original_models, "models") # type: ignore
 
     def setup_training(self, features: pd.DataFrame, fold: int=5, test_size:float=0.2,
-                       **kwargs):
+                       **kwargs: Any):
         """
         Call pycaret set_up for the training.
 
@@ -503,7 +503,7 @@ class PycaretInterface:
         params = pd.Series(params)
         return params
     
-    def get_params_stacked(self, stacked_models):
+    def get_params_stacked(self, stacked_models: Any) -> pd.Series:
         """
         Get the parameters of the final estimator in a stacked ensemble model.
 
@@ -811,7 +811,7 @@ class Trainer:
         return pd.concat(sorted_results), sorted_models
     
     def train(self, features: DataParser, test_size: float=0.2, drop: Iterable[str]=(), 
-              selected_models: str | Iterable[str] =(), **kwargs) -> tuple[dict, dict]:
+              selected_models: str | Iterable[str] =(), **kwargs: Any) -> tuple[dict, dict]:
         """
         Train the models on the specified feature data and return the results and models.
 
@@ -844,7 +844,7 @@ class Trainer:
         return results, returned_models
     
     def analyse_models(self, features: DataParser, scoring_fn: Callable, test_size: float=0.2,
-                       drop: Iterable[str] | None=None, selected: Iterable[str] | None=None, **kwargs) -> tuple[pd.DataFrame, dict, pd.Series]:
+                       drop: Iterable[str] | None=None, selected: Iterable[str] | None=None, **kwargs: Any) -> tuple[pd.DataFrame, dict, pd.Series]:
         """
         Analyze the trained models and rank them based on the specified scoring function.
 
