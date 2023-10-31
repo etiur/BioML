@@ -41,11 +41,13 @@ def arg_parse():
     parser.add_argument("--tune", action="store_false", required=False, help="If to tune the best models")
     parser.add_argument("-j", "--setup_config", required=False, default=None,
                         help="A json or yaml file for the setup_configurations")
+    parser.add_argument("-ni", "--num_iter", default=30, type=int, required=False, 
+                        help="The number of iterations for the hyperparameter search")
     args = parser.parse_args()
 
-    return [args.training_features, args.label, args.scaler, args.model_output,
-            args.outliers, args.selected_models, args.problem, args.optimize,
-            args.model_strategy, args.seed, args.kfold_parameters, args.tune, args.sheet_name, args.setup_config]
+    return [args.training_features, args.label, args.scaler, args.model_output, args.outliers, args.selected_models, 
+            args.problem, args.optimize, args.model_strategy, args.seed, args.kfold_parameters, args.tune, args.sheet_name, 
+            args.setup_config, args.num_iter]
 
 
 class GenerateModel:
@@ -151,7 +153,7 @@ class GenerateModel:
 
 def main():
     training_features, label, scaler, model_output, outliers, selected_models, \
-    problem, optimize, model_strategy, seed, kfold, tune, sheet, setup_config = arg_parse()
+    problem, optimize, model_strategy, seed, kfold, tune, sheet, setup_config, num_iter = arg_parse()
     if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
@@ -166,7 +168,7 @@ def main():
     
     experiment = PycaretInterface(problem, feature.label, seed, scaler=scaler,best_model=len(selected_models), optimize=optimize, 
                                   output_path=model_output)
-    training = Trainer(experiment, num_split)
+    training = Trainer(experiment, num_split, num_iter)
     if problem == "classification":
         model = Classifier(drop=(), selected=selected_models, test_size=test_size, optimize=optimize)
     elif problem == "regression":

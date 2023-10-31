@@ -56,7 +56,7 @@ class DataParser:
     sheets: str | int | None = None
 
     def __post_init__(self):
-        self.features = self.read_features(self.features)
+        self.features = self.read_features(self.features, sheets=self.sheets)
         if self.label is not None:
             self.label = self.read_labels(self.label) # type: ignore
             if not isinstance(self.label, str):
@@ -67,7 +67,7 @@ class DataParser:
 
         self.features = self.remove_outliers(self.features, self.outliers)
 
-    def read_features(self, features: str | pd.DataFrame | list | np.ndarray) -> pd.DataFrame:
+    def read_features(self, features: str | pd.DataFrame | list | np.ndarray, sheets: str | int | None=None) -> pd.DataFrame:
         """
         Reads the feature data from a file or returns the input data.
 
@@ -75,6 +75,8 @@ class DataParser:
         ----------
         features : str or pd.DataFrame or list or np.ndarray
             The feature data.
+        sheets : str or int, optional
+            The sheet name or index to read from an Excel file. Defaults to None.
 
         Returns
         -------
@@ -92,7 +94,7 @@ class DataParser:
                 return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
             
             case str(feature) if feature.endswith(".xlsx"):
-                sheets = self.sheets if self.sheets else 0
+                sheets = sheets if sheets else 0
                 with pd.ExcelFile(features) as file:
                     if len(file.sheet_names) > 1:
                         warnings.warn(f"The excel file contains more than one sheet, only the sheet {sheets} will be used")
@@ -170,7 +172,7 @@ class DataParser:
     
     def drop(self)-> pd.DataFrame:
         """
-        Retunr the feature without the labels in it
+        Return the feature without the labels in it
 
         Returns
         -------
@@ -236,7 +238,7 @@ class PycaretInterface:
         Evaluate the performance of the trained models on new data.
     plot_best_models(sorted_models, split_ind=None)
         Analyze the best models and plot them.
-    retune_model(name, model,, num_iter=5, fold=5)
+    retune_model(name, model,, num_iter=30, fold=5)
         Retune the specified model using Optuna.
     stack_models(estimator_list, fold=5, meta_model=None)
         Create a stacked ensemble model from a list of models.
@@ -554,7 +556,7 @@ class PycaretInterface:
 
         return pd.concat(model_params) # type: ignore
     
-    def retune_model(self, name: str, model: Any, num_iter: int=10, 
+    def retune_model(self, name: str, model: Any, num_iter: int=30, 
                      fold: int=5) -> tuple[Any, pd.DataFrame, pd.Series]:
         """
         Retune the specified model using Optuna.
@@ -566,7 +568,7 @@ class PycaretInterface:
         model : Any
             The trained model to retune.
         num_iter : int, optional
-            The number of iterations to use for tuning. Defaults to 10.
+            The number of iterations to use for tuning. Defaults to 30.
         fold : int, optional
             The number of cross-validation folds to use. Defaults to 5.
 
@@ -758,7 +760,7 @@ class PycaretInterface:
 
 
 class Trainer:
-    def __init__(self, caret_interface: PycaretInterface, num_splits: int=5):
+    def __init__(self, caret_interface: PycaretInterface, num_splits: int=5, num_iter: int=30):
         
         """
         Initialize a Trainer object with the given parameters.
@@ -769,12 +771,16 @@ class Trainer:
             The model to use for training.
         num_splits : int, optional
             The number of splits to use in cross-validation. Defaults to 5.
+        num_iter : int, optional
+            The number of iterations to use for tuning. Defaults to 30.
         """
         self.log = Log("model_training")
-        self.log.info("Reading the features")
+        self.log.info("----------------Trainer inputs-------------------------")
         self.num_splits = num_splits
         self.experiment = caret_interface
+        self.num_iter = num_iter
         self.log.info(f"Number of kfolds: {self.num_splits}")
+        self.log.info(f"Number of iterations: {self.num_iter}")
 
     def rank_results(self, results: dict[str, pd.DataFrame], returned_models:dict[str, Any], 
                      scoring_function: Callable):
@@ -885,7 +891,7 @@ class Trainer:
 
         return sorted_results, sorted_models, top_params
     
-    def retune_best_models(self, sorted_models:dict[str, Any], num_iter: int=10):
+    def retune_best_models(self, sorted_models:dict[str, Any]):
         """
         Retune the best models using the specified optimization metric and number of iterations.
 
@@ -893,8 +899,6 @@ class Trainer:
         ----------
         sorted_models : dict[str, Any]
             A dictionary of sorted models.
-        num_iter : int, optional
-            The number of iterations to use for retuning. Defaults to 10.
 
         Returns
         -------
@@ -907,7 +911,7 @@ class Trainer:
         self.log.info("--------Retuning the best models--------")
         for key, model in list(sorted_models.items())[:self.experiment.best_model]:
             self.log.info(f"Retuning {key}")
-            tuned_model, results, params =  self.experiment.retune_model(key, model, num_iter, fold=self.num_splits)
+            tuned_model, results, params =  self.experiment.retune_model(key, model, self.num_iter, fold=self.num_splits)
             new_models[key] = tuned_model
             new_results[key] = results
             new_params[key] = params

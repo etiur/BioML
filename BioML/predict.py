@@ -55,12 +55,16 @@ def arg_parse():
 class Predictor:
     """
     A class to perform predictions
-    Initialize the class EnsembleVoting
+    Initialize the class with the test features, the experiment and the model path
 
     Parameters
     ____________
-    extracted_out: str
-        The path to the directory where the new extracted feature files are
+    test_features: pd.DataFrame
+        The test features
+    model: RegressionExperiment | ClassificationExperiment
+        The experiment object
+    model_path: str | Path
+        The path to the model
     """
 
     test_features: pd.DataFrame
@@ -72,18 +76,23 @@ class Predictor:
         return self.model.load_model(self.model_path, verbose=False)
         
 
-    def predicting(self) -> pd.DataFrame:
+    def predicting(self, problem: str="classification") -> pd.DataFrame:
         """
         Make predictions on new samples
+
+        Parameters
+        ___________
+        problem: str
+            The problem type, either classification or regression
 
         Returns
         -------
         pd.DataFrame
             The predictions appended as new columns to the test set
         """
-        pred = self.model.predict_model(self.loaded_model, self.test_features, verbose=False)
-
-        return pred
+        if problem == "classification":
+            return self.model.predict_model(self.loaded_model, self.test_features, verbose=False, raw_score=True)
+        return self.model.predict_model(self.loaded_model, self.test_features, verbose=False)
 
 
 @dataclass(slots=True)
@@ -208,7 +217,7 @@ class FastaExtractor:
         self.fasta_file = Path(self.fasta_file)
         self.resdir = Path(self.resdir)
 
-    def separate_negative_positive(self, pred: pd.DataFrame):
+    def separate_negative_positive(self, pred: pd.DataFrame, domain: bool=True):
         """
         Parameters
         ______________
@@ -234,10 +243,11 @@ class FastaExtractor:
                 try:
                     if int(pred.index[p].split("_")[1]) == ind:
                         col = pred.iloc[p]
-                        if len(col) > 2:
-                            seq.id = f"{seq.id}-###label:{col['prediction_label']}-###prob_0:{col['prediction_score_0']}-###prob_1:{col['prediction_score_1']}-###AD:{col['AD_number']}"
-                        elif len(col) == 2:
-                            seq.id = f"{seq.id}-###label:{col['prediction_label']}-###AD:{col['AD_number']}"
+                        seq.id = f"{seq.id}-###label:{col['prediction_label']}"
+                        if col.index.str.contains("prediction_score").any():
+                            seq.id = f"{seq.id}-###prob_0:{col['prediction_score_0']}-###prob_1:{col['prediction_score_1']}"
+                        if col.index.str.contains("AD_number").any():
+                            seq.id = f"{seq.id}-###AD:{col['AD_number']}"
                         if pred["prediction_label"].iloc[p] == 1:
                             positive.append(seq)
                         else:
@@ -250,11 +260,16 @@ class FastaExtractor:
     
     @staticmethod    
     def _sorting_function(sequence: SeqIO.SeqRecord):
+        scores = []
         id_ = sequence.id.split("-###")
-        if len(id_) >= 5:
-            return float(id_[3].split(":")[1]), int(id_[4].split(":")[1])
-        else:
-            return int(id_[2].split(":")[1])
+        for x in id_:
+            if "prob_1" in x:
+                scores.append(float(x.split(":")[1]))
+            if "AD" in x:
+                scores.append(int(float((x.split(":")[1]))))
+            if "label" in x:
+                scores.append(float(x.split(":")[1]))
+        return tuple(scores)
 
     def extract(self, positive_list: list[SeqIO.SeqRecord], negative_list: list[SeqIO.SeqRecord], 
                 positive_fasta: str="positive.fasta", negative_fasta: str="negative.fasta"):
@@ -327,7 +342,7 @@ def predict(test_features: pd.DataFrame, model_path: str | Path, problem: str="c
         experiment = RegressionExperiment()
 
     predictor = Predictor(test_features, experiment, model_path)
-    pred = predictor.predicting()
+    pred = predictor.predicting(problem)
     return pred
 
 
@@ -409,7 +424,7 @@ def main():
     col_name = ["prediction_score", "prediction_label", "AD_number"]
     predictions = predictions.loc[:, predictions.columns.str.contains("|".join(col_name))]
     Path(res_dir).mkdir(exist_ok=True, parents=True)
-    pred.to_csv(f"{res_dir}/predictions.csv")
+    predictions.to_csv(f"{res_dir}/predictions.csv")
 
     if problem == "classification":
         extractor = FastaExtractor(fasta, res_dir)
