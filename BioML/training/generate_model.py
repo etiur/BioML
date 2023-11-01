@@ -171,9 +171,9 @@ def main():
         model = Classifier(drop=(), selected=selected_models, test_size=test_size, optimize=optimize)
     elif problem == "regression":
         model = Regressor(drop=(), selected=selected_models, test_size=test_size, optimize=optimize)
-    sorted_results, sorted_models, top_params = model.run_training(training, feature, plot=(), **setup_config)
+    _, sorted_models, _ = model.run_training(training, feature, plot=(), **setup_config)
     if tune:
-        sorted_results, sorted_models, top_params = training.retune_best_models(sorted_models)
+        _, sorted_models, _ = training.retune_best_models(sorted_models)
     # generate the final model
     generate = GenerateModel(training)
     models =  generate.train_by_strategy(sorted_models, model_strategy)
