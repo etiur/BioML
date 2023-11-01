@@ -64,13 +64,15 @@ def arg_parse():
     
     parser.add_argument("-sh", "--sheet_name", required=False, default=None, 
                         help="The sheet name for the excel file if the training features is in excel format")
+    parser.add_argument("-ni", "--num_iter", default=30, type=int, required=False, 
+                        help="The number of iterations for the hyperparameter search")
 
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.budget_time, args.scaler, args.training_features, args.kfold_parameters, 
             args.outliers, args.precision_weight, args.recall_weight, args.report_weight, args.difference_weight, 
             args.strategy, args.best_model, args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected,
-            args.sheet_name]
+            args.sheet_name, args.num_iter]
 
 
 class Classifier:
@@ -172,7 +174,7 @@ class Classifier:
 def main():
     label, training_output, budget_time, scaler, excel, kfold, outliers, \
     precision_weight, recall_weight, report_weight, difference_weight, best_model, \
-    seed, drop, tune,  plot, optimize, selected, sheet = arg_parse()
+    seed, drop, tune,  plot, optimize, selected, sheet, num_iter = arg_parse()
     
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     training_output = Path(training_output)
@@ -183,7 +185,7 @@ def main():
     feature = DataParser(excel, label, outliers=outliers, sheets=sheet)
     experiment = PycaretInterface("classification", feature.label, seed, scaler=scaler, budget_time=budget_time, # type: ignore
                                   best_model=best_model, output_path=training_output, optimize=optimize)
-    training = Trainer(experiment, num_split)
+    training = Trainer(experiment, num_split, num_iter)
     ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight,
                         difference_weight=difference_weight, report_weight=report_weight)
     

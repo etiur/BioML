@@ -9,9 +9,8 @@ from pycaret.regression import RegressionExperiment
 from ..utilities import Log
 from sklearn.metrics import average_precision_score   
 from typing import Iterable
-from ..custom_errors import NotSupportedDataError
-from functools import cached_property
-
+from ..custom_errors import NotSupportedDataError, DifferentLabelFeatureIndexError
+import warnings
 
 @dataclass(slots=True)
 class DataParser:
@@ -57,16 +56,18 @@ class DataParser:
     sheets: str | int | None = None
 
     def __post_init__(self):
-        self.features = self.read_features(self.features)
+        self.features = self.read_features(self.features, sheets=self.sheets)
         if self.label is not None:
             self.label = self.read_labels(self.label) # type: ignore
             if not isinstance(self.label, str):
-                self.features = pd.concat([self.features, self.label], axis=1)
-                self.label = self.label.index.name
+                if len(self.features.index.difference(self.label.index)):
+                    raise DifferentLabelFeatureIndexError("The label and feature indices are different")
+                self.features = pd.concat([self.features, self.label.rename("target")], axis=1)
+                self.label = "target"
 
         self.features = self.remove_outliers(self.features, self.outliers)
 
-    def read_features(self, features: str | pd.DataFrame | list | np.ndarray) -> pd.DataFrame:
+    def read_features(self, features: str | pd.DataFrame | list | np.ndarray, sheets: str | int | None=None) -> pd.DataFrame:
         """
         Reads the feature data from a file or returns the input data.
 
@@ -74,6 +75,8 @@ class DataParser:
         ----------
         features : str or pd.DataFrame or list or np.ndarray
             The feature data.
+        sheets : str or int, optional
+            The sheet name or index to read from an Excel file. Defaults to None.
 
         Returns
         -------
@@ -89,18 +92,22 @@ class DataParser:
         match features:
             case str(feature) if feature.endswith(".csv"):
                 return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
+            
             case str(feature) if feature.endswith(".xlsx"):
-                sheets = self.sheets if self.sheets else 0
+                sheets = sheets if sheets else 0
                 with pd.ExcelFile(features) as file:
                     if len(file.sheet_names) > 1:
                         warnings.warn(f"The excel file contains more than one sheet, only the sheet {sheets} will be used")
                 return pd.read_excel(features, index_col=0, engine='openpyxl', sheet_name=sheets)
+            
             case pd.DataFrame() as feature:
                 return feature
+            
             case list() | np.ndarray() as feature:
                 return pd.DataFrame(feature)
+            
             case _:
-                raise NotSupportedDataError("features should be a csv or excel file, an array or a pandas DataFrame")
+                raise NotSupportedDataError("features should be a csv or excel file, an array or a pandas DataFrame, you provided {features}")
         
     def read_labels(self, label: str | pd.Series) -> str | pd.Series:
         """
@@ -118,21 +125,26 @@ class DataParser:
 
         Raises
         ------
-        TypeError
+        NotSupportedDataError
             If the input data type is not supported.
         """
         match label:
-            case pd.Series() | pd.DataFrame() as labels:
-                labels.index.name = "target"
+            case pd.Series() as labels:
                 return labels
+            
+            case pd.DataFrame() as labels:
+                return labels.squeeze()
+            
             case str(labels) if Path(labels).exists() and Path(labels).suffix == ".csv":
                 labels = pd.read_csv(labels, index_col=0)
-                labels.index.name = "target"
-                return labels # type: ignore
-            case str(labels) if labels in self.features.columns: # type: ignore
+                return labels.squeeze()
+            
+            case str(labels) if labels in self.features.columns:
                 return labels
+            
             case list() | np.ndarray() as labels:
-                return pd.Series(labels, index=self.features.index, columns=["target"]) # type: ignore
+                return pd.Series(labels, index=self.features.index, name="target")
+            
             case _:
                 raise NotSupportedDataError(f"label should be a csv file, an array, a pandas Series, DataFrame or inside features: you provided {label}")
     
@@ -160,7 +172,7 @@ class DataParser:
     
     def drop(self)-> pd.DataFrame:
         """
-        Retunr the feature without the labels in it
+        Return the feature without the labels in it
 
         Returns
         -------
@@ -226,7 +238,7 @@ class PycaretInterface:
         Evaluate the performance of the trained models on new data.
     plot_best_models(sorted_models, split_ind=None)
         Analyze the best models and plot them.
-    retune_model(name, model,, num_iter=5, fold=5)
+    retune_model(name, model,, num_iter=30, fold=5)
         Retune the specified model using Optuna.
     stack_models(estimator_list, fold=5, meta_model=None)
         Create a stacked ensemble model from a list of models.
@@ -249,6 +261,7 @@ class PycaretInterface:
     best_model: int = 3
     output_path: Path | str | None= None
     experiment_name: str | None = None
+    # No need to provide values
     _plots: list[str] = field(init=False)
     _final_models: list[str] = field(init=False)
     original_plots: list[str] = field(init=False)
@@ -259,9 +272,9 @@ class PycaretInterface:
         if self.objective == "classification":
             self.pycaret = ClassificationExperiment()
             self._plots = ["confusion_matrix", "learning", "class_report", "auc", "pr"]
-            self._final_models = ('lr', 'knn', 'nb', 'dt', 'svm', 'rbfsvm', 'gpc', 
+            self._final_models = ['lr', 'knn', 'nb', 'dt', 'svm', 'rbfsvm', 'gpc', 
                                 'mlp', 'ridge', 'rf', 'qda', 'ada', 'gbc', 'lda', 'et', 'xgboost', 
-                                'lightgbm', 'catboost', 'dummy')
+                                'lightgbm', 'catboost', 'dummy']
         elif self.objective == "regression":    
             self.pycaret = RegressionExperiment()
             self._plots = ["residuals", "error", "learning"]
@@ -279,7 +292,7 @@ class PycaretInterface:
         elif self.budget_time is not None:
             raise ValueError("The budget time should be greater than 0 or None")
         
-        self.output_path = Path.cwd() if self.output_path is None else Path(self.output_path)
+        self.output_path: Path = Path.cwd() if self.output_path is None else Path(self.output_path)
         
         self.log.info("------------------------------------------------------------------------------")
         self.log.info("PycaretInterface parameters")
@@ -290,7 +303,7 @@ class PycaretInterface:
         self.log.info(f"Output path: {self.output_path}")
     
     @staticmethod
-    def _check_value(value: str | Iterable[str], element_list: list[str], element_name: str):
+    def _check_value(value: str | Iterable[str], element_list: list[str], element_name: str) -> list[str]:
         if isinstance(value, (list, np.ndarray, tuple, set)):
             test = list(set(value).difference(element_list))
             if test:
@@ -301,10 +314,10 @@ class PycaretInterface:
             value = [value]
         else:
             raise TypeError(f"the {element_name} should be a string or an array of strings")
-        return value
+        return list(value)
 
     @property
-    def plots(self) -> list[str] | tuple[str, ...]:
+    def plots(self) -> list[str]:
         """
         The plots that should be saved
         """
@@ -312,7 +325,7 @@ class PycaretInterface:
     
     @plots.setter
     def plots(self, value):
-        self._plots = self._check_value(value, self.original_plots, "plots") # type: ignore
+        self._plots = self._check_value(value, self.original_plots, "plots")
 
     @property
     def final_models(self) -> list[str]:
@@ -369,11 +382,11 @@ class PycaretInterface:
         'catboost': 'CatBoost Regressor',
         'dummy': 'Dummy Regressor'}
         """
-        return self._final_models # type: ignore
+        return self._final_models
      
     @final_models.setter
     def final_models(self, value: str |Iterable[str]) -> None:
-        self._final_models = self._check_value(value, self.original_models, "models") # type: ignore
+        self._final_models = self._check_value(value, self.original_models, "models")
 
     def setup_training(self, features: pd.DataFrame, fold: int=5, test_size:float=0.2,
                        **kwargs: Any):
@@ -407,9 +420,9 @@ class PycaretInterface:
                                    average="weighted", target="pred_proba", multiclass=False)
 
         config: pd.DataFrame = self.pycaret.pull(pop=True)
-        if not (self.output_path / f"config_setup_pycaret.csv").exists(): # type: ignore
+        if not (self.output_path / f"config_setup_pycaret.csv").exists():
             self.output_path.mkdir(parents=True, exist_ok=True)
-            config.to_csv(self.output_path / f"config_setup_pycaret.csv") # type: ignore
+            config.to_csv(self.output_path / f"config_setup_pycaret.csv") 
         return self
 
     def train(self):
@@ -543,7 +556,7 @@ class PycaretInterface:
 
         return pd.concat(model_params) # type: ignore
     
-    def retune_model(self, name: str, model: Any, num_iter: int=10, 
+    def retune_model(self, name: str, model: Any, num_iter: int=30, 
                      fold: int=5) -> tuple[Any, pd.DataFrame, pd.Series]:
         """
         Retune the specified model using Optuna.
@@ -555,7 +568,7 @@ class PycaretInterface:
         model : Any
             The trained model to retune.
         num_iter : int, optional
-            The number of iterations to use for tuning. Defaults to 10.
+            The number of iterations to use for tuning. Defaults to 30.
         fold : int, optional
             The number of cross-validation folds to use. Defaults to 5.
 
@@ -747,7 +760,7 @@ class PycaretInterface:
 
 
 class Trainer:
-    def __init__(self, caret_interface: PycaretInterface, num_splits: int=5):
+    def __init__(self, caret_interface: PycaretInterface, num_splits: int=5, num_iter: int=30):
         
         """
         Initialize a Trainer object with the given parameters.
@@ -758,12 +771,16 @@ class Trainer:
             The model to use for training.
         num_splits : int, optional
             The number of splits to use in cross-validation. Defaults to 5.
+        num_iter : int, optional
+            The number of iterations to use for tuning. Defaults to 30.
         """
         self.log = Log("model_training")
-        self.log.info("Reading the features")
+        self.log.info("----------------Trainer inputs-------------------------")
         self.num_splits = num_splits
         self.experiment = caret_interface
+        self.num_iter = num_iter
         self.log.info(f"Number of kfolds: {self.num_splits}")
+        self.log.info(f"Number of iterations: {self.num_iter}")
 
     def rank_results(self, results: dict[str, pd.DataFrame], returned_models:dict[str, Any], 
                      scoring_function: Callable):
@@ -874,7 +891,7 @@ class Trainer:
 
         return sorted_results, sorted_models, top_params
     
-    def retune_best_models(self, sorted_models:dict[str, Any], num_iter: int=10):
+    def retune_best_models(self, sorted_models:dict[str, Any]):
         """
         Retune the best models using the specified optimization metric and number of iterations.
 
@@ -882,8 +899,6 @@ class Trainer:
         ----------
         sorted_models : dict[str, Any]
             A dictionary of sorted models.
-        num_iter : int, optional
-            The number of iterations to use for retuning. Defaults to 10.
 
         Returns
         -------
@@ -896,7 +911,7 @@ class Trainer:
         self.log.info("--------Retuning the best models--------")
         for key, model in list(sorted_models.items())[:self.experiment.best_model]:
             self.log.info(f"Retuning {key}")
-            tuned_model, results, params =  self.experiment.retune_model(key, model, num_iter, fold=self.num_splits)
+            tuned_model, results, params =  self.experiment.retune_model(key, model, self.num_iter, fold=self.num_splits)
             new_models[key] = tuned_model
             new_results[key] = results
             new_params[key] = params

@@ -51,12 +51,14 @@ def arg_parse():
                         help="The plots to show")
     parser.add_argument("-sh", "--sheet_name", required=False, default=None, 
                         help="The sheet name for the excel file if the training features is in excel format")
+    parser.add_argument("-ni", "--num_iter", default=30, type=int, required=False, 
+                        help="The number of iterations for the hyperparameter search")
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.budget_time, args.scaler,
             args.training_features, args.kfold_parameters, args.outliers,
             args.difference_weight, args.strategy, args.best_model,
-            args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected, args.sheet_name]
+            args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected, args.sheet_name, args.num_iter]
 
 
 class Regressor:
@@ -131,7 +133,7 @@ class Regressor:
         
             return r2
     
-    def run_training(self, trainer: Trainer, feature: DataParser, plot: tuple[str, ...]=("residuals", "error", "learning"),
+    def run_training(self, trainer: Trainer, feature: DataParser, plot: Iterable[str]=("residuals", "error", "learning"),
                      **kwargs: Any)-> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
         """
         A function that splits the data into training and test sets and then trains the models
@@ -165,7 +167,7 @@ class Regressor:
     
 def main():
     label, training_output, trial_time, scaler, excel, kfold, outliers, difference_weight, \
-    seed, best_model, drop, tune, plot, optimize, selected, sheet = arg_parse()
+    seed, best_model, drop, tune, plot, optimize, selected, sheet, num_iter = arg_parse()
     
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     training_output = Path(training_output)
@@ -178,7 +180,7 @@ def main():
                                   best_model=best_model, output_path=training_output, optimize=optimize) 
 
     ranking_dict = dict(difference_weight=difference_weight)
-    training = Trainer(experiment, num_split)
+    training = Trainer(experiment, num_split, num_iter)
     regressor = Regressor(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize)
     
     # train the models and retunr the prediction results

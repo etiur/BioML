@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from . import methods
 from sklearn.ensemble import RandomForestClassifier as rfc
 from sklearn.ensemble import RandomForestRegressor as rfr
-from ..custom_errors import NotSupportedError
+from ..custom_errors import NotSupportedDataError, DifferentLabelFeatureIndexError
 
 
 def arg_parse():
@@ -162,7 +162,7 @@ class DataReader:
                 if not label_path.exists():
                     self.label.to_csv(label_path)
             except KeyError as e:
-                raise KeyError(f"feature dataframe and labels have different index names: {e}")
+                raise DifferentLabelFeatureIndexError(f"feature dataframe and labels have different index names: {e}")
         
     def read_feature(self, features: str | pd.DataFrame | list | np.ndarray) -> pd.DataFrame:
         """
@@ -175,7 +175,7 @@ class DataReader:
 
         Raises
         ------
-        NotSupportedError
+        NotSupportedDataError
             If the features are not in a valid format.
 
         Returns
@@ -194,7 +194,7 @@ class DataReader:
             case list() | np.ndarray() as feat:
                 return pd.DataFrame(feat)
             case _:
-                raise NotSupportedError("features should be a csv file, an array or a pandas DataFrame")
+                raise NotSupportedDataError("features should be a csv file, an array or a pandas DataFrame")
 
     def read_label(self,  labels: str | pd.Series | Iterable[int]) -> pd.Series | pd.DataFrame:
         """
@@ -207,7 +207,7 @@ class DataReader:
 
         Raises
         ------
-        NotSupportedError
+        NotSupportedDataError
             If the features are not in a valid format.
 
         Returns
@@ -227,7 +227,7 @@ class DataReader:
             case list() | np.ndarray() as label:
                 return pd.Series(label, index=self.features.index, name="target")
             case _:
-                raise NotSupportedError("label should be a csv file, a pandas Series, DataFrame, an array or inside features")
+                raise NotSupportedDataError("label should be a csv file, a pandas Series, DataFrame, an array or inside features")
 
     def preprocess(self) -> None:
         """
@@ -238,9 +238,6 @@ class DataReader:
             fit = variance.fit_transform(self.features)
             self.features = pd.DataFrame(fit, index=self.features.index, 
                                          columns=variance.get_feature_names_out())
-
-
-    
 
     def analyse_composition(self, dataframe: pd.DataFrame) -> int | tuple[int, int]:
         """
@@ -286,7 +283,7 @@ class DataReader:
             The scaled training data as a numpy array.
         """
         transformed, scaler_dict = scale(self.scaler, X_train)
-        return transformed.to_numpy()
+        return transformed
 
 
 class FeatureSelection:
@@ -680,7 +677,7 @@ class FeatureRegression:
                                                             random_state=self.seed)
         transformed_x = features.scale(X_train)
         feature_dict = selector.generate_features(self.filter_args, transformed_x, Y_train, 
-                                    feature_range, features.features, rfe_step, plot, plot_num_features)
+                                            feature_range, features.features, rfe_step, plot, plot_num_features)
         selector._write_dict(feature_dict)
 
    
@@ -705,11 +702,11 @@ def get_range_features(features: pd.DataFrame, num_features_min: int | None=None
         A list of integers representing the range of numbers for the number of features to select.
     """
     if not num_features_min:
-        num_features_min = len(features.columns) // 10
+        num_features_min = max(2, len(features.columns) // 10)
         if not num_features_max:
-            num_features_max = len(features.columns) // 2 + 1
+            num_features_max = max(4, int(len(features.columns) // 1.6) + 1)
         if not step_range:
-            step_range = (num_features_max - num_features_min) // 4
+            step_range = max(1, (num_features_max - num_features_min) // 4)
         feature_range = list(range(num_features_min, num_features_max, step_range))
     elif num_features_min and step_range and num_features_max:
         feature_range = list(range(num_features_min, num_features_max, step_range))
