@@ -167,7 +167,7 @@ class Log:
         self.fh.setLevel(logging.DEBUG)
         self.ch = logging.StreamHandler()
         self.ch.setLevel(logging.DEBUG)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', "%d-%m-%Y %H:%M:%S")
+        formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s', "%d-%m-%Y %H:%M:%S")
         self.fh.setFormatter(formatter)
         self.ch.setFormatter(formatter)
         self._logger.addHandler(self.fh)
