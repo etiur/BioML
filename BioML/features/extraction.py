@@ -6,12 +6,12 @@ import shlex
 from subprocess import Popen, PIPE
 import time
 import pandas as pd
-from ..utilities import write_excel, rewrite_possum
+from ..utilities import rewrite_possum
 from multiprocessing import get_context
 from pathlib import Path
 from typing import Iterable
 from functools import partial
-from ..custom_errors import SheetsNotFoundInExcelError
+from ..training.base import DataParser
 
 
 def arg_parse():
@@ -30,7 +30,7 @@ def arg_parse():
     parser.add_argument("-eo", "--extracted_out", required=False,
                         help="The directory for the extracted features (concatenated from both programs)",
                         default="extracted_features")
-    parser.add_argument("-e", "--excel", required=False,
+    parser.add_argument("-e", "--training_features", required=False,
                         help="The path to where the selected features from training are saved in excel format, it will"
                              "be used to select specific columns from all the generated features for the new data",
                         default="training_features/selected_features.xlsx")
@@ -51,15 +51,15 @@ def arg_parse():
                         "tpc", "tri_gram_pssm", "pse_pssm:1", "pse_pssm:2", "pse_pssm:3"),
                         help="A list of the features to extract")
     parser.add_argument("-df", "--drop_file", required=False, help="the path to the file with the feature names, separated by newlines")
-    parser.add_argument("-s", "--sheets", required=False, nargs="+",
-                        help="Names of the selected sheets from the features or the "
-                             "sheet index")
+    parser.add_argument("-s", "--sheets", required=False, nargs="+", help="Names or index of the selected sheets from the training features")
+    parser.add_argument("-t", "--new_features", required=False, help="The path to the features from the new samples so "
+                                                "it can be filtered according to the training features")
 
     args = parser.parse_args()
 
     return [args.fasta_file, args.pssm_dir, args.ifeature_dir, args.possum_dir, args.ifeature_out,
             args.possum_out, args.extracted_out, args.purpose, args.long, args.run, args.num_thread, args.drop,
-            args.drop_file, args.sheets, args.excel]
+            args.drop_file, args.sheets, args.training_features, args.new_features]
 
 
 class ExtractFeatures:
@@ -69,8 +69,8 @@ class ExtractFeatures:
 
     def __init__(self, fasta_file: str | Path, pssm_dir: str ="pssm",
                  ifeature_out: str | Path="ifeature_features", possum_out: str | Path="possum_features",
-                 ifeature_dir: str ="iFeature", thread: int=12, run: str | Path="both", 
-                 possum_dir: str ="POSSUM_Toolkit", drop: str | Iterable[str] =(), drop_file: str | Path | None=None):
+                 ifeature_dir: str ="iFeature", possum_dir: str ="POSSUM_Toolkit", 
+                 drop: str | Iterable[str] =(), drop_file: str | Path | None=None):
         """
         Initialize the ExtractFeatures class
 
@@ -96,8 +96,6 @@ class ExtractFeatures:
         rewrite_possum(self.possum)
         self.ifeature_out = Path(ifeature_out)
         self.possum_out = Path(possum_out)
-        self.thread = thread
-        self.run = run
         self.features = {"possum": {"long": ["pssm_cc", "tri_gram_pssm"], 
                                "short": ["aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm", "dpc_pssm", "edp", "eedp", "rpm_pssm",
                                 "k_separated_bigrams_pssm", "pssm_ac", "pssm_composition", "rpssm", "s_fpssm", "tpc"],
@@ -161,7 +159,7 @@ class ExtractFeatures:
                 shutil.copyfile(self.fasta_file, f"{self.fasta_file.parent}/group_1.fasta")
 
     @staticmethod
-    def run_progam(commands, program_name=None):
+    def run_progam(commands: str, program_name: str | None=None):
         """
         Run in parallel the subprocesses from the command
         Parameters
@@ -183,7 +181,7 @@ class ExtractFeatures:
             print(f"start running {program_name}")
         print(f"It took {end - start} second to run")
 
-    def ifeature_commands(self, fasta_file, programs):
+    def ifeature_commands(self, fasta_file: str | Path, programs: list[str]):
         """
         Extraction of features for ifeature features
 
@@ -199,7 +197,7 @@ class ExtractFeatures:
 
         return commands_1
     
-    def possum_special_commands(self, fasta_file, programs):
+    def possum_special_commands(self, fasta_file: str | Path, programs: list[str]):
 
         num = Path(fasta_file).stem.split("_")[1]
         command_2_possum = [
@@ -208,7 +206,7 @@ class ExtractFeatures:
                 programs]
         return command_2_possum
 
-    def possum_commands(self, fasta_file, programs):
+    def possum_commands(self, fasta_file: str | Path, programs: list[str]):
         """
         Writing the commands to run the possum features that take a lot of time
 
@@ -224,7 +222,7 @@ class ExtractFeatures:
 
         return command_3_possum
 
-    def extraction_ifeature(self, fasta_file, long: bool=False):
+    def extraction_ifeature(self, fasta_file: str | Path, long: bool=False):
         """
         run the ifeature programme iteratively
 
@@ -241,7 +239,7 @@ class ExtractFeatures:
 
         self.run_progam(commands_1, "Ifeature programs")
 
-    def extraction_possum(self, fasta_file, long: bool=False):
+    def extraction_possum(self, fasta_file: str | Path, long: bool=False):
         """
         run the possum programme iteratively
 
@@ -262,7 +260,7 @@ class ExtractFeatures:
         # using shlex.split to parse the strings into lists for Popen class
         self.run_progam(command_1_possum, "Possum programs")
 
-    def run_extraction_parallel(self, long: bool=False):
+    def run_extraction_parallel(self, num_thread: int, run: str ="both", long: bool=False):
         """
         Using a pool of workers to run the 2 programmes
 
@@ -278,13 +276,13 @@ class ExtractFeatures:
             self._separate_bunch()
         
         file.sort(key=lambda x: int(x.stem.split("_")[1]))
-        with get_context("spawn").Pool(processes=self.thread) as pool:
-            if self.run == "both":
+        with get_context("spawn").Pool(processes=num_thread) as pool:
+            if run == "both":
                 pool.map(partial(self.extraction_ifeature, long=long), file)
                 pool.map(partial(self.extraction_possum, long=long), file)
-            elif self.run == "possum":
+            elif run == "possum":
                 pool.map(partial(self.extraction_possum, long=long), file)
-            elif self.run == "ifeature":
+            elif run == "ifeature":
                 pool.map(partial(self.extraction_ifeature, long=long), file)
 
 
@@ -293,7 +291,7 @@ class ReadFeatures:
     A class to read the generated features
     """
     def __init__(self, group_file_path: str, ifeature_out: str="ifeature_features", possum_out: str="possum_features",
-                 extracted_out: str | Path="extracted_features", drop: Iterable[str]=(), drop_file: str | Path | None=None):
+                 drop: Iterable[str]=(), drop_file: str | Path | None=None):
         """
         Initialize the class ReadFeatures
 
@@ -408,15 +406,15 @@ class ReadFeatures:
         return features
     
 
-def filter_features(all_features: pd.DataFrame, selected_features: pd.DataFrame, output_features="new_features.csv") -> None:
+def filter_features(new_features: pd.DataFrame, training_features: pd.DataFrame, output_features="new_features.csv") -> None:
     """
     Filter the obtained features for the new samples based on the selected_features from the training samples
 
     Parameters
     __________
-    all_features: pd.DataFrame
+    new_features: pd.DataFrame
         The features from the new samples
-    selected_features: pd.DataFrame
+    training_features: pd.DataFrame
         The features from the training samples
     output_features: str
         The path to the output file
@@ -424,66 +422,35 @@ def filter_features(all_features: pd.DataFrame, selected_features: pd.DataFrame,
     """
     extracted_out = Path(output_features)
     extracted_out.parent.mkdir(parents=True, exist_ok=True)
-    feat =  all_features[selected_features.columns]
+    feat =  new_features[training_features.columns]
     feat.to_csv(extracted_out)
-
-
-def extract_and_filter(fasta_file=None, pssm_dir="pssm", ifeature_out="ifeature_features",
-                       possum_dir="/gpfs/home/bsc72/bsc72661/feature_extraction/POSSUM_Toolkit",
-                       ifeature_dir="/gpfs/projects/bsc72/ruite/enzyminer/iFeature", possum_out="possum_features",
-                       extracted_out="training_features", purpose=("extract", "read"), long=False, thread=100,
-                       run="both", types="all", type_file=None, excel_feature_file=None, selected=()):
-    """
-    A function to extract and filter the features
-
-    Parameters
-    __________
-    fasta_file: str
-        The fasta file to be analysed
-    pssm_dir: str, optional
-        The directory of the generated pssm files
-    ifeature: str, optional
-        A path to the iFeature programme
-    ifeature_out: str, optional
-        A directory for the extraction results from iFeature
-    possum: str, optional
-        A path to the POSSUM programme
-    possum_out: str, optional
-        A directory for the extraction results from possum
-    filtered_out: str, optional
-        A directory to store the filtered features from all the generated features
-    thread: int
-        The number of pool workers to use to run the programmes
-    run: str
-        which programme to run
-    """
-    # Feature extraction for both training or prediction later
-    if "extract" in purpose:
-        extract = ExtractFeatures(fasta_file, pssm_dir, ifeature_out, possum_out, ifeature_dir, thread, run,
-                                  possum_dir, types, type_file)
-        extract.run_extraction_parallel(long)
-    # feature reading for the training
-    if "read" in purpose:
-        filtering = ReadFeatures(fasta_file, ifeature_out, possum_out, extracted_out, types, type_file,
-                                 excel_feature_file, selected)
-        every_features = filtering.read()
-        every_features.to_csv(f"{extracted_out}/every_features.csv")
-    # feature extraction for prediction
-    if "filter" in purpose:
-        # feature filtering
-        if not selected:
-            raise ValueError("you have not defined the selected feature sets")
-        filtering = ReadFeatures(fasta_file, ifeature_out, possum_out, extracted_out, types, type_file,
-                                 excel_feature_file, selected)
-        filtering.filter_features()
 
 
 def main():
     fasta_file, pssm_dir, ifeature_dir, possum_dir, ifeature_out, possum_out, extracted_out, purpose, \
-    long, run, num_thread, types, type_file, sheets, excel = arg_parse()
+    long, run, num_thread, drop, drop_file, sheets, training_features, new_features = arg_parse()
 
-    extract_and_filter(fasta_file, pssm_dir, ifeature_out, possum_dir, ifeature_dir, possum_out,
-                       extracted_out, purpose, long, num_thread, run, types, type_file, excel, sheets)
+    if "extract" in purpose:
+        extract = ExtractFeatures(fasta_file, pssm_dir, ifeature_out, possum_out, ifeature_dir, possum_dir, drop, drop_file)
+        extract.run_extraction_parallel(num_thread, run, long)
+
+    if "read" in purpose:
+        filtering = ReadFeatures(Path(fasta_file).parent, ifeature_out, possum_out, drop, drop_file)
+        every_features = filtering.read()
+        every_features.to_csv(f"{extracted_out}/every_features.csv")
+
+    if "filter" in purpose:
+        # feature filtering
+        if not sheets:
+            raise ValueError("you have not defined the selected feature sets")
+        train_features = DataParser(training_features, sheets=sheets)
+        if new_features:
+            every_features = new_features
+        try:
+            new_features = training_features.read_features(every_features)
+        except NameError:
+            raise NameError("You have not defined the new features from the new samples to perform the filtering, use -t argument")
+        filter_features(new_features, train_features.features, Path(extracted_out) / "new_features.csv")
 
 
 if __name__ == "__main__":
