@@ -11,6 +11,7 @@ from multiprocessing import get_context
 from pathlib import Path
 from typing import Iterable
 from functools import partial
+from ..custom_errors import SheetsNotFoundInExcelError
 
 
 def arg_parse():
@@ -51,11 +52,8 @@ def arg_parse():
                         help="A list of the features to extract")
     parser.add_argument("-df", "--drop_file", required=False, help="the path to the file with the feature names, separated by newlines")
     parser.add_argument("-s", "--sheets", required=False, nargs="+",
-                        help="Names of the selected sheets from the features and the "
-                             "index of the models in this format-> sheet name:index model1,index model2 "
-                             "without the spaces. If only name of the sheets, it is assumed that all kfold "
-                             "models are selected. It is possible to have one sheet with kfold indices but in another "
-                             "ones without")
+                        help="Names of the selected sheets from the features or the "
+                             "sheet index")
 
     args = parser.parse_args()
 
@@ -295,8 +293,7 @@ class ReadFeatures:
     A class to read the generated features
     """
     def __init__(self, group_file_path: str, ifeature_out: str="ifeature_features", possum_out: str="possum_features",
-                 extracted_out: str | Path="extracted_features", drop: Iterable[str]=(), drop_file: str | Path | None=None, 
-                 excel_feature_file: str | Path=None, sheets: str | int | None =None):
+                 extracted_out: str | Path="extracted_features", drop: Iterable[str]=(), drop_file: str | Path | None=None):
         """
         Initialize the class ReadFeatures
 
@@ -314,19 +311,11 @@ class ReadFeatures:
             A list of the features to drop
         drop_file: str, optional
             The path to the file with the features to drop
-        excel_feature_file: str, optional
-            The path to the excel file with the selected features
-        sheets: str, optional
-            The name of the sheets to use for the training
         
         """
         self.ifeature_out = ifeature_out
         self.possum_out = possum_out
-        self.excel_feature = excel_feature_file
-        self.extracted_out = Path(extracted_out)
-        self.extracted_out.mkdir(parents=True, exist_ok=True)
         self.grup_file_path = Path(group_file_path)
-        self.sheets = sheets
 
         self.features = {"possum": {"normal": ["pssm_cc", "tri_gram_pssm", "aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm", 
                                                "dpc_pssm", "edp", "eedp", "rpm_pssm", "k_separated_bigrams_pssm", 
@@ -351,12 +340,14 @@ class ReadFeatures:
         print(f"Reading iFeature features {self.features['ifeature']}")
         print(f"Reading Possum features {self.features['possum']}")
 
-
-    def read_ifeature(self, length):
+    def read_ifeature(self, length: int):
         """
         A function to read features from ifeatures
+
+        Parameters
+        ___________
         lenght: int
-            The number of splits the input fasta has
+            The number of splits the input fasta has (ther number of group_* files)
         """
         # ifeature features
         feat = {}
@@ -373,7 +364,7 @@ class ReadFeatures:
 
         return all_data
 
-    def read_possum(self, ID, length):
+    def read_possum(self, ID: Iterable[str|int], length: int):
         """
         This function will read possum features
 
@@ -381,6 +372,8 @@ class ReadFeatures:
         ___________
         ID: array
             An array of the indices for the possum features
+        lenght: int
+            The number of splits the input fasta has (ther number of group_* files)
         """
         feat = {}
         for x in self.features["possum"]["normal"]:
@@ -411,26 +404,28 @@ class ReadFeatures:
         all_data = self.read_ifeature(len(file))
         everything = self.read_possum(all_data.index, len(file))
         # concatenate the features
-        self.features = pd.concat([all_data, everything], axis=1)
-        return self.features
+        features = pd.concat([all_data, everything], axis=1)
+        return features
+    
 
-    def filter_features(self):
-        """
-        filter the obtained features based on the reference_feature_file (self.excel_feature)
-        """
-        self.read()
-        # The reference excel has a multicomlun were the first level are the kfolds and the second level are the features selected for that kfold
-        training_features = pd.read_excel(self.excel_feature, index_col=0, sheet_name=self.selected_sheets, header=[0, 1],
-                                          engine='openpyxl')
-        with pd.ExcelWriter(self.extracted_out/"new_features.xlsx", mode="w", engine="openpyxl") as writer:
-            for sheet, feature in training_features.items():
-                feature_dict = {}
-                for col in feature.columns.unique(level=0):
-                    ind = int(col.split("_")[-1])
-                    if self.selected_kfolds[sheet] and ind not in self.selected_kfolds[sheet]: continue
-                    sub_feat = feature.loc[:, f"split_{ind}"]
-                    feature_dict[f"split_{ind}"] = self.features[sub_feat.columns] # type: ignore
-                write_excel(writer, pd.concat(feature_dict, axis=1), f"{sheet}")
+def filter_features(all_features: pd.DataFrame, selected_features: pd.DataFrame, output_features="new_features.csv") -> None:
+    """
+    Filter the obtained features for the new samples based on the selected_features from the training samples
+
+    Parameters
+    __________
+    all_features: pd.DataFrame
+        The features from the new samples
+    selected_features: pd.DataFrame
+        The features from the training samples
+    output_features: str
+        The path to the output file
+    
+    """
+    extracted_out = Path(output_features)
+    extracted_out.parent.mkdir(parents=True, exist_ok=True)
+    feat =  all_features[selected_features.columns]
+    feat.to_csv(extracted_out)
 
 
 def extract_and_filter(fasta_file=None, pssm_dir="pssm", ifeature_out="ifeature_features",
