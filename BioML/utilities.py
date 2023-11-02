@@ -164,9 +164,9 @@ class Log:
         self._logger.handlers = []
         self._logger.setLevel(level_[level])
         self.fh = logging.FileHandler("{}.log".format(name))
-        self.fh.setLevel(logging.DEBUG)
+        self.fh.setLevel(level_[level])
         self.ch = logging.StreamHandler()
-        self.ch.setLevel(logging.DEBUG)
+        self.ch.setLevel(level_[level])
         formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s', "%d-%m-%Y %H:%M:%S")
         self.fh.setFormatter(formatter)
         self.ch.setFormatter(formatter)
