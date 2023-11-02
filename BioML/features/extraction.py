@@ -7,10 +7,10 @@ from subprocess import Popen, PIPE
 import time
 import pandas as pd
 from ..utilities import write_excel, rewrite_possum
-from os.path import basename
 from multiprocessing import get_context
 from pathlib import Path
 from typing import Iterable
+from functools import partial
 
 
 def arg_parse():
@@ -42,7 +42,7 @@ def arg_parse():
                         help="run possum or ifeature extraction, the choice will affect --type argument since only one of the programs would be extracted")
     parser.add_argument("-n", "--num_thread", required=False, default=100, type=int,
                         help="The number of threads to use for the generation of pssm profiles")
-    parser.add_argument("-d", "--drop", required=False, default="all", nargs="+", choices=("all", "APAAC", "PAAC",
+    parser.add_argument("-d", "--drop", required=False, default="all", nargs="+", choices=("APAAC", "PAAC",
                         "CKSAAGP", "Moran", "Geary", "NMBroto", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC",
                         "QSOrder", "SOCNumber", "GAAC", "KSCTriad", "aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm",
                         "dpc_pssm", "edp", "eedp", "rpm_pssm", "k_separated_bigrams_pssm", "pssm_ac", "pssm_cc",
@@ -105,7 +105,7 @@ class ExtractFeatures:
                                 "k_separated_bigrams_pssm", "pssm_ac", "pssm_composition", "rpssm", "s_fpssm", "tpc"],
                                 "special": ["smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9", 
                                             "pse_pssm:1", "pse_pssm:2", "pse_pssm:3"]},
-                        "ifeature": {"long": ["Moran", "Geary", "NMBroto"], "long": 
+                        "ifeature": {"long": ["Moran", "Geary", "NMBroto"], "short": 
                                  ["APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC", "QSOrder",
                                   "SOCNumber", "GAAC", "KSCTriad"]}}
 
@@ -119,8 +119,8 @@ class ExtractFeatures:
             for k, v in value.items():
                 self.features[key][k] = list(set(v).difference(drop))
 
-            print(f"Extracting iFeature features {self.features['ifeature']}")
-            print(f"Extracting Possum features {self.features['possum']}")
+        print(f"Extracting iFeature features {self.features['ifeature']}")
+        print(f"Extracting Possum features {self.features['possum']}")
  
 
     @staticmethod
@@ -194,7 +194,7 @@ class ExtractFeatures:
         fasta_file: str
             path to the different fasta files
         """
-        num = basename(fasta_file).replace(".fasta", "").split("_")[1]
+        num = Path(fasta_file).stem.split("_")[1]
         commands_1 = [
             f"python3 {self.ifeature} --file {fasta_file} --type {prog} --out {self.ifeature_out}/{prog}_{num}.tsv" for
             prog in programs]
@@ -202,7 +202,8 @@ class ExtractFeatures:
         return commands_1
     
     def possum_special_commands(self, fasta_file, programs):
-        
+
+        num = Path(fasta_file).stem.split("_")[1]
         command_2_possum = [
             f'perl {self.possum} -i {fasta_file} -p {self.pssm_dir} -t {prog.split(":")[0]} -a {prog.split(":")[1]} -o '
             f'{self.possum_out}/{prog.split(":")[0]}_{prog.split(":")[1]}_{num}.csv' for prog in
@@ -218,48 +219,14 @@ class ExtractFeatures:
         fasta_file: str
             path to the different files
         """
-        num = basename(fasta_file).replace(".fasta", "").split("_")[1]
+        num = Path(fasta_file).stem.split("_")[1]
         command_3_possum = [
             f'perl {self.possum} -i {fasta_file} -p {self.pssm_dir} -t {prog} -o {self.possum_out}/{prog}_{num}.csv' for
             prog in programs]
 
         return command_3_possum
 
-    def extraction_long(self, fasta_file):
-        """
-        Writing the commands to run the features that take a lot of time
-
-        Parameters
-        ----------
-        fasta_file: str
-            path to the different files
-        """
-        # generate the commands
-        commands_1 = self.ifeature_commands(fasta_file, self.ifea_long)
-        command_3_possum = self.possum_commands(fasta_file, self.pos_long)
-        commands_1.extend(command_3_possum)
-        self.run_progam(commands_1, "All long features")
-
-    def extraction_all(self, fasta_file):
-        """
-        Writing the commands to run the all programmes
-
-        Parameters
-        ----------
-        fasta_file: str
-            Path to the different fasta files
-        """
-        # ifeature features
-        commands_1 = self.ifeature_commands(fasta_file, self.ifea_short + self.ifea_long)
-        # possum features
-        command_1_possum = self.possum_commands(fasta_file, self.pos_short + self.pos_long)
-        command_3_possum = self.possum_special_commands(fasta_file, self.pse_pssm + self.smoothed_pssm)
-        # combine the commands
-        commands_1.extend(command_1_possum)
-        commands_1.extend(command_3_possum)
-        self.run_progam(commands_1, "All features")
-
-    def extraction_ifeature(self, fasta_file):
+    def extraction_ifeature(self, fasta_file, long: bool=False):
         """
         run the ifeature programme iteratively
 
@@ -269,10 +236,14 @@ class ExtractFeatures:
             path to the different fasta_files
         """
         # ifeature features
-        commands_1 = self.ifeature_commands(fasta_file, self.ifea_short + self.ifea_long)
-        self.run_progam(commands_1, "All Ifeature programs")
+        commands_1 = self.ifeature_commands(fasta_file, self.features["ifeature"]["long"])
+        if not long:
+            commands_2 = self.ifeature_commands(fasta_file, self.features["ifeature"]["short"])
+            commands_1.extend(commands_2)
 
-    def extraction_possum(self, fasta_file, long=False):
+        self.run_progam(commands_1, "Ifeature programs")
+
+    def extraction_possum(self, fasta_file, long: bool=False):
         """
         run the possum programme iteratively
 
@@ -282,14 +253,18 @@ class ExtractFeatures:
             Path to the different fasta files
         """
         # possum features
-        command_1_possum = self.possum_commands(fasta_file, self.pos_short + self.pos_long)
-        command_3_possum = self.possum_special_commands(fasta_file, self.pse_pssm + self.smoothed_pssm)
-        # combining all the commands
-        command_1_possum.extend(command_3_possum)
-        # using shlex.split to parse the strings into lists for Popen class
-        self.run_progam(command_1_possum, "All Possum programs")
+        command_1_possum = self.possum_commands(fasta_file, self.features["possum"]["long"])
 
-    def run_extraction_parallel(self, long=None):
+        if not long:
+            command_2_possum = self.possum_commands(fasta_file, self.features["possum"]["short"])
+            command_3_possum = self.possum_special_commands(fasta_file, self.features["possum"]["special"])
+            command_1_possum.extend(command_2_possum)
+            command_1_possum.extend(command_3_possum)
+        
+        # using shlex.split to parse the strings into lists for Popen class
+        self.run_progam(command_1_possum, "Possum programs")
+
+    def run_extraction_parallel(self, long: bool=False):
         """
         Using a pool of workers to run the 2 programmes
 
@@ -304,101 +279,81 @@ class ExtractFeatures:
         if not file:
             self._separate_bunch()
         
-        file.sort(key=lambda x: int(basename(x).replace(".fasta", "").split("_")[1]))
+        file.sort(key=lambda x: int(x.stem.split("_")[1]))
         with get_context("spawn").Pool(processes=self.thread) as pool:
             if self.run == "both":
-                if not long:
-                    pool.map(self.extraction_all, file)
-                else:
-                    pool.map(self.extraction_long, file)
+                pool.map(partial(self.extraction_ifeature, long=long), file)
+                pool.map(partial(self.extraction_possum, long=long), file)
             elif self.run == "possum":
-                if not long:
-                    pool.map(self.extraction_possum, file)
-                else:
-                    pool.map(self.possum_long, file)
+                pool.map(partial(self.extraction_possum, long=long), file)
             elif self.run == "ifeature":
-                if not long:
-                    pool.map(self.extraction_ifeature, file)
-                else:
-                    pool.map(self.ifeature_long, file)
+                pool.map(partial(self.extraction_ifeature, long=long), file)
 
 
 class ReadFeatures:
     """
     A class to read the generated features
     """
-    def __init__(self, fasta_file, ifeature_out="ifeature_features", possum_out="possum_features",
-                 extracted_out="extracted_features", types="all", type_file=None, excel_feature_file=None, sheets=()):
+    def __init__(self, group_file_path: str, ifeature_out: str="ifeature_features", possum_out: str="possum_features",
+                 extracted_out: str | Path="extracted_features", drop: Iterable[str]=(), drop_file: str | Path | None=None, 
+                 excel_feature_file: str | Path=None, sheets: str | int | None =None):
         """
         Initialize the class ReadFeatures
 
         Parameters
         ___________
-        fasta_file: str
-            The name of the fasta file
+        group_file_path: str
+            The path to where the splited files from the original fasta file are. They are name group_*.fasta
         ifeature_out: str, optional
             A directory for the extraction results from iFeature
         possum_out: str, optional
             A directory for the extraction results from possum
-        filtered_out: str, optional
+        extracted_out: str, optional
             A directory to store the filtered features from all the generated features
-        types: list[str]
-            A list of features to be read
+        drop: list, optional
+            A list of the features to drop
+        drop_file: str, optional
+            The path to the file with the features to drop
+        excel_feature_file: str, optional
+            The path to the excel file with the selected features
+        sheets: str, optional
+            The name of the sheets to use for the training
         
         """
         self.ifeature_out = ifeature_out
         self.possum_out = possum_out
-        self.features = None
         self.excel_feature = excel_feature_file
         self.extracted_out = Path(extracted_out)
         self.extracted_out.mkdir(parents=True, exist_ok=True)
-        self.base = Path(fasta_file).parent
+        self.grup_file_path = Path(group_file_path)
+        self.sheets = sheets
 
-        self.poss = ["aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm", "dpc_pssm", "edp", "eedp", "rpm_pssm",
-                     "k_separated_bigrams_pssm", "pssm_ac", "pssm_composition", "rpssm", "s_fpssm", "tpc",
-                     "pssm_cc", "tri_gram_pssm"]
-        self.pse_pssm = ["pse_pssm:1", "pse_pssm:2", "pse_pssm:3"]
-        self.smoothed_pssm = ["smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9"]
+        self.features = {"possum": {"normal": ["pssm_cc", "tri_gram_pssm", "aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm", 
+                                               "dpc_pssm", "edp", "eedp", "rpm_pssm", "k_separated_bigrams_pssm", 
+                                               "pssm_ac", "pssm_composition", "rpssm", "s_fpssm", "tpc"],
 
-        self. ifea = ["APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC", "QSOrder",
-                      "SOCNumber", "GAAC", "KSCTriad", "Moran", "Geary", "NMBroto"]
-        if type_file:
-            with open(type_file) as file:
-                types = [x.strip() for x in file.readlines()]
-        if "all" not in types:
-            for f in self.pse_pssm:
-                if f not in types:
-                    self.pse_pssm.remove(f)
-            for f in self.smoothed_pssm:
-                if f not in types:
-                    self.smoothed_pssm.remove(f)
-            for f in self.poss:
-                if f not in types:
-                    self.poss.remove(f)
-            for f in self.ifea:
-                if f not in types:
-                    self.ifea.remove(f)
-            print(f"Reading iFeature features {self.ifea}")
-            print(f"Reading Possum features {self.poss + self.pse_pssm + self.smoothed_pssm}")
-        else:
-            print("Reading all features used only for training")
-        if sheets:
-            self.selected_sheets = []
-            self.selected_kfolds = {}
-            self._check_sheets(sheets)
+                                    "special": ["smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9", 
+                                            "pse_pssm:1", "pse_pssm:2", "pse_pssm:3"]},
 
-    def _check_sheets(self, sheets):
-        for x in sheets:
-            indices = x.split(":")
-            sh = indices[0]
-            if sh.isdigit():
-                sh = int(sh)
-            self.selected_sheets.append(sh)
-            if len(indices) > 1:
-                kfold = tuple(int(x) for x in indices[1].split(","))
-                self.selected_kfolds[sh] = kfold
+                        "ifeature": ["Moran", "Geary", "NMBroto", "APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", 
+                                     "CTriad", "GDPC", "GTPC", "QSOrder", "SOCNumber", "GAAC", "KSCTriad"]}
+
+        if drop_file:
+            with open(drop_file) as file:
+                drop = [x.strip() for x in file.readlines()]
+        if type(drop) == str:
+            drop = (drop, )
+
+        for key, value in self.features.items():
+            if "ifeature" in key:
+                self.features[key] = list(set(value).difference(drop))
             else:
-                self.selected_kfolds[sh] = ()
+                for k, v in value.items():
+                    self.features[key][k] = list(set(v).difference(drop))
+
+        print(f"Reading iFeature features {self.features['ifeature']}")
+        print(f"Reading Possum features {self.features['possum']}")
+
 
     def read_ifeature(self, length):
         """
@@ -408,7 +363,7 @@ class ReadFeatures:
         """
         # ifeature features
         feat = {}
-        for x in self.ifea:
+        for x in self.features["ifeature"]:
             feat[x] = [pd.read_csv(f"{self.ifeature_out}/{x}_{i+1}.tsv", sep="\t", index_col=0) for i in range(length)]
         # concat features if length > 1 else return the dataframe
         if length > 1:
@@ -437,10 +392,10 @@ class ReadFeatures:
             An array of the indices for the possum features
         """
         feat = {}
-        for x in self.poss:
+        for x in self.features["possum"]["normal"]:
             feat[x] = [pd.read_csv(f"{self.possum_out}/{x}_{i+1}.csv") for i in range(length)]
         # reads features of possum
-        for x in self.pse_pssm + self.smoothed_pssm:
+        for x in self.features["possum"]["special"]:
             name = x.split(':')
             feat[x] = [pd.read_csv(f"{self.possum_out}/{name[0]}_{name[1]}_{i+1}.csv") for i in range(length)]
 
@@ -471,7 +426,7 @@ class ReadFeatures:
         """
         Reads all the features
         """
-        file = list(self.base.glob("group_*.fasta"))
+        file = list(self.group_file_path.glob("group_*.fasta"))
         all_data = self.read_ifeature(len(file))
         everything = self.read_possum(all_data.index, len(file))
         # concatenate the features
