@@ -335,8 +335,8 @@ class ReadFeatures:
                                     "special": ["smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9", 
                                             "pse_pssm:1", "pse_pssm:2", "pse_pssm:3"]},
 
-                        "ifeature": ["Moran", "Geary", "NMBroto", "APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", 
-                                     "CTriad", "GDPC", "GTPC", "QSOrder", "SOCNumber", "GAAC", "KSCTriad"]}
+                        "ifeature": {"all" : ["Moran", "Geary", "NMBroto", "APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", 
+                                     "CTriad", "GDPC", "GTPC", "QSOrder", "SOCNumber", "GAAC", "KSCTriad"]}}
 
         if drop_file:
             with open(drop_file) as file:
@@ -345,11 +345,8 @@ class ReadFeatures:
             drop = (drop, )
 
         for key, value in self.features.items():
-            if "ifeature" in key:
-                self.features[key] = list(set(value).difference(drop))
-            else:
-                for k, v in value.items():
-                    self.features[key][k] = list(set(v).difference(drop))
+            for k, v in value.items():
+                self.features[key][k] = list(set(v).difference(drop))
 
         print(f"Reading iFeature features {self.features['ifeature']}")
         print(f"Reading Possum features {self.features['possum']}")
@@ -363,19 +360,13 @@ class ReadFeatures:
         """
         # ifeature features
         feat = {}
-        for x in self.features["ifeature"]:
+        for x in self.features["ifeature"]["all"]:
             feat[x] = [pd.read_csv(f"{self.ifeature_out}/{x}_{i+1}.tsv", sep="\t", index_col=0) for i in range(length)]
         # concat features if length > 1 else return the dataframe
-        if length > 1:
-            for x, v in feat.items():
-                val = pd.concat(v)
-                val.columns = [f"{c}_{x}" for c in val.columns]
-                feat[x] = val
-        else:
-            for x, v in feat.items():
-                val = v[0]
-                val.columns = [f"{c}_{x}" for c in val.columns]
-                feat[x] = val
+        for x, v in feat.items():
+            val = pd.concat(v)
+            val.columns = [f"{c}_{x}" for c in val.columns]
+            feat[x] = val
 
         all_data = pd.concat(feat.values(), axis=1)
         # change the column names
@@ -400,23 +391,13 @@ class ReadFeatures:
             feat[x] = [pd.read_csv(f"{self.possum_out}/{name[0]}_{name[1]}_{i+1}.csv") for i in range(length)]
 
         # concat if length > 1 else return the dataframe
-        if length > 1:
-            for key, value in feat.items():
-                val = pd.concat(value)
-                val.index = ID
-                if "smoothed" in key or "pse_pssm" in key:
-                    name = key.split(":")
-                    val.columns = [f"{x}_{name[1]}" for x in val.columns]
-                feat[key] = val
-        else:
-            for key, value in feat.items():
-                val = value[0]
-                val.index = ID
-                if "smoothed" in key or "pse_pssm" in key:
-                    name = key.split(":")
-                    val.columns = [f"{x}_{name[1]}" for x in val.columns]
-                feat[key] = val
-        # Possum features
+        for key, value in feat.items():
+            val = pd.concat(value)
+            val.index = ID
+            if "smoothed" in key or "pse_pssm" in key:
+                name = key.split(":")
+                val.columns = [f"{x}_{name[1]}" for x in val.columns]
+            feat[key] = val
 
         everything = pd.concat(feat.values(), axis=1)
 
