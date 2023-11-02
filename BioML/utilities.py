@@ -85,12 +85,13 @@ def write_excel(file: str | pd.io.excel._openpyxl.OpenpyxlWriter,
     >>> write_excel('example.xlsx', df, 'Sheet1')
     """
     if not isinstance(file, pd.io.excel._openpyxl.OpenpyxlWriter):
-        if overwrite or not Path(file).exists():
-            mode = "w"
+        if not Path(file).exists():
+            with pd.ExcelWriter(file, mode="w", engine="openpyxl") as writer:
+                dataframe.to_excel(writer, sheet_name=sheet_name)
         else:
-            mode = "a"
-        with pd.ExcelWriter(file, mode=mode, engine="openpyxl") as writer:
-            dataframe.to_excel(writer, sheet_name=sheet_name)
+            with pd.ExcelWriter(file, mode="a", engine="openpyxl", 
+                                if_sheet_exists="replace") as writer:
+                dataframe.to_excel(writer, sheet_name=sheet_name)              
     else:
         dataframe.to_excel(file, sheet_name=sheet_name)
 
@@ -142,7 +143,7 @@ class Log:
     A class to keep log of the output from different modules
     """
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, level: str="debug"):
         """
         Initialize the Log class
 
@@ -150,15 +151,23 @@ class Log:
         __________
         name: str
             The name of the log file
+        level: str, default="debug"
+            The logging level. Options are: "debug", "info", "warning", "error", "critical"
         """
+        level_ = {"debug": logging.DEBUG, 
+                 "info": logging.INFO, 
+                 "warning": logging.WARNING, 
+                 "error": logging.ERROR, 
+                 "critical": logging.CRITICAL}
+        
         self._logger = logging.getLogger(name)
         self._logger.handlers = []
-        self._logger.setLevel(logging.DEBUG)
+        self._logger.setLevel(level_[level])
         self.fh = logging.FileHandler("{}.log".format(name))
         self.fh.setLevel(logging.DEBUG)
         self.ch = logging.StreamHandler()
         self.ch.setLevel(logging.DEBUG)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', "%d-%m-%Y %H:%M:%S")
+        formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s', "%d-%m-%Y %H:%M:%S")
         self.fh.setFormatter(formatter)
         self.ch.setFormatter(formatter)
         self._logger.addHandler(self.fh)
