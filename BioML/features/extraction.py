@@ -165,16 +165,7 @@ class PossumFeatures:
     def __post_init__(self):
         self.program = f"{self.program}/possum_standalone.pl"
         rewrite_possum(self.program)
-        self.features = {"long": ["pssm_cc", "tri_gram_pssm"], 
-                         "short": ["aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm", "dpc_pssm", "edp", "eedp", "rpm_pssm",
-                                   "k_separated_bigrams_pssm", "pssm_ac", "pssm_composition", "rpssm", "s_fpssm", "tpc", 
-                                   "smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9", "pse_pssm:1", "pse_pssm:2", 
-                                   "pse_pssm:3"]}
-        if self.drop_file:
-            with open(self.drop_file) as file:
-                self.drop = [x.strip() for x in file.readlines()]
-        if isinstance(self.drop, str):
-            self.drop = (self.drop,)
+        self.features = return_features("possum", self.drop_file, self.drop)
 
         for key, feat in self.features.items():
             self.features[key] = list(set(feat).difference(self.drop))
@@ -259,15 +250,7 @@ class IfeatureFeatures:
 
     def __post_init__(self):
         self.program = f"{self.program}/iFeature.py"
-        self.features = {"long": ["Moran", "Geary", "NMBroto"],
-                         "short": ["APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC", "QSOrder",
-                                  "SOCNumber", "GAAC", "KSCTriad"]}
-        
-        if self.drop_file:
-            with open(self.drop_file) as file:
-                self.drop = [x.strip() for x in file.readlines()]
-        if isinstance(self.drop, str):
-            self.drop = (self.drop,)
+        self.features = return_features("ifeature", self.drop_file, self.drop)
 
         for key, feat in self.features.items():
             self.features[key] = list(set(feat).difference(self.drop))
@@ -318,127 +301,126 @@ class IfeatureFeatures:
         run_program_subprocess(command, "Ifeature programs")
 
 
-class ReadFeatures:
+def return_features(program: str, drop_file: str | Path |None=None, 
+                    drop: Iterable[str]=()) -> dict:
     """
-    A class to read the generated features
+    A function to return the features to be extracted
+
+    Parameters
+    ----------
+    program : str
+        possum of ifeature features
+    drop_file : str | Path | None, optional
+        file with the features to skip, by default None
+    drop : Iterable[str], optional
+        An array of features to skip, by default ()
+
+    Returns
+    -------
+    dict
+        A dictionary of the features to be extracted filtered by drop
     """
-    def __init__(self, group_file_path: str, ifeature_out: str="ifeature_features", possum_out: str="possum_features",
-                 drop: Iterable[str]=(), drop_file: str | Path | None=None):
-        """
-        Initialize the class ReadFeatures
+    features = {"possum": {"long": ["pssm_cc", "tri_gram_pssm"], 
+                           "short": ["aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm", 
+                                     "dpc_pssm", "edp", "eedp", "rpm_pssm",
+                                   "k_separated_bigrams_pssm", "pssm_ac", "pssm_composition", 
+                                   "rpssm", "s_fpssm", "tpc", "smoothed_pssm:5", 
+                                   "smoothed_pssm:7", "smoothed_pssm:9", "pse_pssm:1", 
+                                   "pse_pssm:2", "pse_pssm:3"]},
 
-        Parameters
-        ___________
-        group_file_path: str
-            The path to where the splited files from the original fasta file are. They are name group_*.fasta
-        ifeature_out: str, optional
-            A directory for the extraction results from iFeature
-        possum_out: str, optional
-            A directory for the extraction results from possum
-        extracted_out: str, optional
-            A directory to store the filtered features from all the generated features
-        drop: list, optional
-            A list of the features to drop
-        drop_file: str, optional
-            The path to the file with the features to drop
-        
-        """
-        self.ifeature_out = ifeature_out
-        self.possum_out = possum_out
-        self.group_file_path = Path(group_file_path)
+                "ifeature": {"long": ["Moran", "Geary", "NMBroto"],
+                             "short": ["APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", 
+                                       "CTDD", "CTriad", "GDPC", "GTPC", "QSOrder",
+                                       "SOCNumber", "GAAC", "KSCTriad"]}}
 
-        self.features = {"possum": {"normal": ["pssm_cc", "tri_gram_pssm", "aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm", 
-                                               "dpc_pssm", "edp", "eedp", "rpm_pssm", "k_separated_bigrams_pssm", 
-                                               "pssm_ac", "pssm_composition", "rpssm", "s_fpssm", "tpc"],
+    if drop_file:
+        with open(drop_file) as file:
+            drop = [x.strip() for x in file.readlines()]
+    if isinstance(drop, str):
+        drop = (drop, )
 
-                                    "special": ["smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9", 
-                                            "pse_pssm:1", "pse_pssm:2", "pse_pssm:3"]},
-
-                        "ifeature": {"all" : ["Moran", "Geary", "NMBroto", "APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", 
-                                     "CTriad", "GDPC", "GTPC", "QSOrder", "SOCNumber", "GAAC", "KSCTriad"]}}
-
-        if drop_file:
-            with open(drop_file) as file:
-                drop = [x.strip() for x in file.readlines()]
-        if isinstance(drop, str):
-            drop = (drop, )
-
-        for key, value in self.features.items():
-            for k, v in value.items():
-                self.features[key][k] = list(set(v).difference(drop))
-
-        print(f"Reading iFeature features {self.features['ifeature']}")
-        print(f"Reading Possum features {self.features['possum']}")
-
-    def read_ifeature(self, length: int):
-        """
-        A function to read features from ifeatures
-
-        Parameters
-        ___________
-        lenght: int
-            The number of splits the input fasta has (ther number of group_* files)
-        """
-        # ifeature features
-        feat = {}
-        for x in self.features["ifeature"]["all"]:
-            feat[x] = [pd.read_csv(f"{self.ifeature_out}/{x}_{i+1}.tsv", sep="\t", index_col=0) for i in range(length)]
-        # concat features if length > 1 else return the dataframe
-        for x, v in feat.items():
-            val = pd.concat(v)
-            val.columns = [f"{c}_{x}" for c in val.columns]
-            feat[x] = val
-
-        all_data = pd.concat(feat.values(), axis=1)
-        # change the column names
-
-        return all_data
-
-    def read_possum(self, ID: Iterable[str|int], length: int):
-        """
-        This function will read possum features
-
-        Parameters
-        ___________
-        ID: array
-            An array of the indices for the possum features
-        lenght: int
-            The number of splits the input fasta has (ther number of group_* files)
-        """
-        feat = {}
-        for x in self.features["possum"]["normal"]:
-            feat[x] = [pd.read_csv(f"{self.possum_out}/{x}_{i+1}.csv") for i in range(length)]
-        # reads features of possum
-        for x in self.features["possum"]["special"]:
-            name = x.split(':')
-            feat[x] = [pd.read_csv(f"{self.possum_out}/{name[0]}_{name[1]}_{i+1}.csv") for i in range(length)]
-
-        # concat if length > 1 else return the dataframe
-        for key, value in feat.items():
-            val = pd.concat(value)
-            val.index = ID
-            if "smoothed" in key or "pse_pssm" in key:
-                name = key.split(":")
-                val.columns = [f"{x}_{name[1]}" for x in val.columns]
-            feat[key] = val
-
-        everything = pd.concat(feat.values(), axis=1)
-
-        return everything
-
-    def read(self):
-        """
-        Reads all the features
-        """
-        file = list(self.group_file_path.glob("group_*.fasta"))
-        all_data = self.read_ifeature(len(file))
-        everything = self.read_possum(all_data.index, len(file))
-        # concatenate the features
-        features = pd.concat([all_data, everything], axis=1)
-        return features
+    filtered_features = {}
+    for key, value in features[program].items():
+        filtered_features[key] = list(set(value).difference(drop))
     
+    return filtered_features
 
-def filter_features(new_features: pd.DataFrame, training_features: pd.DataFrame, output_features="new_features.csv") -> None:
+    
+def read_ifeature(features: dict[str, list[str]], length: int, 
+                  ifeature_out: str|Path="ifeature_features") -> pd.DataFrame:
+    """
+    A function to read features from ifeatures
+
+    Parameters
+    ___________
+    features: array
+        An array of the features files to be read
+    lenght: int
+        The number of splits the input fasta has (ther number of group_* files)
+    ifeature_out: str, Path
+        The directory where the ifeature features are
+    """
+    # ifeature features
+    feat = {}
+    extract = features["long"]
+    extract.extend(features["short"])
+    for x in extract:
+        feat[x] = [pd.read_csv(f"{ifeature_out}/{x}_{i+1}.tsv", sep="\t", index_col=0) for i in range(length)]
+    # concat features if length > 1 else return the dataframe
+    for x, v in feat.items():
+        val: pd.DataFrame = pd.concat(v)
+        val.columns = [f"{c}_{x}" for c in val.columns]
+        feat[x] = val
+
+    all_data = pd.concat(feat.values(), axis=1)
+    # change the column names
+
+    return all_data
+
+def read_possum(features: dict[str, list[str]], length: int, index: Iterable[str|int] | None=None, 
+                possum_out: str|Path="possum_features") -> pd.DataFrame:
+    """
+    This function will read possum features
+
+    Parameters
+    ___________
+    features: array
+        An array of the features files to be read
+    index: array
+        An array of the indices for the possum features
+    lenght: int
+        The number of splits the input fasta has (ther number of group_* files)
+    possum_out: str, Path
+        The directory for the possum extractions
+    """
+    feat = {}
+    extract = features["long"]
+    extract.extend(features["short"])
+    for x in extract:
+        feat[x] = [pd.read_csv(f"{possum_out}/{x}_{i+1}.csv") for i in range(length)]
+        if ":" in x:
+            name = x.split(':')
+            feat[x] = [pd.read_csv(f"{possum_out}/{name[0]}_{name[1]}_{i+1}.csv") for i in range(length)]
+
+    # concat if length > 1 else return the dataframe
+    for key, value in feat.items():
+        val: pd.DataFrame = pd.concat(value)
+        if index:
+            val.index = index
+        else:
+            val.reset_index(drop=True, inplace=True)
+        if ":" in key:
+            name = key.split(":")
+            val.columns = [f"{x}_{name[1]}" for x in val.columns]
+        feat[key] = val
+
+    everything = pd.concat(feat.values(), axis=1)
+
+    return everything
+
+
+def filter_features(new_features: pd.DataFrame, training_features: pd.DataFrame, 
+                    output_features: str|Path="new_features.csv") -> None:
     """
     Filter the obtained features for the new samples based on the selected_features from the training samples
 
@@ -477,8 +459,20 @@ def main():
             extract.run_extraction_parallel(file, num_thread, ifeature_extract)
 
     if "read" in purpose:
-        filtering = ReadFeatures(Path(fasta_file).parent, ifeature_out, possum_out, drop, drop_file)
-        every_features = filtering.read()
+        file = list(Path(fasta_file).parent.glob("group_*.fasta"))
+        features = []
+        if "ifeature" in run:
+            ifeature_dict = return_features("ifeature", drop_file, drop)
+            ifeature_features = read_ifeature(ifeature_dict, length=len(file), ifeature_out=ifeature_out)
+            features.append(ifeature_features)
+        if "possum" in run:
+            possum_dict = return_features("possum", drop_file, drop)
+            possum_features = read_possum(possum_dict, length=len(file), possum_out=possum_out)
+            features.append(possum_features)
+        if len(features) == 2 :
+            possum_features.index == ifeature_features.index
+            features = [ifeature_features, possum_features]
+        every_features = pd.concat(features, axis=1)
         every_features.to_csv(f"{extracted_out}/every_features.csv")
 
     if "filter" in purpose:
