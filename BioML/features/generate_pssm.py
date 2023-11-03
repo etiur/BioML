@@ -86,7 +86,7 @@ class ExtractPssm:
 
         return stdout_db, stderr_db
 
-    def _check_pssm(self, files):
+    def _check_pssm(self, files: str|Path):
         """
         Check if the pssm files are correct
         """
@@ -101,7 +101,7 @@ class ExtractPssm:
             remove.mkdir(parents=True, exist_ok=True)
             shutil.move(self.fasta_dir/f"{file.stem}.fsa", remove/f"{file.stem}.fsa")
 
-    def fast_check(self, num):
+    def fast_check(self, num: str|int):
         """
         Accelerates the checking of files
         """
@@ -109,7 +109,7 @@ class ExtractPssm:
         with get_context("spawn").Pool(processes=self.num_thread) as executor:
             executor.map(self._check_pssm, file)
 
-    def generate(self, file):
+    def generate(self, file: str|Path):
         """
         A function that generates the PSSM profiles
         """
@@ -124,11 +124,11 @@ class ExtractPssm:
         self._check_output(self.pssm/f"{file.stem}.pssm")
         return f"it took {round((end - start)/60, 4)} min to finish {file.stem}.pssm"
 
-    def run_generate(self, num):
+    def run_generate(self, num: str|int):
         """
         run the generate function
         """
-        self.fast_check(num)
+        self.fast_check(num: str |int)
         files = list(self.fasta_dir.glob(f"seq_{num}*.fsa"))
         files.sort(key=lambda x: int(x.stem.split("_")[1]))
         files = [x for x in files if not (self.pssm/f"{x.stem}.pssm").exists()]
@@ -137,7 +137,7 @@ class ExtractPssm:
             res = self.generate(file)
             print(res)
     
-    def _clean_fasta(self, length=100):
+    def _clean_fasta(self, length: int=100):
         """
         Clean the fasta file
 
