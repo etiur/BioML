@@ -2,16 +2,14 @@ import argparse
 import shutil
 from Bio import SeqIO
 from Bio.SeqIO import FastaIO
-import shlex
-from subprocess import Popen, PIPE
-import time
-import pandas as pd
-from ..utilities import rewrite_possum
+from ..utilities import rewrite_possum, run_program_subprocess
 from multiprocessing import get_context
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Sequence, Callable
 from functools import partial
 from ..training.base import DataParser
+from dataclasses import dataclass, field
+import pandas as pd
 
 
 def arg_parse():
@@ -39,7 +37,7 @@ def arg_parse():
                         help="Choose the operation between extracting, reading for training or filtering")
     parser.add_argument("-lg", "--long", required=False, help="true when restarting from the long commands",
                         action="store_true")
-    parser.add_argument("-r", "--run", required=False, choices=("possum", "ifeature", "both"), default="both",
+    parser.add_argument("-r", "--run", required=False, choices=("possum", "ifeature"), nargs="+", default="both",
                         help="run possum or ifeature extraction, the choice will affect --type argument since only one of the programs would be extracted")
     parser.add_argument("-n", "--num_thread", required=False, default=100, type=int,
                         help="The number of threads to use for the generation of pssm profiles")
@@ -67,10 +65,7 @@ class ExtractFeatures:
     A class to extract features using Possum and iFeatures
     """
 
-    def __init__(self, fasta_file: str | Path, pssm_dir: str ="pssm",
-                 ifeature_out: str | Path="ifeature_features", possum_out: str | Path="possum_features",
-                 ifeature_dir: str ="iFeature", possum_dir: str ="POSSUM_Toolkit", 
-                 drop: str | Iterable[str] =(), drop_file: str | Path | None=None):
+    def __init__(self, fasta_file: str | Path):
         """
         Initialize the ExtractFeatures class
 
@@ -78,49 +73,11 @@ class ExtractFeatures:
         ___________
         fasta_file: str
             The fasta file to be analysed
-        pssm_dir: str, optional
-            The directory of the generated pssm files
-        ifeature: str, optional
-            A path to the iFeature programme
-        ifeature_out: str, optional
-            A directory for the extraction results from iFeature
-        possum: str, optional
-            A path to the POSSUM programme
-        possum_out: str, optional
-            A directory for the extraction results from possum
         """
         self.fasta_file = Path(fasta_file)
-        self.pssm_dir = pssm_dir
-        self.ifeature = f"{ifeature_dir}/iFeature.py"
-        self.possum = f"{possum_dir}"
-        rewrite_possum(self.possum)
-        self.ifeature_out = Path(ifeature_out)
-        self.possum_out = Path(possum_out)
-        self.features = {"possum": {"long": ["pssm_cc", "tri_gram_pssm"], 
-                               "short": ["aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm", "dpc_pssm", "edp", "eedp", "rpm_pssm",
-                                "k_separated_bigrams_pssm", "pssm_ac", "pssm_composition", "rpssm", "s_fpssm", "tpc"],
-                                "special": ["smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9", 
-                                            "pse_pssm:1", "pse_pssm:2", "pse_pssm:3"]},
-                        "ifeature": {"long": ["Moran", "Geary", "NMBroto"], "short": 
-                                 ["APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC", "QSOrder",
-                                  "SOCNumber", "GAAC", "KSCTriad"]}}
-
-        if drop_file:
-            with open(drop_file) as file:
-                drop = [x.strip() for x in file.readlines()]
-        if type(drop) == str:
-            drop = (drop, )
-
-        for key, value in self.features.items():
-            for k, v in value.items():
-                self.features[key][k] = list(set(v).difference(drop))
-
-        print(f"Extracting iFeature features {self.features['ifeature']}")
-        print(f"Extracting Possum features {self.features['possum']}")
- 
 
     @staticmethod
-    def _batch_iterable(iterable, batch_size):
+    def _batch_iterable(iterable: Sequence[str], batch_size: int):
         """
         Create generators from iterable
 
@@ -140,48 +97,186 @@ class ExtractFeatures:
         for ndx in range(0, length, batch_size):
             yield iterable[ndx:min(ndx + batch_size, length)]
 
-    def _separate_bunch(self):
+    def separate_bunch(self):
         """
         A class that separates the fasta files into smaller fasta files
 
         """
+        if self.fasta_file.with_name("group_1.fasta").exists():
+            return
+        
         with open(self.fasta_file) as inp:
             record = list(SeqIO.parse(inp, "fasta"))
             if len(record) > 5_000:
                 for i, batch in enumerate(self._batch_iterable(record, 5_000)):
                     filename = f"group_{i+1}.fasta"
-                    with open(f"{self.fasta_file.parent}/{filename}", "w") as split:
-                        print(f"{self.fasta_file.parent}/{filename}")
+                    with open(self.fasta_file.with_name(filename), "w") as split:
+                        print(self.fasta_file.with_name(filename))
                         fasta_out = FastaIO.FastaWriter(split, wrap=None)
                         fasta_out.write_file(batch)
                 del record
             else:
                 shutil.copyfile(self.fasta_file, f"{self.fasta_file.parent}/group_1.fasta")
 
-    @staticmethod
-    def run_progam(commands: str, program_name: str | None=None):
+    def run_extraction_parallel(self, file: list[str|Path], num_thread: int, 
+                                *run: Callable[[str|Path], None]):
         """
-        Run in parallel the subprocesses from the command
+        Using a pool of workers to run the 2 programmes
+
         Parameters
         ----------
-        commands: list[str]
-            A list of commandline commands that calls to Possum programs or ifeature programs
-        program_name: str, optional
-            A name to identify the commands
+        file : list
+            A list of the files to be processed
+        long:
+            If to run only the longer features
         """
-        proc = [Popen(shlex.split(command), stderr=PIPE, stdout=PIPE, text=True) for command in commands]
-        start = time.time()
-        for p in proc:
-            output, errors = p.communicate()
-            with open(f"error_file.txt", "a") as out:
-                out.write(f"{output}")
-                out.write(f"{errors}")
-        end = time.time()
-        if program_name:
-            print(f"start running {program_name}")
-        print(f"It took {end - start} second to run")
+        with get_context("spawn").Pool(processes=num_thread) as pool:
+            for func in run:
+                pool.map(func, file)
 
-    def ifeature_commands(self, fasta_file: str | Path, programs: list[str]):
+
+@dataclass(slots=True)
+class PossumFeatures:
+    """
+    A class used to represent the features of a Possum.
+
+    Attributes
+    ----------
+    pssm_dir : str | Path
+        The directory where PSSM files are stored. Default is "pssm".
+    output : str | Path
+        The output directory where the results will be stored. Default is "possum_features".
+    program : str | Path
+        The program used for the Possum Toolkit. Default is "POSSUM_Toolkit".
+    features : dict
+        A dictionary to store the features of the Possum. Default is an empty dictionary.
+    drop_file : str | Path | None
+        The file to be dropped. Default is None.
+    drop : Iterable[str]
+        An iterable containing the features to be dropped. Default is an empty tuple.
+    """
+    pssm_dir: str | Path = "pssm"
+    output: str | Path = "possum_features"
+    program: str | Path = "POSSUM_Toolkit"
+    drop_file: str | Path | None = None
+    drop: Iterable[str] = ()
+    features: dict = field(default_factory=dict, init=False)
+
+    def __post_init__(self):
+        self.program = f"{self.program}/possum_standalone.pl"
+        rewrite_possum(self.program)
+        self.features = {"long": ["pssm_cc", "tri_gram_pssm"], 
+                         "short": ["aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm", "dpc_pssm", "edp", "eedp", "rpm_pssm",
+                                   "k_separated_bigrams_pssm", "pssm_ac", "pssm_composition", "rpssm", "s_fpssm", "tpc", 
+                                   "smoothed_pssm:5", "smoothed_pssm:7", "smoothed_pssm:9", "pse_pssm:1", "pse_pssm:2", 
+                                   "pse_pssm:3"]}
+        if self.drop_file:
+            with open(self.drop_file) as file:
+                self.drop = [x.strip() for x in file.readlines()]
+        if isinstance(self.drop, str):
+            self.drop = (self.drop,)
+
+        for key, feat in self.features.items():
+            self.features[key] = list(set(feat).difference(self.drop))
+        
+        Path(self.output).mkdir(parents=True, exist_ok=True)
+        
+        print(f"Possum features to be extracted: {self.features}")
+
+    def generate_commands(self, fasta_file: str | Path, programs: list[str]) -> list[str]:
+        """
+        Writing the commands to run the possum features that uses a different command structure
+
+        Parameters
+        ----------
+        fasta_file : str | Path
+            path to the different fasta files
+        programs : list[str]
+            list of the different programs to run
+
+        Returns
+        -------
+        list[str]
+            list of the commands to run
+        """
+
+        num = Path(fasta_file).stem.split("_")[1]
+        command = []
+        for prog in programs:
+            if ":" in prog:
+                name, index = prog.split(":")
+                supplement = f'-t {name} -a {index} -o {self.output}/{name}_{index}_{num}.csv'
+            else:
+                supplement = f'-t {prog} -o {self.output}/{prog}_{num}.csv'
+
+            string = f'perl {self.program} -i {fasta_file} -p {self.pssm_dir} {supplement}'
+            command.append(string)
+
+        return command
+    
+    def extract(self, fasta_file: str | Path, long: bool=False):
+        """
+        Extracting the features  using Possum
+
+        Parameters
+        ----------
+        fasta_file : str | Path
+            path to the different fasta files
+        long : bool, optional
+            To only extract long features or not, by default False
+        """
+        command = self.generate_commands(fasta_file, self.features["long"])
+
+        if not long:
+            command_2 = self.generate_commands(fasta_file, self.features["possum"]["short"])
+            command.extend(command_2)
+        
+        # using shlex.split to parse the strings into lists for Popen class
+        run_program_subprocess(command, "Possum programs")
+        
+
+@dataclass(slots=True)
+class IfeatureFeatures:
+    """
+    A class used to represent the features of iFeature.
+
+    Attributes
+    ----------
+    program : str | Path
+        The program used for iFeature. Default is "iFeature".
+    output : str | Path
+        The output directory where the results will be stored. Default is "ifeature_features".
+    drop_file : str | Path | None
+        The file to be dropped. Default is None.
+    drop : Iterable[str]
+        An iterable containing the features to be dropped. Default is an empty tuple.
+    """
+    program: str | Path = "iFeature"
+    output: str | Path = "ifeature_features"
+    drop_file: str | Path | None = None
+    drop: Iterable[str] = ()
+    features: dict = field(default_factory=dict, init=False)
+
+    def __post_init__(self):
+        self.program = f"{self.program}/iFeature.py"
+        self.features = {"long": ["Moran", "Geary", "NMBroto"],
+                         "short": ["APAAC", "PAAC", "CKSAAGP", "CTDC", "CTDT", "CTDD", "CTriad", "GDPC", "GTPC", "QSOrder",
+                                  "SOCNumber", "GAAC", "KSCTriad"]}
+        
+        if self.drop_file:
+            with open(self.drop_file) as file:
+                self.drop = [x.strip() for x in file.readlines()]
+        if isinstance(self.drop, str):
+            self.drop = (self.drop,)
+
+        for key, feat in self.features.items():
+            self.features[key] = list(set(feat).difference(self.drop))
+        
+        Path(self.output).mkdir(parents=True, exist_ok=True)
+
+        print(f"iFeature features to be extracted: {self.features}")
+
+    def generate_commands(self, fasta_file: str | Path, programs: list[str]) -> list[str]:
         """
         Extraction of features for ifeature features
 
@@ -189,101 +284,38 @@ class ExtractFeatures:
         ----------
         fasta_file: str
             path to the different fasta files
+        programs: list
+            list of the different programs to run
+        
+        Returns
+        -------
+        list[str]
+            list of the commands to run
         """
         num = Path(fasta_file).stem.split("_")[1]
-        commands_1 = [
-            f"python3 {self.ifeature} --file {fasta_file} --type {prog} --out {self.ifeature_out}/{prog}_{num}.tsv" for
-            prog in programs]
+        command = [f"python3 {self.program} --file {fasta_file} --type {prog} --out {self.output}/{prog}_{num}.tsv" for
+                   prog in programs]
 
-        return commands_1
+        return command
     
-    def possum_special_commands(self, fasta_file: str | Path, programs: list[str]):
-
-        num = Path(fasta_file).stem.split("_")[1]
-        command_2_possum = [
-            f'perl {self.possum} -i {fasta_file} -p {self.pssm_dir} -t {prog.split(":")[0]} -a {prog.split(":")[1]} -o '
-            f'{self.possum_out}/{prog.split(":")[0]}_{prog.split(":")[1]}_{num}.csv' for prog in
-                programs]
-        return command_2_possum
-
-    def possum_commands(self, fasta_file: str | Path, programs: list[str]):
+    def extract(self, fasta_file: str | Path, long: bool=False):
         """
-        Writing the commands to run the possum features that take a lot of time
-
-        Parameters
-        ----------
-        fasta_file: str
-            path to the different files
-        """
-        num = Path(fasta_file).stem.split("_")[1]
-        command_3_possum = [
-            f'perl {self.possum} -i {fasta_file} -p {self.pssm_dir} -t {prog} -o {self.possum_out}/{prog}_{num}.csv' for
-            prog in programs]
-
-        return command_3_possum
-
-    def extraction_ifeature(self, fasta_file: str | Path, long: bool=False):
-        """
-        run the ifeature programme iteratively
+        run the ifeature programme using subprocess
 
         Parameters
         ----------
         fasta_file: str
             path to the different fasta_files
+        long: bool, optional
+            To only extract long features or not, by default False
         """
         # ifeature features
-        commands_1 = self.ifeature_commands(fasta_file, self.features["ifeature"]["long"])
+        command = self.generate_commands(fasta_file, self.features["ifeature"]["long"])
         if not long:
-            commands_2 = self.ifeature_commands(fasta_file, self.features["ifeature"]["short"])
-            commands_1.extend(commands_2)
+            command_2 = self.generate_commands(fasta_file, self.features["ifeature"]["short"])
+            command.extend(command_2)
 
-        self.run_progam(commands_1, "Ifeature programs")
-
-    def extraction_possum(self, fasta_file: str | Path, long: bool=False):
-        """
-        run the possum programme iteratively
-
-        Parameters
-        ----------
-        fasta_file: str
-            Path to the different fasta files
-        """
-        # possum features
-        command_1_possum = self.possum_commands(fasta_file, self.features["possum"]["long"])
-
-        if not long:
-            command_2_possum = self.possum_commands(fasta_file, self.features["possum"]["short"])
-            command_3_possum = self.possum_special_commands(fasta_file, self.features["possum"]["special"])
-            command_1_possum.extend(command_2_possum)
-            command_1_possum.extend(command_3_possum)
-        
-        # using shlex.split to parse the strings into lists for Popen class
-        self.run_progam(command_1_possum, "Possum programs")
-
-    def run_extraction_parallel(self, num_thread: int, run: str ="both", long: bool=False):
-        """
-        Using a pool of workers to run the 2 programmes
-
-        Parameters
-        ----------
-        long:
-            If to run only the longer features
-        """
-        self.possum_out.mkdir(parents=True, exist_ok=True)
-        self.ifeature_out.mkdir(parents=True, exist_ok=True)
-        file = list(self.fasta_file.parent.glob(f"group_*.fasta"))
-        if not file:
-            self._separate_bunch()
-        
-        file.sort(key=lambda x: int(x.stem.split("_")[1]))
-        with get_context("spawn").Pool(processes=num_thread) as pool:
-            if run == "both":
-                pool.map(partial(self.extraction_ifeature, long=long), file)
-                pool.map(partial(self.extraction_possum, long=long), file)
-            elif run == "possum":
-                pool.map(partial(self.extraction_possum, long=long), file)
-            elif run == "ifeature":
-                pool.map(partial(self.extraction_ifeature, long=long), file)
+        run_program_subprocess(command, "Ifeature programs")
 
 
 class ReadFeatures:
@@ -313,7 +345,7 @@ class ReadFeatures:
         """
         self.ifeature_out = ifeature_out
         self.possum_out = possum_out
-        self.grup_file_path = Path(group_file_path)
+        self.group_file_path = Path(group_file_path)
 
         self.features = {"possum": {"normal": ["pssm_cc", "tri_gram_pssm", "aac_pssm", "ab_pssm", "d_fpssm", "dp_pssm", 
                                                "dpc_pssm", "edp", "eedp", "rpm_pssm", "k_separated_bigrams_pssm", 
@@ -328,7 +360,7 @@ class ReadFeatures:
         if drop_file:
             with open(drop_file) as file:
                 drop = [x.strip() for x in file.readlines()]
-        if type(drop) == str:
+        if isinstance(drop, str):
             drop = (drop, )
 
         for key, value in self.features.items():
@@ -431,8 +463,18 @@ def main():
     long, run, num_thread, drop, drop_file, sheets, training_features, new_features = arg_parse()
 
     if "extract" in purpose:
-        extract = ExtractFeatures(fasta_file, pssm_dir, ifeature_out, possum_out, ifeature_dir, possum_dir, drop, drop_file)
-        extract.run_extraction_parallel(num_thread, run, long)
+        # feature extraction
+        extract = ExtractFeatures(fasta_file)
+        extract.separate_bunch()
+        file = list(extract.fasta_file.parent.glob("group_*.fasta"))
+        possum = PossumFeatures(pssm_dir, possum_out, possum_dir, drop_file, drop)
+        ifeature = IfeatureFeatures(ifeature_dir, ifeature_out, drop_file, drop)
+        possum_extract = partial(possum.extract, long=long)
+        ifeature_extract = partial(ifeature.extract, long=long)
+        if "possum" in run:
+            extract.run_extraction_parallel(file, num_thread, possum_extract)
+        if "ifeature" in run:  
+            extract.run_extraction_parallel(file, num_thread, ifeature_extract)
 
     if "read" in purpose:
         filtering = ReadFeatures(Path(fasta_file).parent, ifeature_out, possum_out, drop, drop_file)
@@ -448,8 +490,8 @@ def main():
             every_features = new_features
         try:
             new_features = training_features.read_features(every_features)
-        except NameError:
-            raise NameError("You have not defined the new features from the new samples to perform the filtering, use -t argument")
+        except NameError as exe:
+            raise NameError("You have not defined the new features from the new samples to perform the filtering, use -t argument") from exe
         filter_features(new_features, train_features.features, Path(extracted_out) / "new_features.csv")
 
 

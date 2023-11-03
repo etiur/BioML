@@ -3,6 +3,9 @@ import pandas as pd
 from pathlib import Path
 import logging
 from collections import Counter
+import shlex
+from subprocess import Popen, PIPE
+import time
 
 
 def scale(scaler: str, X_train: pd.DataFrame, 
@@ -94,6 +97,29 @@ def write_excel(file: str | pd.io.excel._openpyxl.OpenpyxlWriter,
                 dataframe.to_excel(writer, sheet_name=sheet_name)              
     else:
         dataframe.to_excel(file, sheet_name=sheet_name)
+
+
+def run_program_subprocess(commands: list[str], program_name: str | None=None):
+    """
+    Run in parallel the subprocesses from the command
+    Parameters
+    ----------
+    commands: list[str]
+        A list of commandline commands that calls to Possum programs or ifeature programs
+    program_name: str, optional
+        A name to identify the commands
+    """
+    proc = [Popen(shlex.split(command), stderr=PIPE, stdout=PIPE, text=True) for command in commands]
+    start = time.time()
+    for p in proc:
+        output, errors = p.communicate()
+        with open(f"error_file.txt", "a") as out:
+            out.write(f"{output}")
+            out.write(f"{errors}")
+    end = time.time()
+    if program_name:
+        print(f"start running {program_name}")
+    print(f"It took {end - start} second to run")
 
 
 def rewrite_possum(possum_stand_alone_path: str | Path) -> None:
