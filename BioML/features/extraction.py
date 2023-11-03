@@ -377,6 +377,7 @@ def read_ifeature(features: dict[str, list[str]], length: int,
 
     return all_data
 
+
 def read_possum(features: dict[str, list[str]], length: int, index: Iterable[str|int] | None=None, 
                 possum_out: str|Path="possum_features") -> pd.DataFrame:
     """
@@ -419,6 +420,40 @@ def read_possum(features: dict[str, list[str]], length: int, index: Iterable[str
     return everything
 
 
+def read_features(file: list[str|Path], program: str, drop_file: str | Path, drop: Iterable[str], 
+                  ifeature_out:str|Path="ifeature_features",  
+                  possum_out: str | Path="possum_features") -> Callable[[dict[str, list[str]]], pd.DataFrame]:
+    """
+    A function to read the features from the possum and ifeature programmes.
+
+    Parameters
+    ----------
+    file : list[str|Path]
+        A list of the files to be processed.
+    program : str
+        The program to use for feature extraction, either 'possum' or 'ifeature'.
+    drop_file : str | Path
+        The file containing features to be dropped.
+    drop : Iterable[str]
+        An iterable containing the features to be dropped.
+    ifeature_out : str | Path, optional
+        The output directory for iFeature results, by default "ifeature_features".
+    possum_out : str | Path, optional
+        The output directory for POSSUM results, by default "possum_features".
+
+    Returns
+    -------
+    Callable[[dict[str, list[str]]], pd.DataFrame]
+        A function that takes a dictionary of features and returns a DataFrame with the extracted features.
+    """
+    
+    call = {"ifeature": partial(read_ifeature, ifeature_out=ifeature_out, length=len(file)), 
+             "possum": partial(read_possum, possum_out=possum_out, length=len(file))}
+    feature_dict = return_features(program, drop_file, drop)
+
+    return call[program](feature_dict)
+
+
 def filter_features(new_features: pd.DataFrame, training_features: pd.DataFrame, 
                     output_features: str|Path="new_features.csv") -> None:
     """
@@ -446,33 +481,28 @@ def main():
 
     if "extract" in purpose:
         # feature extraction
+        func = {}
         extract = ExtractFeatures(fasta_file)
         extract.separate_bunch()
         file = list(extract.fasta_file.parent.glob("group_*.fasta"))
         possum = PossumFeatures(pssm_dir, possum_out, possum_dir, drop_file, drop)
         ifeature = IfeatureFeatures(ifeature_dir, ifeature_out, drop_file, drop)
-        possum_extract = partial(possum.extract, long=long)
-        ifeature_extract = partial(ifeature.extract, long=long)
-        if "possum" in run:
-            extract.run_extraction_parallel(file, num_thread, possum_extract)
-        if "ifeature" in run:  
-            extract.run_extraction_parallel(file, num_thread, ifeature_extract)
+        func["possum"] = partial(possum.extract, long=long)
+        func["ifeature"] = partial(ifeature.extract, long=long)
+
+        for prog in run:
+            extract.run_extraction_parallel(file, num_thread, func[prog])
 
     if "read" in purpose:
         file = list(Path(fasta_file).parent.glob("group_*.fasta"))
-        features = []
-        if "ifeature" in run:
-            ifeature_dict = return_features("ifeature", drop_file, drop)
-            ifeature_features = read_ifeature(ifeature_dict, length=len(file), ifeature_out=ifeature_out)
-            features.append(ifeature_features)
-        if "possum" in run:
-            possum_dict = return_features("possum", drop_file, drop)
-            possum_features = read_possum(possum_dict, length=len(file), possum_out=possum_out)
-            features.append(possum_features)
-        if len(features) == 2 :
-            possum_features.index == ifeature_features.index
-            features = [ifeature_features, possum_features]
-        every_features = pd.concat(features, axis=1)
+        features = {}
+        for prog in run:
+            features[prog] = read_features(file, prog, drop_file, drop, ifeature_out, possum_out)
+
+        if len(features.values()) == 2 :
+            features["possum"].index == features["ifeature"].index
+
+        every_features = pd.concat(features.values(), axis=1)
         every_features.to_csv(f"{extracted_out}/every_features.csv")
 
     if "filter" in purpose:
