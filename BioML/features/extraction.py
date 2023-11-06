@@ -116,7 +116,7 @@ class ExtractFeatures:
                         fasta_out.write_file(batch)
                 del record
             else:
-                shutil.copyfile(self.fasta_file, f"{self.fasta_file.parent}/group_1.fasta")
+                shutil.copyfile(self.fasta_file, self.fasta_file.with_name("group_1.fasta"))
 
     def run_extraction_parallel(self, file: list[str|Path], num_thread: int, 
                                 *run: Callable[[str|Path], None]):
@@ -176,7 +176,7 @@ class PossumFeatures:
 
     def generate_commands(self, fasta_file: str | Path, programs: list[str]) -> list[str]:
         """
-        Writing the commands to run the possum features that uses a different command structure
+        Writing the commands to run the possum features that uses different command structures
 
         Parameters
         ----------

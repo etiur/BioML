@@ -415,7 +415,7 @@ def main():
     predictions = predict(test_features, model_path, problem)
     if applicability_domain:
         transformed, _, test_x = scale(scaler, feature.drop(), test_features)
-        predictions = domain_filter(predictions, transformed , test_x, res_dir, number_similar_samples)
+        predictions = domain_filter(predictions, transformed , test_x, number_similar_samples)
     else:
         test_index = [f"sample_{x}" for x, _ in enumerate(predictions.index)]
         predictions.index = test_index
@@ -429,7 +429,7 @@ def main():
     if problem == "classification":
         extractor = FastaExtractor(fasta, res_dir)
         positive, negative = extractor.separate_negative_positive(predictions)
-        extractor.extract(positive, negative, positive_fasta=f"positive.fasta", negative_fasta=f"negative.fasta")   
+        extractor.extract(positive, negative, positive_fasta="positive.fasta", negative_fasta="negative.fasta")   
 
 if __name__ == "__main__":
     # Run this if this file is executed from command line but not if is imported as API

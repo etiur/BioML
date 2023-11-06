@@ -94,7 +94,7 @@ class ExtractPssm:
             if "PSI" not in pssm.read():
                 os.remove(files)
 
-    def _check_output(self, file):
+    def _check_output(self, file: str|Path):
         file = Path(file)
         if not file.exists():
             remove = Path("removed_dir")

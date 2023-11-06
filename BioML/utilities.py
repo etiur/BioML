@@ -189,7 +189,7 @@ class Log:
         self._logger = logging.getLogger(name)
         self._logger.handlers = []
         self._logger.setLevel(level_[level])
-        self.fh = logging.FileHandler("{}.log".format(name))
+        self.fh = logging.FileHandler(f"{name}.log")
         self.fh.setLevel(level_[level])
         self.ch = logging.StreamHandler()
         self.ch.setLevel(level_[level])
