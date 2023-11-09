@@ -180,6 +180,10 @@ class DataParser:
             The training feature without the label data, 
         """
         return self.features.drop(columns=self.label)
+    
+    def __repr__(self):
+        string = f"""Data with:\n    num. samples: {len(self.features)}\n    num. columns: {len(self.features.columns)}\n    name label column: {self.label}\n    num. outliers: {len(self.outliers)}"""
+        return string
 
 
 @dataclass

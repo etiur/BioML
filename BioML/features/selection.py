@@ -135,7 +135,6 @@ class DataReader:
         self._check_label(self.checked_label_path)
         self.label = self.label.to_numpy().flatten()
         self.preprocess()
-        self.analyse_composition(self.features)
     
     def _check_label(self, label_path: str | Path) -> None:
         """
@@ -238,35 +237,6 @@ class DataReader:
             fit = variance.fit_transform(self.features)
             self.features = pd.DataFrame(fit, index=self.features.index, 
                                          columns=variance.get_feature_names_out())
-
-    def analyse_composition(self, dataframe: pd.DataFrame) -> int | tuple[int, int]:
-        """
-        Analyses the composition of the given pandas DataFrame.
-
-        Parameters
-        ----------
-        dataframe : pd.DataFrame
-            The DataFrame to analyse.
-
-        Returns
-        -------
-        Union[int, Tuple[int, int]]
-            If all columns are numeric, returns the number of columns.
-            If there are non-numeric columns, returns a tuple containing the number
-            of columns containing "pssm", "tpc", "eedp", or "edp" and the number of
-            columns not containing those substrings.
-        """
-        col = dataframe.columns
-        if col.dtype == int:
-            print("num columns: ", len(col))
-            return len(col)
-        count = col.str.contains("pssm|tpc|eedp|edp").sum()
-        if not count:
-            print("num columns: ", len(col))
-            return len(col)
-        
-        print(f"POSSUM: {count}, iFeature: {len(col) - count}")
-        return count, len(col) - count
     
     def scale(self, X_train: pd.DataFrame) -> np.ndarray:
         """
@@ -284,6 +254,10 @@ class DataReader:
         """
         transformed, scaler_dict = scale(self.scaler, X_train)
         return transformed
+    
+    def __repr__(self):
+        string = f"""Data with:\n    num. samples: {len(self.features)}\n    num. columns: {len(self.features.columns)}\n   scaler: {self.scaler}\n    variance threshold: {self.variance_thres}\n    sheet: {self.sheet}"""
+        return string
 
 
 class FeatureSelection:
