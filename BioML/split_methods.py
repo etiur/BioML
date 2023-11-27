@@ -15,18 +15,20 @@ class ClusterSpliter:
     random_state: int | None = 10
     shuffle: bool = True
     done: list = field(default_factory=list)
+    done_copy: list = field(default_factory=list)
 
     def __post_init__(self):
         if len(self.cluster_info) < self.num_splits:
             raise InsufficientClustersError(f"The number of clusters is less than the number of folds. " 
-                                            "Use {len(self.cluster_info)} or less folds instead, or "
+                                            f"Use {len(self.cluster_info)} or less folds instead, or "
                                             "increase the identity threshold. I recommend the former")
 
     def get_test_index(self, index, num_test) -> np.ndarray:
         start = time.perf_counter()
         test_ind: list = []
 
-        if len(index) <= num_test: raise InsufficientSamplesError("The number of samples is less or equal than the defined test size")
+        if len(index) <= num_test: raise InsufficientSamplesError("The number of samples is less or equal than the "
+                                                                  "defined test size")
 
         if self.random_state is not None: random.seed(self.random_state)
         while len(test_ind) < num_test:
@@ -98,7 +100,7 @@ class ClusterSpliter:
     @staticmethod
     def get_sample_size(test_size:int | float, X: pd.DataFrame | np.ndarray | None=None):
         match test_size:
-            case float(val) if 1 < val > 0 :
+            case float(val) if 1 > val > 0 :
                 num_test = int(val*X.shape[0])
             case int(val):
                 num_test = val
@@ -125,7 +127,7 @@ class ClusterSpliter:
             case np.ndarray() as val:
                 return range(val.shape[0])
             case _:
-                raise TypeError("X must be a pandas DataFrame or a numpy array")
+                raise TypeError("X must be a pandas DataFrame, Series or a numpy array")
 
     def train_test_split(self, X: pd.DataFrame | np.ndarray, y=None, test_size:int | float = 0.2, clear=True):
         
@@ -142,6 +144,7 @@ class ClusterSpliter:
         train_index = self.get_train_index(test_index, index)
 
         X_train, X_test = self.match_type(X, train_index, test_index)
+        self.done_copy = self.done.copy()
         
         if y is not None:
             y_train, y_test = self.match_type(y, train_index, test_index)
@@ -153,6 +156,7 @@ class ClusterSpliter:
     def get_fold_indices(self, X: pd.DataFrame | np.ndarray, test_size:int | float = 0.2, 
                          discard_factor=0.7):
         
+        self.done = self.done_copy.copy()
         num_test = min(X.shape[0] // self.num_splits, self.get_sample_size(test_size, X))
         sample_names = self.get_sample_names(X)
         index = {inde: num for num, inde in enumerate(sample_names)}
@@ -166,3 +170,18 @@ class ClusterSpliter:
             if break_: break
 
         return train, test
+
+
+class CustomSplitter:
+    def __init__(self, spliting_fn, n_splits=5, test_size=0.2):
+        self.n_splits = n_splits
+        self.test_size = test_size
+        self.spliting_fn = spliting_fn
+    
+    def split(self, X, y, groups=None):
+        train, test = self.spliting_fn(X, self.test_size)
+        for ind in test:
+            yield (train[ind], test[ind])
+
+    def get_n_splits(self, X, y, groups=None):
+        return self.n_splits

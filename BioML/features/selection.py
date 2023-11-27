@@ -1,7 +1,7 @@
 import argparse
 import pandas as pd
 from sklearn.feature_selection import VarianceThreshold
-from ..utilities import Log, scale, write_excel
+from ..utils import Log, scale, write_excel
 from pathlib import Path
 # Multiprocess instead of Multiprocessing solves the pickle problem in Windows (might be different in linux)
 # but it has its own errors. Use multiprocessing.get_context('fork') seems to solve the problem but only available

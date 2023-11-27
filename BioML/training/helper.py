@@ -1,4 +1,4 @@
-from ..utilities import write_excel
+from ..utils import write_excel
 from pathlib import Path
 from . import base
 from collections import defaultdict

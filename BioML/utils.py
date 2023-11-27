@@ -109,6 +109,8 @@ def run_program_subprocess(commands: list[str], program_name: str | None=None):
     program_name: str, optional
         A name to identify the commands
     """
+    if isinstance(commands, str):
+        commands = [commands]
     proc = [Popen(shlex.split(command), stderr=PIPE, stdout=PIPE, text=True) for command in commands]
     start = time.time()
     for p in proc:
@@ -355,3 +357,37 @@ class Threshold:
     def save_csv(self, threshold: int | float, greater: bool=True, column_name: str='temperature'):
         data = self.apply_threshold(threshold, greater, column_name)
         data.to_csv(self.output_csv)
+
+
+class MmseqsClustering:
+    @classmethod
+    def create_database(cls, input_file, output_index):
+        input_file = Path(input_file)
+        output_index = Path(output_index)
+        output_index.parent.mkdir(exist_ok=True, parents=True)
+        command = f"mmseqs createdb {input_file} {output_index}"
+        run_program_subprocess(command)
+    
+    @classmethod
+    def cluster(cls, database, intermediate_output, output_cluster, cluster_at_sequence_identity=0.3, sensitivity=5):
+        database = Path(database)
+        intermediate_output = Path(intermediate_output)
+        intermediate_output.parent.mkdir(exist_ok=True, parents=True)
+        output_cluster = Path(output_cluster)
+        output_cluster.parent.mkdir(exist_ok=True, parents=True)
+        command = f"mmseqs cluster {database} {intermediate_output} tmp --min-seq-id {cluster_at_sequence_identity} --cluster-reassign --alignment-mode 3 -s {sensitivity}"
+        command2 = f"mmseqs createtsv {database} {database} {intermediate_output} {output_cluster}"
+        run_program_subprocess([command])
+        run_program_subprocess([command2])
+    
+    @classmethod
+    def read_cluster_info(cls, file_path):
+        cluster_info = {}
+        with open(file_path, "r") as f:
+            lines = [x.strip() for x in f.readlines()]
+        for x in lines:
+            X = x.split("\t")
+            if X[0] not in cluster_info:
+                cluster_info[X[0]] = []
+            cluster_info[X[0]].append(X[1])
+        return cluster_info

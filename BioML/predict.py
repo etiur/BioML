@@ -10,7 +10,7 @@ from Bio.SeqIO import FastaIO
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from .utilities import scale
+from .utils import scale
 
 
 def arg_parse():

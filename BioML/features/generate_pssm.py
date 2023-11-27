@@ -10,7 +10,7 @@ from Bio import SeqIO
 from Bio.SeqIO import FastaIO
 from subprocess import call
 import shlex
-from BioML.utilities import rewrite_possum
+from ..utils import rewrite_possum
 
 
 def arg_parse():

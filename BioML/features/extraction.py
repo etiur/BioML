@@ -2,7 +2,7 @@ import argparse
 import shutil
 from Bio import SeqIO
 from Bio.SeqIO import FastaIO
-from ..utilities import rewrite_possum, run_program_subprocess
+from ..utils import rewrite_possum, run_program_subprocess
 from multiprocessing import get_context
 from pathlib import Path
 from typing import Iterable, Sequence, Callable

@@ -6,7 +6,7 @@ from pathlib import Path
 import time
 from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
-from ..utilities import Log
+from ..utils import Log
 from sklearn.metrics import average_precision_score   
 from typing import Iterable
 from ..custom_errors import NotSupportedDataError, DifferentLabelFeatureIndexError
