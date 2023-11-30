@@ -6,6 +6,7 @@ from collections import Counter
 import shlex
 from subprocess import Popen, PIPE
 import time
+from collections import defaultdict
 
 
 def scale(scaler: str, X_train: pd.DataFrame, 
@@ -99,7 +100,8 @@ def write_excel(file: str | pd.io.excel._openpyxl.OpenpyxlWriter,
         dataframe.to_excel(file, sheet_name=sheet_name)
 
 
-def run_program_subprocess(commands: list[str], program_name: str | None=None):
+def run_program_subprocess(commands: list[str], program_name: str | None=None, 
+                           shell: bool=False):
     """
     Run in parallel the subprocesses from the command
     Parameters
@@ -108,16 +110,37 @@ def run_program_subprocess(commands: list[str], program_name: str | None=None):
         A list of commandline commands that calls to Possum programs or ifeature programs
     program_name: str, optional
         A name to identify the commands
+    shell: bool, optional
+        If running the commands through the shell, allowing you to use shell features like 
+        environment variable expansion, wildcard matching, and various other shell-specific features
+        If False, the command is expected to be a list of individual command-line arguments, 
+        and no shell features are applied. It is safer shell=False when there is user input to avoid
+        shell injections.
     """
     if isinstance(commands, str):
         commands = [commands]
-    proc = [Popen(shlex.split(command), stderr=PIPE, stdout=PIPE, text=True) for command in commands]
+    proc = []
+    for command in commands:
+        if shell:
+            proc.append(Popen(command, stderr=PIPE, stdout=PIPE, text=True, shell=shell))
+        else:
+            proc.append(Popen(shlex.split(command), stderr=PIPE, stdout=PIPE, text=True, shell=shell))
+
     start = time.time()
+    err = []
+    out = []
     for p in proc:
         output, errors = p.communicate()
-        with open(f"error_file.txt", "a") as out:
-            out.write(f"{output}")
-            out.write(f"{errors}")
+        if output: out.append(output)
+        if errors: err.append(errors)
+    
+    if err:
+        with open("error_file.txt", "w") as ou:
+            ou.writelines(f"{err}")
+    if out:
+        with open("output_file.txt", "w") as ou:
+            ou.writelines(f"{out}")
+            
     end = time.time()
     if program_name:
         print(f"start running {program_name}")
@@ -361,25 +384,60 @@ class Threshold:
 
 class MmseqsClustering:
     @classmethod
-    def create_database(cls, input_file, output_index):
+    def create_database(cls, input_file, output_database):
+        """
+        _summary_
+
+        Parameters
+        ----------
+        input_file : _type_
+            _description_
+        output_database : _type_
+            _description_
+        """
         input_file = Path(input_file)
-        output_index = Path(output_index)
+        output_index = Path(output_database)
         output_index.parent.mkdir(exist_ok=True, parents=True)
         command = f"mmseqs createdb {input_file} {output_index}"
-        run_program_subprocess(command)
+        run_program_subprocess(command, "createdb")
+
+    @classmethod
+    def index_database(cls, database):
+        """
+        Index the target database if it is going to be reused for search 
+        frequently. This will speed up the search process becase it loads in memory.
+
+        Parameters
+        ----------
+        database : _type_
+            _description_
+        """
+        database = Path(database)
+        command = f"mmseqs createindex {database} tmp"
+        run_program_subprocess(command, "create index")
     
     @classmethod
-    def cluster(cls, database, intermediate_output, output_cluster, cluster_at_sequence_identity=0.3, sensitivity=5):
+    def cluster(cls, database, cluster_tsv="cluster.tsv", 
+                cluster_at_sequence_identity=0.3, sensitivity=5.7):
         database = Path(database)
-        intermediate_output = Path(intermediate_output)
+        intermediate_output = Path("cluster_output/clusterdb")
         intermediate_output.parent.mkdir(exist_ok=True, parents=True)
-        output_cluster = Path(output_cluster)
+        output_cluster = Path(cluster_tsv)
         output_cluster.parent.mkdir(exist_ok=True, parents=True)
-        command = f"mmseqs cluster {database} {intermediate_output} tmp --min-seq-id {cluster_at_sequence_identity} --cluster-reassign --alignment-mode 3 -s {sensitivity}"
-        command2 = f"mmseqs createtsv {database} {database} {intermediate_output} {output_cluster}"
-        run_program_subprocess([command])
-        run_program_subprocess([command2])
+        cluster = f"mmseqs cluster {database} {intermediate_output} tmp --min-seq-id {cluster_at_sequence_identity} --cluster-reassign --alignment-mode 3 -s {sensitivity}"
+        createtsv = f"mmseqs createtsv {database} {database} {intermediate_output} {output_cluster}"
+        run_program_subprocess(cluster, "cluster")
+        run_program_subprocess(createtsv, "create tsv")
     
+    @classmethod
+    def generate_pssm(cls, query_db, search_db, evalue=0.001, num_iterations=3, pssm_filename="result.pssm"):
+        search = f"mmseqs search {query_db} {search_db} result.out tmp -e {evalue} --num-iterations {num_iterations} -a"
+        run_program_subprocess(search, "search")
+        profile = f"mmseqs result2profile {query_db} {search_db} result.out result.profile"
+        run_program_subprocess(profile, "generate_profile")
+        pssm = f"mmseqs profile2pssm result.profile {pssm_filename}"
+        run_program_subprocess(pssm, "convert profile to pssm")
+
     @classmethod
     def read_cluster_info(cls, file_path):
         cluster_info = {}
@@ -391,3 +449,42 @@ class MmseqsClustering:
                 cluster_info[X[0]] = []
             cluster_info[X[0]].append(X[1])
         return cluster_info
+    
+    @classmethod
+    def easy_cluster(cls, input_file, cluster_tsv, cluster_at_sequence_identity=0.3, sensitivity=5):
+        query_db = Path(input_file).with_suffix("")/"querydb"
+        cls.create_database(input_file, query_db)
+        cls.cluster(query_db, cluster_tsv, cluster_at_sequence_identity, sensitivity)
+        return cls.read_cluster_info(cluster_tsv)
+
+    @classmethod
+    def easy_generate_pssm(cls, input_file, database_file, evalue=0.001, num_iterations=3, 
+                           pssm_filename="result.pssm"):
+        
+        query_db = Path(input_file).with_suffix("")/"querydb"
+        search_db = Path(database_file).with_suffix("")/"searchdb"
+        # generate teh databases using the fasta files from input and the search databse like uniref
+        cls.create_database(input_file, query_db)
+        if not search_db.exists():
+            cls.create_database(database_file, search_db)
+        # generate the pssm files
+        cls.generate_pssm(query_db, search_db, evalue, num_iterations, pssm_filename)
+        return pssm_filename
+    
+    @classmethod
+    def read_pssm_output(cls, pssm_file):
+        pssm_dict = defaultdict(list)
+        with open(pssm_file, "r") as f:
+            lines = f.readlines()
+        for x in lines:
+            if x.startswith('Query profile of sequence'):
+                l = int(x.split(" ")[-1])
+            pssm_dict[l].append(x)
+        return pssm_dict
+
+    @classmethod
+    def write_pssm(cls, pssm_dict, output_dir="pssm"):
+        Path(output_dir).mkdir(exist_ok=True, parents=True)
+        for key, value in pssm_dict.items():
+            with open(f"{output_dir}/pssm_{key}.pssm", "w") as f:
+                f.writelines(value)
