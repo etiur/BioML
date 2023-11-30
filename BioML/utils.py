@@ -486,5 +486,7 @@ class MmseqsClustering:
     def write_pssm(cls, pssm_dict, output_dir="pssm"):
         Path(output_dir).mkdir(exist_ok=True, parents=True)
         for key, value in pssm_dict.items():
+            hold = ["\n"]
+            hold.extend(value)
             with open(f"{output_dir}/pssm_{key}.pssm", "w") as f:
-                f.writelines(value)
+                f.writelines(hold)
