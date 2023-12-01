@@ -430,8 +430,8 @@ class MmseqsClustering:
         run_program_subprocess(createtsv, "create tsv")
     
     @classmethod
-    def generate_pssm(cls, query_db, search_db, evalue=0.001, num_iterations=3, pssm_filename="result.pssm"):
-        search = f"mmseqs search {query_db} {search_db} result.out tmp -e {evalue} --num-iterations {num_iterations} -a"
+    def generate_pssm(cls, query_db, search_db, evalue=0.01, num_iterations=3, pssm_filename="result.pssm", max_seqs=500):
+        search = f"mmseqs search {query_db} {search_db} result.out tmp -e {evalue} --num-iterations {num_iterations} ---max-seqs {max_seqs}"
         run_program_subprocess(search, "search")
         profile = f"mmseqs result2profile {query_db} {search_db} result.out result.profile"
         run_program_subprocess(profile, "generate_profile")
@@ -492,3 +492,4 @@ class MmseqsClustering:
             hold.extend(value)
             with open(f"{output_dir}/pssm_{key}.pssm", "w") as f:
                 f.writelines(hold)
+
