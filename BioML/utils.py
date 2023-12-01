@@ -459,14 +459,16 @@ class MmseqsClustering:
 
     @classmethod
     def easy_generate_pssm(cls, input_file, database_file, evalue=0.001, num_iterations=3, 
-                           pssm_filename="result.pssm"):
+                           pssm_filename="result.pssm", generate_searchdb=False):
         
         query_db = Path(input_file).with_suffix("")/"querydb"
-        search_db = Path(database_file).with_suffix("")/"searchdb"
-        # generate teh databases using the fasta files from input and the search databse like uniref
+        search_db = Path(database_file)
+        # generate the databases using the fasta files from input and the search databse like uniref
         cls.create_database(input_file, query_db)
-        if not search_db.exists():
+        if generate_searchdb:
+            search_db = search_db.with_suffix("")/"searchdb"
             cls.create_database(database_file, search_db)
+
         # generate the pssm files
         cls.generate_pssm(query_db, search_db, evalue, num_iterations, pssm_filename)
         return pssm_filename
