@@ -7,6 +7,7 @@ import shlex
 from subprocess import Popen, PIPE
 import time
 from collections import defaultdict
+from typing import Iterable
 
 
 def scale(scaler: str, X_train: pd.DataFrame, 
@@ -430,8 +431,9 @@ class MmseqsClustering:
         run_program_subprocess(createtsv, "create tsv")
     
     @classmethod
-    def generate_pssm(cls, query_db, search_db, evalue=0.01, num_iterations=3, pssm_filename="result.pssm", max_seqs=500):
-        search = f"mmseqs search {query_db} {search_db} result.out tmp -e {evalue} --num-iterations {num_iterations} ---max-seqs {max_seqs}"
+    def generate_pssm(cls, query_db, search_db, evalue=0.01, num_iterations=3, pssm_filename="result.pssm", max_seqs=600, 
+                      sensitivity=6):
+        search = f"mmseqs search {query_db} {search_db} result.out tmp -e {evalue} --num-iterations {num_iterations} --max-seqs {max_seqs} -s {sensitivity} -a"
         run_program_subprocess(search, "search")
         profile = f"mmseqs result2profile {query_db} {search_db} result.out result.profile"
         run_program_subprocess(profile, "generate_profile")
@@ -451,20 +453,21 @@ class MmseqsClustering:
         return cluster_info
     
     @classmethod
-    def easy_cluster(cls, input_file, cluster_tsv, cluster_at_sequence_identity=0.3, sensitivity=5):
+    def easy_cluster(cls, input_file, cluster_tsv, cluster_at_sequence_identity=0.3, sensitivity=6):
         query_db = Path(input_file).with_suffix("")/"querydb"
         cls.create_database(input_file, query_db)
         cls.cluster(query_db, cluster_tsv, cluster_at_sequence_identity, sensitivity)
         return cls.read_cluster_info(cluster_tsv)
 
     @classmethod
-    def easy_generate_pssm(cls, input_file, database_file, evalue=0.001, num_iterations=3, 
+    def easy_generate_pssm(cls, input_file, database_file, evalue=0.01, num_iterations=3, 
                            pssm_filename="result.pssm", generate_searchdb=False):
         
         query_db = Path(input_file).with_suffix("")/"querydb"
         search_db = Path(database_file)
         # generate the databases using the fasta files from input and the search databse like uniref
-        cls.create_database(input_file, query_db)
+        if not query_db.exists():
+            cls.create_database(input_file, query_db)
         if generate_searchdb:
             search_db = search_db.with_suffix("")/"searchdb"
             cls.create_database(database_file, search_db)
@@ -474,20 +477,25 @@ class MmseqsClustering:
         return pssm_filename
     
     @classmethod
-    def read_pssm_output(cls, pssm_file):
+    def iterate_pssm(cls, pssm_filename):
         pssm_dict = defaultdict(list)
-        with open(pssm_file, "r") as f:
-            lines = f.readlines()
-        for x in lines:
-            if x.startswith('Query profile of sequence'):
-                l = int(x.split(" ")[-1])
-            pssm_dict[l].append(x)
-        return pssm_dict
+        current_seq = None
+        with open(pssm_filename, "r") as f:
+            for x in f:
+                if x.startswith('Query profile of sequence'):
+                    seq = int(x.split(" ")[-1])
+                    if current_seq is not None and seq != current_seq:
+                        yield pssm_dict[current_seq]
+                        del pssm_dict[current_seq]
+                    current_seq = seq
+                pssm_dict[seq].append(x)
+        if current_seq is not None:
+            yield pssm_dict[current_seq] 
 
     @classmethod
-    def write_pssm(cls, pssm_dict, output_dir="pssm"):
+    def write_pssm(cls, pssm_tuple: Iterable[tuple[str, list[str]]], output_dir: str | Path ="pssm"):
         Path(output_dir).mkdir(exist_ok=True, parents=True)
-        for key, value in pssm_dict.items():
+        for key, value in pssm_tuple:
             hold = ["\n"]
             hold.extend(value)
             with open(f"{output_dir}/pssm_{key}.pssm", "w") as f:
