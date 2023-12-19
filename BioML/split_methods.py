@@ -6,11 +6,32 @@ import warnings
 import pandas as pd
 from dataclasses import dataclass, field
 from .custom_errors import InsufficientSamplesError, InsufficientClustersError
+from typing import Protocol, Generator
+from sklearn.model_selection import GroupKFold
+
+
+class CustomSplitter(Protocol):
+
+    n_splits: int
+    test_size: int | float
+
+    def split(self, X, y, groups=None) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
+        """
+        A function that returns train and test indices for each fold
+        """
+        ...
+
+    def get_n_splits(self, X, y, groups=None) -> int:
+        """
+        A function that returns the number of splits
+        """
+        ...
 
 
 @dataclass(slots=True)
 class ClusterSpliter:
     cluster_info: dict[str | int, list[str|int]]
+    test_size: int | float = 0.2
     num_splits: int = 5
     random_state: int | None = 10
     shuffle: bool = True
@@ -170,18 +191,13 @@ class ClusterSpliter:
             if break_: break
 
         return train, test
-
-
-class CustomSplitter:
-    def __init__(self, spliting_fn, n_splits=5, test_size=0.2):
-        self.n_splits = n_splits
-        self.test_size = test_size
-        self.spliting_fn = spliting_fn
     
-    def split(self, X, y, groups=None):
-        train, test = self.spliting_fn(X, self.test_size)
+    def split(self, X: pd.DataFrame | np.ndarray, y, groups=None) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
+        train, test = self.get_fold_indices(X, self.test_size)
         for ind in test:
             yield (train[ind], test[ind])
+    
+    def get_n_splits(self, X, y, groups=None) -> int:
+        return self.num_splits
 
-    def get_n_splits(self, X, y, groups=None):
-        return self.n_splits
+
