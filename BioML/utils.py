@@ -7,7 +7,7 @@ import shlex
 from subprocess import Popen, PIPE
 import time
 from collections import defaultdict
-from typing import Iterable
+from typing import Generator
 
 
 def scale(scaler: str, X_train: pd.DataFrame, 
@@ -477,7 +477,11 @@ class MmseqsClustering:
         return pssm_filename
     
     @classmethod
-    def iterate_pssm(cls, pssm_filename):
+    def split_pssm(cls, pssm_filename: str | Path, output_dir: str | Path ="pssm"):
+        cls.write_pssm(cls.iterate_pssm(pssm_filename), output_dir)
+
+    @classmethod
+    def iterate_pssm(cls, pssm_filename: str | Path):
         pssm_dict = defaultdict(list)
         current_seq = None
         with open(pssm_filename, "r") as f:
@@ -485,15 +489,16 @@ class MmseqsClustering:
                 if x.startswith('Query profile of sequence'):
                     seq = int(x.split(" ")[-1])
                     if current_seq is not None and seq != current_seq:
-                        yield pssm_dict[current_seq]
+                        yield current_seq, pssm_dict[current_seq]
                         del pssm_dict[current_seq]
                     current_seq = seq
                 pssm_dict[seq].append(x)
         if current_seq is not None:
-            yield pssm_dict[current_seq] 
+            yield current_seq, pssm_dict[current_seq] 
 
     @classmethod
-    def write_pssm(cls, pssm_tuple: Iterable[tuple[str, list[str]]], output_dir: str | Path ="pssm"):
+    def write_pssm(cls, pssm_tuple: Generator[tuple[str, list[str]], None, None], 
+                   output_dir: str | Path ="pssm"):
         Path(output_dir).mkdir(exist_ok=True, parents=True)
         for key, value in pssm_tuple:
             hold = ["\n"]
