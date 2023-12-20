@@ -651,29 +651,6 @@ class PycaretInterface:
         majority_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
         return majority_model, majority_results
     
-    def check_drift(self, input_data: pd.DataFrame, target_data: pd.DataFrame|None, 
-                    filename: str | None=None) -> str | None:
-        """
-        Check for data drift
-
-        Parameters
-        ----------
-        input_data : pd.DataFrame
-            The input data.
-        target_data : pd.DataFrame, optional
-            The target data, by default None
-        filename : str, optional
-            Where the save the report in html format
-
-        Returns
-        -------
-        str | None
-            The file name
-        """
-        self.log.info("----------Checking for data drift--------------")
-        self.pycaret.check_drift(input_data, target_data, filename=filename)
-        return filename
-    
     def finalize_model(self, model: Any):
         """
         Finalize the model by training it with all the data including test set
@@ -703,7 +680,7 @@ class PycaretInterface:
         save : bool | str, optional
             Save the plots, by default False but you can also indicate the path for the plot
         """
-        if type(save) == str:
+        if isinstance(save, str):
             Path(save).mkdir(parents=True, exist_ok=True)
         self.pycaret.plot_model(model, "learning", save=save) # type: ignore
 
@@ -760,6 +737,14 @@ class PycaretInterface:
         self.pycaret.load_model(filename)
 
     def get_logs(self):
+        """
+        Get the logs from the training in a dataframe format.
+
+        Returns
+        -------
+        pd.DataFrame
+            The logs from the training, if logs=True.
+        """
         return self.pycaret.get_logs()
 
 

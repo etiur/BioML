@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import Protocol, Generator
 from sklearn.model_selection import GroupKFold
+import operator
 
 
 class CustomSplitter(Protocol):
@@ -21,6 +22,12 @@ class CustomSplitter(Protocol):
     def get_n_splits(self, X, y, groups=None) -> int:
         """
         A function that returns the number of splits
+        """
+        ...
+    
+    def train_test_split(self, X, y, test_size:int | float = 0.2, groups=None):
+        """
+        A function that returns the train and test sets
         """
         ...
 
@@ -60,7 +67,7 @@ class ShuffleGroupKFold:
         group_kfold = GroupKFold(n_splits=self.n_splits)
         if self.shuffle:
             train_data, train_group = shuffle(train_data, train_group, random_state=self.random_state)
-        for i, (train_index, test_index) in enumerate(group_kfold.split(train_data, train_group, groups=groups)):
+        for i, (train_index, test_index) in enumerate(group_kfold.split(train_data, y, groups=train_group)):
             yield train_index, test_index
     
     def train_test_split(self, X: pd.DataFrame, y: pd.Series | np.ndarray | None=None, 
@@ -116,7 +123,7 @@ class ClusterSpliter:
         return group
 
     def train_test_split(self, X: pd.DataFrame, y: pd.Series | np.ndarray | None=None, 
-                         test_size:int | float = 0.2):
+                         test_size:int | float = 0.2, groups=None):
         
         return self.group_kfold.train_test_split(X, y, test_size=test_size, groups=self.get_group_index(X))
 
@@ -133,5 +140,46 @@ class ClusterSpliter:
         return self.num_splits
 
 
+class MutationSpliter:
+    mutations: np.ndarray | list[int|str] | str | tuple[str|int, ...]
+    test_num_mutations: int
+    greater: bool = True
+    num_splits: int = 5
+    shuffle: bool = True
+    random_state: int | None = None
+
+    @property
+    def group_kfold(self):
+        group = ShuffleGroupKFold(n_splits=self.num_splits, shuffle=self.shuffle, random_state=self.random_state)
+        return group
+    
+    def apply_operator(self):
+        if self.greater: return operator.ge
+        return operator.le
+
+    def train_test_split(self, X: pd.DataFrame, y: pd.Series | np.ndarray | None=None, 
+                         test_size:int | float = 0.2, groups=None):
+        
+        op = self.apply_operator()
+
+        if isinstance(self.mutations, str) and self.mutations in X.columns:
+            mutations = X[self.mutations]
+            train_data = X.drop(self.mutations, axis=1)
+            test_indices = [num for num, mut in enumerate(mutations.values) if op(mut, self.test_num_mutations)]
 
 
+        raise TypeError("mutations must be an array of mutations or a string if the mutations are in the columns")
+    
+    def split(self, X: pd.DataFrame, y: pd.Series | np.ndarray | None=None, 
+              groups=None) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
+        
+        if isinstance(self.mutations, str) and self.mutations in X.columns:
+            for train_index, test_index in self.group_kfold.split(X.drop(self.mutations, axis=1), y, groups=X[self.mutations]):
+                yield train_index, test_index
+
+        elif isinstance(self.mutations, (list, np.ndarray, tuple)):
+            for train_index, test_index in self.group_kfold.split(X, y, groups=self.mutations):
+                yield train_index, test_index
+
+        else:
+            raise TypeError("mutations must be an array of mutations or a string if the mutations are in the columns")
