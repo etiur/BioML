@@ -406,7 +406,7 @@ class MmseqsClustering:
     def index_database(cls, database):
         """
         Index the target database if it is going to be reused for search 
-        frequently. This will speed up the search process becase it loads in memory.
+        frequently. This will speed up the search process because it loads in memory.
 
         Parameters
         ----------
@@ -419,7 +419,7 @@ class MmseqsClustering:
     
     @classmethod
     def cluster(cls, database, cluster_tsv="cluster.tsv", 
-                cluster_at_sequence_identity=0.3, sensitivity=5.7):
+                cluster_at_sequence_identity=0.3, sensitivity=6.5):
         database = Path(database)
         intermediate_output = Path("cluster_output/clusterdb")
         intermediate_output.parent.mkdir(exist_ok=True, parents=True)
@@ -432,7 +432,7 @@ class MmseqsClustering:
     
     @classmethod
     def generate_pssm(cls, query_db, search_db, evalue=0.01, num_iterations=3, pssm_filename="result.pssm", max_seqs=600, 
-                      sensitivity=6):
+                      sensitivity=6.5):
         search = f"mmseqs search {query_db} {search_db} result.out tmp -e {evalue} --num-iterations {num_iterations} --max-seqs {max_seqs} -s {sensitivity} -a"
         run_program_subprocess(search, "search")
         profile = f"mmseqs result2profile {query_db} {search_db} result.out result.profile"
@@ -453,9 +453,10 @@ class MmseqsClustering:
         return cluster_info
     
     @classmethod
-    def easy_cluster(cls, input_file, cluster_tsv, cluster_at_sequence_identity=0.3, sensitivity=6):
+    def easy_cluster(cls, input_file, cluster_tsv, cluster_at_sequence_identity=0.3, sensitivity=6.5):
         query_db = Path(input_file).with_suffix("")/"querydb"
-        cls.create_database(input_file, query_db)
+        if not query_db.exists():
+            cls.create_database(input_file, query_db)
         cls.cluster(query_db, cluster_tsv, cluster_at_sequence_identity, sensitivity)
         return cls.read_cluster_info(cluster_tsv)
 
