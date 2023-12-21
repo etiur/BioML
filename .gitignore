@@ -16,3 +16,5 @@ data/*.tsv
 tests/*training*
 tests/mlruns
 data/esterase_spp.xlsx
+tests/result.pssm
+data/db_seq.fasta

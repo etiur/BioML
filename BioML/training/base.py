@@ -9,7 +9,7 @@ from pycaret.regression import RegressionExperiment
 from ..utils import Log
 from sklearn.metrics import average_precision_score   
 from typing import Iterable
-from ..custom_errors import NotSupportedDataError, DifferentLabelFeatureIndexError
+from ..custom_errors import DifferentLabelFeatureIndexError
 import warnings
 
 @dataclass(slots=True)
@@ -107,7 +107,7 @@ class DataParser:
                 return pd.DataFrame(feature)
             
             case _:
-                raise NotSupportedDataError("features should be a csv or excel file, an array or a pandas DataFrame, you provided {features}")
+                raise ValueError("features should be a csv or excel file, an array or a pandas DataFrame, you provided {features}")
         
     def read_labels(self, label: str | pd.Series) -> str | pd.Series:
         """
@@ -146,7 +146,7 @@ class DataParser:
                 return pd.Series(labels, index=self.features.index, name="target")
             
             case _:
-                raise NotSupportedDataError(f"label should be a csv file, an array, a pandas Series, DataFrame or inside features: you provided {label}")
+                raise ValueError(f"label should be a csv file, an array, a pandas Series, DataFrame or inside features: you provided {label}")
     
     def remove_outliers(self, training_features: pd.DataFrame, outliers: Iterable[str]):
         """
@@ -424,9 +424,9 @@ class PycaretInterface:
                                    average="weighted", target="pred_proba", multiclass=False)
 
         config: pd.DataFrame = self.pycaret.pull(pop=True)
-        if not (self.output_path / f"config_setup_pycaret.csv").exists():
+        if not (self.output_path / "config_setup_pycaret.csv").exists():
             self.output_path.mkdir(parents=True, exist_ok=True)
-            config.to_csv(self.output_path / f"config_setup_pycaret.csv") 
+            config.to_csv(self.output_path / "config_setup_pycaret.csv") 
         return self
 
     def train(self):

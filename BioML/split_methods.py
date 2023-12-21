@@ -1,11 +1,21 @@
 from sklearn.utils import shuffle
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Protocol, Generator
-from sklearn.model_selection import GroupKFold
+from sklearn.model_selection import GroupKFold, KFold, StratifiedKFold
 import operator
+
+
+def match_type(data, train_index, test_index):
+    match data:
+        case pd.DataFrame() | pd.Series() as val:
+            return val.iloc[train_index], val.iloc[test_index]
+        case np.ndarray() as val:
+            return val[train_index], val[test_index]
+        case _:
+            raise TypeError("X must be a pandas DataFrame or a numpy array")
 
 
 class CustomSplitter(Protocol):
@@ -50,16 +60,6 @@ class ShuffleGroupKFold:
 
         return num_test
 
-    @staticmethod
-    def match_type(data, train_index, test_index):
-        match data:
-            case pd.DataFrame() | pd.Series() as val:
-                return val.iloc[train_index], val.iloc[test_index]
-            case np.ndarray() as val:
-                return val[train_index], val[test_index]
-            case _:
-                raise TypeError("X must be a pandas DataFrame or a numpy array")
-
     def split(self, X: pd.DataFrame, y: pd.Series | np.ndarray | None=None, 
               groups=None) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
         train_data = X.copy()
@@ -81,9 +81,9 @@ class ShuffleGroupKFold:
         # generate the train_test_split
         group_kfold = GroupKFold(n_splits=X.shape[0]//num_test)
         for i, (train_index, test_index) in enumerate(group_kfold.split(train_data, y, groups=train_group)):
-            X_train, X_test = self.match_type(train_data, train_index, test_index)
+            X_train, X_test = match_type(train_data, train_index, test_index)
             if y is not None:
-                y_train, y_test = self.match_type(y, train_index, test_index)
+                y_train, y_test = match_type(y, train_index, test_index)
                 return X_train, X_test, y_train, y_test
             return X_train, X_test
     
@@ -140,8 +140,9 @@ class ClusterSpliter:
         return self.num_splits
 
 
+@dataclass
 class MutationSpliter:
-    mutations: np.ndarray | list[int|str] | str | tuple[str|int, ...]
+    mutations: np.ndarray | list[int] | str | tuple[int, ...]
     test_num_mutations: int
     greater: bool = True
     num_splits: int = 5
@@ -153,33 +154,60 @@ class MutationSpliter:
         group = ShuffleGroupKFold(n_splits=self.num_splits, shuffle=self.shuffle, random_state=self.random_state)
         return group
     
-    def apply_operator(self):
-        if self.greater: return operator.ge
-        return operator.le
+    def apply_operator(self, a, b):
+        if self.greater: 
+            return operator.ge(a, b)
+        return operator.le(a, b)
 
+    def get_test_indices(self, mutations):
+        test_indices = []
+        for num, mut in enumerate(mutations):
+            if self.apply_operator(mut, self.test_num_mutations):
+                test_indices.append(num)
+        if self.shuffle:
+            test_indices =  shuffle(test_indices, random_state=self.random_state)
+        return test_indices
+    
+    def get_train_indices(self, mutations, test_indices):
+        train_indices = [x for x in range(mutations) if x not in test_indices]
+        if self.shuffle:
+            train_indices = shuffle(train_indices, random_state=self.random_state)
+        return train_indices
+
+    def get_mutations(self, X):
+        
+        match self.mutations:
+            case np.ndarray() | list() | tuple() as val:
+                mutations = val
+                train_data = X.copy()
+                if len(X) != len(self.mutations):
+                    raise ValueError("The number of samples in the data is not equal to the number of mutations")
+                return mutations, train_data
+
+            case str(val) if val in X.columns:
+                mutations = X[val]
+                train_data = X.drop(val, axis=1)
+                return mutations, train_data
+
+            case _:
+                raise TypeError("mutations must be an array of number of mutations or a string if the mutations are in the columns")
+        
     def train_test_split(self, X: pd.DataFrame, y: pd.Series | np.ndarray | None=None, 
                          test_size:int | float = 0.2, groups=None):
-        
-        op = self.apply_operator()
 
-        if isinstance(self.mutations, str) and self.mutations in X.columns:
-            mutations = X[self.mutations]
-            train_data = X.drop(self.mutations, axis=1)
-            test_indices = [num for num, mut in enumerate(mutations.values) if op(mut, self.test_num_mutations)]
+        mutations, train_data = self.get_mutations(X)
+            
+        test_indices = self.get_test_indices(mutations)
+        train_indices = self.get_train_indices(mutations, test_indices)
 
+        X_train, X_test = match_type(train_data, train_indices, test_indices)
+        if y is not None:
+            y_train, y_test = match_type(y, train_indices, test_indices)
+            return X_train, X_test, y_train, y_test
+        return X_train, X_test
 
-        raise TypeError("mutations must be an array of mutations or a string if the mutations are in the columns")
     
     def split(self, X: pd.DataFrame, y: pd.Series | np.ndarray | None=None, 
               groups=None) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
+        mutations, train_data = self.get_mutations(X)
         
-        if isinstance(self.mutations, str) and self.mutations in X.columns:
-            for train_index, test_index in self.group_kfold.split(X.drop(self.mutations, axis=1), y, groups=X[self.mutations]):
-                yield train_index, test_index
-
-        elif isinstance(self.mutations, (list, np.ndarray, tuple)):
-            for train_index, test_index in self.group_kfold.split(X, y, groups=self.mutations):
-                yield train_index, test_index
-
-        else:
-            raise TypeError("mutations must be an array of mutations or a string if the mutations are in the columns")

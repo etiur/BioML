@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+
+[project]
+name = "BioML"
+version = "1.0.0"
+requires-python = "~=3.11"
+dependencies = [
+  "pandas",
+  "scikit-learn",
+  "biopython",
+  "shap",
+  "matplotlib",
+  "pycaret[analysis, models]",
+  "openpyxl",
+  "pyod",
+]
+
+authors = [
+  {name = "Ruite Xiang", email = "ruite.xiang@gmail.com"},
+  {name = "Albert Cañellas Sole", email = "albertcaso22@gmail.com"},
+
+]
+
+description = "BioML is a Python package to generate predictive models for protein data"
+
+license = {text = "MIT License"}
+readme = "README.md"
+keywords = ["bioprospecting", "bioinformatics", "machine learning", "proteins", "protein engineering"]
+
+classifiers=["Programming Language :: Python :: 3.11",
+             "License :: OSI Approved :: MIT License",
+             "Operating System :: Unix",
+             "Intended Audience :: Science/Research",
+             "Natural Language :: English",
+             "Topic :: Scientific/Engineering :: Bio-Informatics"]
+
+[project.optional-dependencies]
+cluster = ["mmseqs2"] # cannot be installed with pip, you need to use conda
+
+[project.urls]
+Repository = "https://github.com/etiur/BioML"

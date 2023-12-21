@@ -9,7 +9,6 @@ import warnings
 import json
 import yaml
 from typing import Any, Callable, Protocol
-from ..custom_errors import NotSupportedDataError
 
 
 class Modelor(Protocol):
@@ -36,7 +35,7 @@ class FileParser:
             elif extension == "yaml":
                 return yaml.load(file, Loader=yaml.FullLoader)
             else:
-                raise NotSupportedDataError(f"Unsupported file extension: {extension}")
+                raise ValueError(f"Unsupported file extension: {extension}")
 
 
 def generate_training_results(model: Modelor, training: base.Trainer, feature: base.DataParser, plot: tuple, 

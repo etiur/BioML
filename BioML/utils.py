@@ -94,8 +94,7 @@ def write_excel(file: str | pd.io.excel._openpyxl.OpenpyxlWriter,
             with pd.ExcelWriter(file, mode="w", engine="openpyxl") as writer:
                 dataframe.to_excel(writer, sheet_name=sheet_name)
         else:
-            with pd.ExcelWriter(file, mode="a", engine="openpyxl", 
-                                if_sheet_exists="replace") as writer:
+            with pd.ExcelWriter(file, mode="a", engine="openpyxl", if_sheet_exists="replace") as writer:
                 dataframe.to_excel(writer, sheet_name=sheet_name)              
     else:
         dataframe.to_excel(file, sheet_name=sheet_name)
