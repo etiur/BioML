@@ -1,16 +1,18 @@
-
-import pandas as pd
+"""
+This module contains the methods used for feature selection.
+"""
+from pathlib import Path
 import numpy as np
 from typing import Iterable
 from sklearn.feature_selection import SelectKBest, f_regression, mutual_info_regression, RFE, r_regression
-from sklearn.feature_selection import f_classif, mutual_info_classif, chi2
+from sklearn.feature_selection import f_classif, mutual_info_classif
 from sklearn.ensemble import RandomForestClassifier as rfc
 from sklearn.ensemble import RandomForestRegressor as rfr
+from sklearn.linear_model import RidgeClassifier, Ridge
 import matplotlib.pyplot as plt
 import shap
 import xgboost as xgb
-from pathlib import Path
-from sklearn.linear_model import RidgeClassifier, Ridge
+import pandas as pd
 
 
 def calculate_shap_importance(model: xgb.XGBClassifier | xgb.XGBRegressor, X_train: pd.DataFrame | np.ndarray, 
@@ -97,7 +99,6 @@ def fechner_corr(x, y):
 
     Examples
     --------
-    >>> from ITMO_FS.filters.univariate import fechner_corr
     >>> import numpy as np
     >>> x = np.array([[3, 3, 3, 2, 2], [3, 3, 1, 2, 3], [1, 3, 5, 1, 1],
     ... [3, 1, 4, 3, 1], [3, 1, 2, 3, 1]])
@@ -148,6 +149,58 @@ def kendall_corr(x, y):
     return np.apply_along_axis(__kendall_corr, 0, x)
 
 
+def chi2_measure(x, y):
+    """Calculate the Chi-squared measure for each feature. Bigger values mean
+    more important features. This measure works best with discrete features due
+    to being based on statistics.
+
+    Parameters
+    ----------
+    x : array-like, shape (n_samples, n_features)
+        The training input samples.
+    y : array-like, shape (n_samples,)
+        The target values.
+
+    Returns
+    -------
+    array-like, shape (n_features,) : feature scores
+
+    See Also
+    --------
+    http://lkm.fri.uni-lj.si/xaigor/slo/clanki/ijcai95z.pdf
+
+    Example
+    -------
+    >>> from sklearn.preprocessing import KBinsDiscretizer
+    >>> import numpy as np
+    >>> x = np.array([[3, 3, 3, 2, 2], [3, 3, 1, 2, 3], [1, 3, 5, 1, 1],
+    ... [3, 1, 4, 3, 1], [3, 1, 2, 3, 1]])
+    >>> y = np.array([1, 3, 2, 1, 2])
+    >>> est = KBinsDiscretizer(n_bins=10, encode='ordinal')
+    >>> x = est.fit_transform(x)
+    >>> chi2_measure(x, y)
+    array([ 1.875     ,  0.83333333, 10.        ,  3.75      ,  6.66666667])
+    """
+    def __chi2(feature):
+        values, counts = np.unique(feature, return_counts=True)
+        values_map = {val: idx for idx, val in enumerate(values)}
+        splits = {cl: np.array([values_map[val] for val in feature[y == cl]]) 
+            for cl in classes}
+        e = np.vectorize(
+            lambda cl: prior_probs[cl] * counts,
+            signature='()->(1)')(classes)
+        n = np.vectorize(
+            lambda cl: np.bincount(splits[cl], minlength=values.shape[0]),
+            signature='()->(1)')(classes)
+        return np.sum(np.square(e - n) / e)
+
+    classes, counts = np.unique(y, return_counts=True)
+    prior_probs = {cl: counts[idx] / x.shape[0] for idx, cl
+        in enumerate(classes)}
+    
+    return np.apply_along_axis(__chi2, 0, x)
+
+
 def classification_filters(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, 
                            num_features: int, feature_names: Iterable[str], filter_name: str) -> pd.Series:
     """
@@ -171,7 +224,7 @@ def classification_filters(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Serie
     pd.Series
         A series containing the feature scores, sorted in descending order.
     """
-    filters = {"Fscore": f_classif, "mutual_info": mutual_info_classif, "chi2": chi2, 
+    filters = {"Fscore": f_classif, "mutual_info": mutual_info_classif, "chi2": chi2_measure, 
                "FechnerCorr": fechner_corr, "KendallCorr": kendall_corr}
     ufilter = SelectKBest(filters[filter_name], k=num_features)
     ufilter.fit(X_train, Y_train)
@@ -279,11 +332,11 @@ def rfe_linear(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarr
     list
         A list of the selected feature names.
     """
-    linear_model = ridgemodel(random_state=seed, alpha=4)   # type: ignore
+    linear_model = ridgemodel(random_state=seed, alpha=4)
     rfe = RFE(estimator=linear_model, n_features_to_select=num_features, step=step)
     rfe.fit(X_train, Y_train)
-    features = rfe.get_feature_names_out(feature_names) # type: ignore
-    return features # type: ignore
+    features = rfe.get_feature_names_out(feature_names)
+    return features
  
 
 def regression_filters(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray, feature_nums: int, 
@@ -313,6 +366,6 @@ def regression_filters(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | 
     sel = SelectKBest(reg_filters[reg_func], k=feature_nums)
     sel.fit(X_train, Y_train)
     scores = sel.scores_
-    scores = {x: v for x, v in zip(feature_names, scores)} # type: ignore
+    scores = dict(zip(feature_names, scores)) 
     scores = pd.Series(dict(sorted(scores.items(), key=lambda items: items[1], reverse=True)))
     return scores

@@ -3,14 +3,8 @@ import pandas as pd
 from sklearn.feature_selection import VarianceThreshold
 from ..utils import Log, scale, write_excel
 from pathlib import Path
-# Multiprocess instead of Multiprocessing solves the pickle problem in Windows (might be different in linux)
-# but it has its own errors. Use multiprocessing.get_context('fork') seems to solve the problem but only available
-# in Unix. Altough now it seems that with fork the programme can hang indefinitely so use spaw instead
-# https://medium.com/devopss-hole/python-multiprocessing-pickle-issue-e2d35ccf96a9
-import xgboost as xgb
 from sklearn.linear_model import RidgeClassifier, Ridge
 import numpy as np
-import random
 from multiprocessing import get_context  # https://pythonspeed.com/articles/python-multiprocessing/
 import time
 from sklearn.model_selection import train_test_split
@@ -20,6 +14,7 @@ from . import methods
 from sklearn.ensemble import RandomForestClassifier as rfc
 from sklearn.ensemble import RandomForestRegressor as rfr
 from ..custom_errors import DifferentLabelFeatureIndexError
+import xgboost as xgb
 
 
 def arg_parse():
@@ -116,7 +111,6 @@ class DataReader:
     label: pd.Series | pd.DataFrame | str | Iterable[int|float]
     features: pd.DataFrame | str | list | np.ndarray
     variance_thres: float | None = 0
-    scaler: str = "robust"
     checked_label_path: str = "labels_corrected.csv"
     sheet: str | int | None = None
 
@@ -257,10 +251,8 @@ class FeatureSelection:
         if not str(self.excel_file).endswith(".xlsx"):
             self.excel_file = self.excel_file.with_suffix(".xlsx")
         self.excel_file.parent.mkdir(parents=True, exist_ok=True)
-        if seed:
-            self.seed = seed
-        else:
-            self.seed = int(time.time())
+        if seed: self.seed = seed
+        else: self.seed = int(time.time())
         # log parameters
         self.log.info("Starting feature selection and using the following parameters")    
         self.log.info(f"seed: {self.seed}")
@@ -454,7 +446,7 @@ class FeatureClassification:
         self.seed = seed
         self.scaler = scaler
 
-        filter_names = ("mutual_info", "Fscore", "chi2", "KendallCorr", "FechnerCorr")
+        filter_names = ("mutual_info", "Fscore", "chi2", "FechnerCorr", "KendallCorr")
         self._filter_args = {"filter_names": filter_names, "xgboost": xgb.XGBClassifier, 
                              "RFE": RidgeClassifier, "random_forest": rfc,
                              "regression_filters":()}
@@ -525,12 +517,12 @@ class FeatureClassification:
         """
         
         X_train, X_test, Y_train, Y_test = train_test_split(features, label, test_size=self.test_size, 
-                                                            random_state=self.seed, stratify=features.label)
+                                                            random_state=self.seed, stratify=label)
         
         transformed_x, scaler_dict = scale(self.scaler, X_train)
         feature_dict = selector.generate_features(self.filter_args, transformed_x, Y_train, 
-                                            feature_range, features.features, rfe_step, plot,
-                                            plot_num_features)
+                                                  feature_range, features, rfe_step, plot,
+                                                  plot_num_features)
         selector._write_dict(feature_dict)
         return feature_dict
 
@@ -569,7 +561,7 @@ class FeatureRegression:
         self.seed = seed
         self.scaler = scaler
         regression_filters = ("mutual_info", "Fscore", "PCC")
-        self._filter_args = {"xgboost": xgb.XGBRegressor, 
+        self._filter_args = {"filter_names": (), "xgboost": xgb.XGBRegressor, 
                              "RFE": Ridge, "random_forest": rfr,
                              "regression_filters": regression_filters}
         
@@ -622,7 +614,8 @@ class FeatureRegression:
                                                             random_state=self.seed)
         transformed_x, scaler_dict = scale(self.scaler, X_train)
         feature_dict = selector.generate_features(self.filter_args, transformed_x, Y_train, 
-                                            feature_range, features.features, rfe_step, plot, plot_num_features)
+                                                  feature_range, features, rfe_step, 
+                                                  plot, plot_num_features)
         selector._write_dict(feature_dict)
 
    
