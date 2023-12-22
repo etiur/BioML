@@ -49,10 +49,10 @@ def scale(scaler: str, X_train: pd.DataFrame,
     #transformed = pd.DataFrame(transformed, index=X_train.index, columns=X_train.columns)
     if X_test is None:
         return transformed, scaler_dict
-    else:
-        test_x = scaler_dict[scaler].transform(X_test)
-        #test_x = pd.DataFrame(test_x, index=X_test.index, columns=X_test.columns)
-        return transformed, scaler_dict, test_x
+    
+    test_x = scaler_dict[scaler].transform(X_test)
+    #test_x = pd.DataFrame(test_x, index=X_test.index, columns=X_test.columns)
+    return transformed, scaler_dict, test_x
 
 
 def write_excel(file: str | pd.io.excel._openpyxl.OpenpyxlWriter, 
