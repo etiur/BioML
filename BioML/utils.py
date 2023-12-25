@@ -417,22 +417,26 @@ class MmseqsClustering:
         run_program_subprocess(command, "create index")
     
     @classmethod
-    def cluster(cls, database, cluster_tsv="cluster.tsv", 
-                cluster_at_sequence_identity=0.3, sensitivity=6.5):
+    def cluster(cls, database, cluster_tsv="cluster.tsv", cluster_at_sequence_identity=0.3, 
+                sensitivity=6.5, **cluster_kwargs):
         database = Path(database)
         intermediate_output = Path("cluster_output/clusterdb")
         intermediate_output.parent.mkdir(exist_ok=True, parents=True)
         output_cluster = Path(cluster_tsv)
         output_cluster.parent.mkdir(exist_ok=True, parents=True)
         cluster = f"mmseqs cluster {database} {intermediate_output} tmp --min-seq-id {cluster_at_sequence_identity} --cluster-reassign --alignment-mode 3 -s {sensitivity}"
+        for key, value in cluster_kwargs.items():
+            cluster += f" --{key} {value}"
         createtsv = f"mmseqs createtsv {database} {database} {intermediate_output} {output_cluster}"
         run_program_subprocess(cluster, "cluster")
         run_program_subprocess(createtsv, "create tsv")
     
     @classmethod
     def generate_pssm(cls, query_db, search_db, evalue=0.01, num_iterations=3, pssm_filename="result.pssm", max_seqs=600, 
-                      sensitivity=6.5):
+                      sensitivity=6.5, **search_kwags):
         search = f"mmseqs search {query_db} {search_db} result.out tmp -e {evalue} --num-iterations {num_iterations} --max-seqs {max_seqs} -s {sensitivity} -a"
+        for key, value in search_kwags.items():
+            search += f" --{key} {value}"
         run_program_subprocess(search, "search")
         profile = f"mmseqs result2profile {query_db} {search_db} result.out result.profile"
         run_program_subprocess(profile, "generate_profile")
@@ -452,16 +456,16 @@ class MmseqsClustering:
         return cluster_info
     
     @classmethod
-    def easy_cluster(cls, input_file, cluster_tsv, cluster_at_sequence_identity=0.3, sensitivity=6.5):
+    def easy_cluster(cls, input_file, cluster_tsv, cluster_at_sequence_identity=0.3, sensitivity=6.5, **cluster_kwargs):
         query_db = Path(input_file).with_suffix("")/"querydb"
         if not query_db.exists():
             cls.create_database(input_file, query_db)
-        cls.cluster(query_db, cluster_tsv, cluster_at_sequence_identity, sensitivity)
+        cls.cluster(query_db, cluster_tsv, cluster_at_sequence_identity, sensitivity, **cluster_kwargs)
         return cls.read_cluster_info(cluster_tsv)
 
     @classmethod
-    def easy_generate_pssm(cls, input_file, database_file, evalue=0.01, num_iterations=3, 
-                           pssm_filename="result.pssm", generate_searchdb=False):
+    def easy_generate_pssm(cls, input_file, database_file, evalue=0.01, num_iterations=3, sensitivity=6.5,
+                           pssm_filename="result.pssm", generate_searchdb=False, **search_kwags):
         
         query_db = Path(input_file).with_suffix("")/"querydb"
         search_db = Path(database_file)
@@ -473,7 +477,8 @@ class MmseqsClustering:
             cls.create_database(database_file, search_db)
 
         # generate the pssm files
-        cls.generate_pssm(query_db, search_db, evalue, num_iterations, pssm_filename)
+        cls.generate_pssm(query_db, search_db, evalue, num_iterations, pssm_filename, 
+                          sensitivity, **search_kwags)
         return pssm_filename
     
     @classmethod

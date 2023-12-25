@@ -10,7 +10,7 @@ from Bio import SeqIO
 from Bio.SeqIO import FastaIO
 from subprocess import call
 import shlex
-from ..utils import rewrite_possum
+from ..utils import rewrite_possum, MmseqsClustering
 
 
 def arg_parse():
@@ -30,10 +30,13 @@ def arg_parse():
                                                                                          "in PSIBlast")
     parser.add_argument("-Po", "--possum_dir", required=False, help="A path to the possum programme",
                         default="POSSUM_Toolkit/")
+    parser.add_argument("-m", "--use_mmseqs", action="store_false", help="Use mmseqs to cluster the sequences")
+    parser.add_argument("-e", "--evalue", required=False, default=0.01, type=float, help="The evalue for the mmseqs")
+    parser.add_argument("-s", "--sensitivity", required=False, default=6.5, type=float, help="The sensitivity for the mmseqs")
     args = parser.parse_args()
 
     return [args.fasta_dir, args.pssm_dir, args.dbinp, args.dbout, args.num_thread, args.number,
-            args.fasta_file, args.iterations, args.possum_dir]
+            args.fasta_file, args.iterations, args.possum_dir, args.use_mmseqs, args.evalue, args.sensitivity]
 
 
 class ExtractPssm:
@@ -197,7 +200,7 @@ class ExtractPssm:
                 with open(self.fasta_file.with_stem("filtered_by_pssm"), "w") as out:
                     fasta_out = FastaIO.FastaWriter(out, wrap=None)
                     fasta_out.write_file(record_list)
-    
+
 
 def generate_pssm(fasta: str | Path, num_threads: int=100, fasta_dir: str | Path="fasta_files", pssm_dir: str | Path="pssm", 
                   dbinp: str | Path | None=None, dbout: str | Path="uniref50", num: int | str="*",
@@ -228,7 +231,7 @@ def generate_pssm(fasta: str | Path, num_threads: int=100, fasta_dir: str | Path
     Path(pssm_dir).mkdir(parents=True, exist_ok=True)
 
     pssm = ExtractPssm(fasta, num_threads, fasta_dir, pssm_dir, dbinp, dbout, iterations, possum_dir)
-    # generate teh database if not present
+    # generate the database if not present
     pssm._clean_fasta()
     pssm._separate_single()
 
@@ -237,12 +240,26 @@ def generate_pssm(fasta: str | Path, num_threads: int=100, fasta_dir: str | Path
 
     pssm.run_generate(num)
     pssm._remove_sequences_from_input()
+    
+
+def generate_with_mmseqs(fasta: str | Path, dbinp: str | Path | None=None, dbout: str | Path="uniref50", evalue: float =0.01, num_iterations: int=3, 
+                         sensitivity: float = 6.5, num_threads: int=100,  pssm_file: str = "result.pssm", pssm_dir: str | Path="pssm"):
+    generate_searchdb = False
+    if dbinp is None:
+        generate_searchdb = True
+    MmseqsClustering.easy_generate_pssm(fasta, dbout, evalue, num_iterations, sensitivity, pssm_file, 
+                                        generate_searchdb, threads=num_threads)
+    MmseqsClustering.split_pssm(pssm_file, pssm_dir)
 
 
 def main():
-    fasta_dir, pssm_dir, dbinp, dbout, num_thread, num, fasta_file, iterations, possum_dir = arg_parse()
+    fasta_dir, pssm_dir, dbinp, dbout, num_thread, num, fasta_file, iterations, possum_dir, \
+    use_mmseqs, evalue, sensitivity = arg_parse()
     
-    generate_pssm(num_thread, fasta_dir, pssm_dir, dbinp, dbout, num, fasta_file, iterations, possum_dir)
+    if use_mmseqs:
+        generate_with_mmseqs(fasta_file, dbinp, dbout, evalue, iterations, sensitivity, num_thread, pssm_dir=pssm_dir)
+    else:
+        generate_pssm(num_thread, fasta_dir, pssm_dir, dbinp, dbout, num, fasta_file, iterations, possum_dir)
 
 
 if __name__ == "__main__":
