@@ -85,7 +85,7 @@ class DataParser:
 
         Raises
         ------
-        NotSupportedDataError
+        ValueError
             If the input data type is not supported.
         """
         # concatenate features and labels
@@ -125,7 +125,7 @@ class DataParser:
 
         Raises
         ------
-        NotSupportedDataError
+        ValueError
             If the input data type is not supported.
         """
         match label:
@@ -166,7 +166,7 @@ class DataParser:
             The data with outliers removed.
         """
         #remove outliers
-        training_features.loc[[x for x in training_features.index if x not in outliers]]
+        training_features = training_features.loc[[x for x in training_features.index if x not in outliers]]
 
         return training_features
     
@@ -792,7 +792,7 @@ class Trainer:
 
         Examples
         --------
-        >>> results = {'model1': [1, 2, 3], 'model2': [4, 5, 6], 'model3': [7, 8, 9]}
+        >>> results = {'model1': DataFrame[1, 2, 3], 'model2': DataFrame[4, 5, 6], 'model3': DataFrame[7, 8, 9]}
         >>> returned_models = {'model1': 'Model A', 'model2': 'Model B', 'model3': 'Model C'}
         >>> def scoring_function(x):
         ...     return sum(x)
@@ -816,14 +816,14 @@ class Trainer:
 
         return pd.concat(sorted_results), sorted_models
     
-    def train(self, features: DataParser, test_size: float=0.2, drop: Iterable[str]=(), 
+    def train(self, features: pd.DataFrame | np.ndarray, test_size: float=0.2, drop: Iterable[str]=(), 
               selected_models: str | Iterable[str] =(), **kwargs: Any) -> tuple[dict, dict]:
         """
         Train the models on the specified feature data and return the results and models.
 
         Parameters
         ----------
-        features : DataParser
+        features : pd.DataFrame or np.ndarray
             The training feature data.
         test_size : float, 
             The proportion of the data to use as a test set. Defaults to 0.2.
@@ -840,7 +840,7 @@ class Trainer:
             A tuple containing the results and models.
         """
         # To access the transformed data
-        self.experiment.setup_training(features.features, self.num_splits, test_size, **kwargs) # type: ignore
+        self.experiment.setup_training(features, self.num_splits, test_size, **kwargs) # type: ignore
         if drop:
             self.experiment.final_models = [x for x in self.experiment.final_models if x not in drop]   
         if selected_models:
@@ -849,14 +849,14 @@ class Trainer:
         
         return results, returned_models
     
-    def analyse_models(self, features: DataParser, scoring_fn: Callable, test_size: float=0.2,
+    def analyse_models(self, features: pd.DataFrame | np.ndarray, scoring_fn: Callable, test_size: float=0.2,
                        drop: Iterable[str] | None=None, selected: Iterable[str] | None=None, **kwargs: Any) -> tuple[pd.DataFrame, dict, pd.Series]:
         """
         Analyze the trained models and rank them based on the specified scoring function.
 
         Parameters
         ----------
-        features : DataParser
+        features : pd.DataFrame or np.ndarray
             The training feature data.
         scoring_fn : Callable
             The scoring function to use for evaluating the models.
