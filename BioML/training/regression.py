@@ -133,7 +133,7 @@ class Regressor:
         
             return r2
     
-    def run_training(self, trainer: Trainer, feature: DataParser, plot: Iterable[str]=("residuals", "error", "learning"),
+    def run_training(self, trainer: Trainer, feature: pd.DataFrame, plot: Iterable[str]=("residuals", "error", "learning"),
                      **kwargs: Any)-> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
         """
         A function that splits the data into training and test sets and then trains the models
@@ -174,17 +174,23 @@ def main():
     if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
-    # instantiate the classes
+    
+    # instantiate all the classes
+    # this is only used to read the data
     feature = DataParser(excel, label,  outliers=outliers, sheets=sheet)
+    # These are the classes used for regression
     experiment = PycaretInterface("regression", feature.label, seed, scaler=scaler, budget_time=trial_time, # type: ignore
                                   best_model=best_model, output_path=training_output, optimize=optimize) 
 
     ranking_dict = dict(difference_weight=difference_weight)
-    training = Trainer(experiment, num_split, num_iter)
-    regressor = Regressor(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize)
+    # It uses the PycaretInterface' models to perform the training but you could use other models as long as it implements the same methods
+    training = Trainer(experiment, num_split, num_iter) # this can be used for classification or regression -> so it is generic
+    
+    # this class uses the trainer for classification purposes
+    regressor = Regressor(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize) 
     
     # train the models and retunr the prediction results
-    results, models_dict = generate_training_results(regressor, training, feature, plot, tune)
+    results, models_dict = generate_training_results(regressor, training, feature.features, plot, tune)
     partial_sort = partial(sort_regression_prediction, optimize=optimize) 
     test_set_predictions = generate_test_prediction(models_dict, training, partial_sort)
     evaluate_all_models(experiment.evaluate_model, models_dict, training_output)

@@ -132,7 +132,7 @@ class Classifier:
         
         return mcc + self.report_weight * (self.pre_weight * prec + self.rec_weight * recall)
     
-    def run_training(self, trainer: Trainer, feature: DataParser, plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report"),
+    def run_training(self, trainer: Trainer, feature: pd.DataFrame, plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report"),
                      **kwargs: Any) -> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
         """
         A function that splits the data into training and test sets and then trains the models
@@ -182,20 +182,23 @@ def main():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
     # instantiate all the classes
+    # this is only used to read the data
     feature = DataParser(excel, label, outliers=outliers, sheets=sheet)
+    # These are the classes used for classification
     experiment = PycaretInterface("classification", feature.label, seed, scaler=scaler, budget_time=budget_time, # type: ignore
                                   best_model=best_model, output_path=training_output, optimize=optimize)
-    training = Trainer(experiment, num_split, num_iter)
+    # It uses the PycaretInterface' models to perform the training but you could use other models as long as it implements the same methods
+    training = Trainer(experiment, num_split, num_iter) # this can be used for classification or regression -> so it is generic
     ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight,
                         difference_weight=difference_weight, report_weight=report_weight)
-    
+    # this class uses the trainer for classification purposes
     classifier = Classifier(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize)
 
     # Train using the classes
     partial_sort = partial(sort_classification_prediction, optimize=optimize, prec_weight=precision_weight, 
-                                   recall_weight=recall_weight, report_weight=report_weight)   
+                           recall_weight=recall_weight, report_weight=report_weight)   
      
-    results, models_dict = generate_training_results(classifier, training, feature, plot, tune)
+    results, models_dict = generate_training_results(classifier, training, feature.features, plot, tune)
     test_set_predictions = generate_test_prediction(models_dict, training, partial_sort)
     evaluate_all_models(experiment.evaluate_model, models_dict, training_output)
 
@@ -203,7 +206,7 @@ def main():
     for tune_status, result_dict in results.items():
         for key, value in result_dict.items():
             write_results(f"{training_output}/{tune_status}", *value, sheet_name=key)
-        write_results(f"{training_output}/{tune_status}", test_set_predictions[tune_status] , sheet_name=f"test_results")
+        write_results(f"{training_output}/{tune_status}", test_set_predictions[tune_status] , sheet_name="test_results")
 
 
 if __name__ == "__main__":

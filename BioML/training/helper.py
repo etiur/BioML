@@ -38,7 +38,7 @@ class FileParser:
                 raise ValueError(f"Unsupported file extension: {extension}")
 
 
-def generate_training_results(model: Modelor, training: base.Trainer, feature: base.DataParser, plot: tuple, 
+def generate_training_results(model: Modelor, training: base.Trainer, feature: pd.DataFrame, plot: tuple, 
                               tune: bool=False, **kwargs: Any) -> tuple[dict[str, dict], dict[str, dict]]:
     """
     Generate training results for a given model, training object, and feature data.
@@ -49,7 +49,7 @@ def generate_training_results(model: Modelor, training: base.Trainer, feature: b
         The model to use for training.
     training : Trainer
         The training object to use.
-    feature : DataParser
+    feature : pd.DataFrame
         The feature data to use.
     plot : tuple
         A tuple containing the plot title and axis labels.
@@ -76,7 +76,7 @@ def generate_training_results(model: Modelor, training: base.Trainer, feature: b
     stacked_results, stacked_models, stacked_params = training.stack_models(sorted_models)
     results["not_tuned"]["stacked"] = stacked_results, stacked_params
     majority_results, majority_models = training.create_majority_model(sorted_models)
-    results["not_tuned"]["majority"] = majority_results, 
+    results["not_tuned"]["majority"] = majority_results 
     #satev the models
     models_dict["not_tuned"]["holdout"] = sorted_models
     models_dict["not_tuned"]["stacked"] = stacked_models
