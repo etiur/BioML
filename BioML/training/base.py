@@ -199,12 +199,10 @@ class PycaretInterface:
     ----------
     objective : str
         The objective of the machine learning model, either "classification" or "regression".
-    label_name : str
-        The name of the target variable in the dataset.
-    optimize : str, optional
-        The metric to optimize for. Defaults to "MCC".
     seed : None or int, optional
         The random seed to use for reproducibility. Defaults to None.
+    optimize : str, optional
+        The metric to optimize for. Defaults to "MCC".
     scaler : str
         The scaler to use.
     budget_time : None or int, optional
@@ -255,7 +253,6 @@ class PycaretInterface:
 
     """
     objective: str
-    label_name: str
     seed: None | int = None
     optimize: str = "MCC"
     #verbose: bool = False
@@ -288,7 +285,7 @@ class PycaretInterface:
         self.experiment_name = self.objective.capitalize() if self.experiment_name is None else self.experiment_name
         self.original_plots = self._plots.copy()
         self.original_models = self._final_models.copy()
-        if not self.seed:
+        if not self.seed: 
             self.seed = int(time.time())
         if isinstance(self.budget_time, (int, float)):
             if self.budget_time < 0:
@@ -302,7 +299,6 @@ class PycaretInterface:
         self.log.info("PycaretInterface parameters")
         self.log.info(f"Seed: {self.seed}")
         self.log.info(f"Budget time: {self.budget_time}")
-        self.log.info(f"Label name: {self.label_name}")
         self.log.info(f"The number of models to select: {self.best_model}")
         self.log.info(f"Output path: {self.output_path}")
     
@@ -392,14 +388,14 @@ class PycaretInterface:
     def final_models(self, value: str |Iterable[str]) -> None:
         self._final_models = self._check_value(value, self.original_models, "models")
 
-    def setup_training(self, features: pd.DataFrame, fold: int=5, test_size:float=0.2,
+    def setup_training(self, feature: pd.DataFrame, label_name: str, fold: int=5, test_size:float=0.2,
                        **kwargs: Any):
         """
         Call pycaret set_up for the training.
 
         Parameters
         ----------
-        features: pd.DataFrame, it must contain the labels
+        feature : pd.DataFrame
             The training data.
         label_name: str
             The name of the target column.
@@ -414,7 +410,7 @@ class PycaretInterface:
         self
             PycaretInterface object.
         """
-        self.pycaret.setup(data=features, target=self.label_name, normalize=True, preprocess=True, 
+        self.pycaret.setup(data=feature,target=label_name, normalize=True, preprocess=True, 
                            log_experiment=True, experiment_name=self.experiment_name, normalize_method=self.scaler,
                            session_id = self.seed, fold_shuffle=True, fold=fold, verbose=False, train_size=1-test_size, 
                            **kwargs)
@@ -453,7 +449,7 @@ class PycaretInterface:
             model =self.pycaret.create_model(m, return_train_score=True, verbose=False)
             model_results = self.pycaret.pull(pop=True)
             model_results = model_results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
-            if not type(m) == str:
+            if not isinstance(m, str):
                 m = f"custom_model_{count}"
                 count += 1
             returned_models[m] = model
@@ -816,8 +812,8 @@ class Trainer:
 
         return pd.concat(sorted_results), sorted_models
     
-    def train(self, features: pd.DataFrame | np.ndarray, test_size: float=0.2, drop: Iterable[str]=(), 
-              selected_models: str | Iterable[str] =(), **kwargs: Any) -> tuple[dict, dict]:
+    def train(self, features: pd.DataFrame, label_name:str,  test_size: float=0.2, 
+              drop: Iterable[str]=(), selected_models: str | Iterable[str] =(), **kwargs: Any) -> tuple[dict, dict]:
         """
         Train the models on the specified feature data and return the results and models.
 
@@ -825,6 +821,8 @@ class Trainer:
         ----------
         features : pd.DataFrame or np.ndarray
             The training feature data.
+        label_name : str
+            The name of the label column.
         test_size : float, 
             The proportion of the data to use as a test set. Defaults to 0.2.
         drop : tuple[str, ...] or None, optional
@@ -840,7 +838,7 @@ class Trainer:
             A tuple containing the results and models.
         """
         # To access the transformed data
-        self.experiment.setup_training(features, self.num_splits, test_size, **kwargs) # type: ignore
+        self.experiment.setup_training(features, label_name, self.num_splits, test_size, **kwargs) # type: ignore
         if drop:
             self.experiment.final_models = [x for x in self.experiment.final_models if x not in drop]   
         if selected_models:
@@ -849,8 +847,10 @@ class Trainer:
         
         return results, returned_models
     
-    def analyse_models(self, features: pd.DataFrame | np.ndarray, scoring_fn: Callable, test_size: float=0.2,
-                       drop: Iterable[str] | None=None, selected: Iterable[str] | None=None, **kwargs: Any) -> tuple[pd.DataFrame, dict, pd.Series]:
+    def analyse_models(self, features: pd.DataFrame | np.ndarray, label_name:str, 
+                       scoring_fn: Callable, test_size: float=0.2,
+                       drop: Iterable[str] | None=None, selected: Iterable[str] | None=None, 
+                       **kwargs: Any) -> tuple[pd.DataFrame, dict, pd.Series]:
         """
         Analyze the trained models and rank them based on the specified scoring function.
 
@@ -858,6 +858,8 @@ class Trainer:
         ----------
         features : pd.DataFrame or np.ndarray
             The training feature data.
+        label_name : str
+            The name of the label column.
         scoring_fn : Callable
             The scoring function to use for evaluating the models.
         test_size : float, optional
@@ -874,7 +876,7 @@ class Trainer:
         tuple[pd.DataFrame, dict, pd.Series]
             A tuple containing the sorted results and sorted models.
         """
-        results, returned_models = self.train(features, test_size, drop, selected, **kwargs) # type: ignore
+        results, returned_models = self.train(features, label_name, test_size, drop, selected, **kwargs) # type: ignore
         sorted_results, sorted_models = self.rank_results(results, returned_models, scoring_fn)
         top_params = self.experiment.get_best_params_multiple(sorted_models)
 

@@ -1,10 +1,10 @@
 from sklearn.utils import shuffle
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import cached_property
 from typing import Protocol, Generator
-from sklearn.model_selection import GroupKFold, KFold, StratifiedKFold
+from sklearn.model_selection import GroupKFold
 import operator
 
 
@@ -15,7 +15,7 @@ def match_type(data, train_index, test_index):
         case np.ndarray() as val:
             return val[train_index], val[test_index]
         case _:
-            raise TypeError("X must be a pandas DataFrame or a numpy array")
+            raise TypeError("data must be a pandas DataFrame or a numpy array")
 
 
 class CustomSplitter(Protocol):
@@ -205,9 +205,5 @@ class MutationSpliter:
             y_train, y_test = match_type(y, train_indices, test_indices)
             return X_train, X_test, y_train, y_test
         return X_train, X_test
-
     
-    def split(self, X: pd.DataFrame, y: pd.Series | np.ndarray | None=None, 
-              groups=None) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
-        mutations, train_data = self.get_mutations(X)
-        
+    

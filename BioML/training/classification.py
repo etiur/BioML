@@ -82,11 +82,13 @@ class Classifier:
         # change the ranking parameters
         ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
                             difference_weight=1.2)
-        if type(ranking_params) == dict:
+        
+        if isinstance(ranking_params, dict):
             for key, value in ranking_params.items():
                 if key not in ranking_dict:
                     raise KeyError(f"The key {key} is not found in the ranking params use theses keys: {', '.join(ranking_dict.keys())}")
                 ranking_dict[key] = value
+
         self.test_size = test_size
         self.drop = drop
         self.pre_weight = ranking_dict["precision_weight"]
@@ -132,7 +134,8 @@ class Classifier:
         
         return mcc + self.report_weight * (self.pre_weight * prec + self.rec_weight * recall)
     
-    def run_training(self, trainer: Trainer, feature: pd.DataFrame, plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report"),
+    def run_training(self, trainer: Trainer, feature: pd.DataFrame, label_name: str, 
+                     plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report"),
                      **kwargs: Any) -> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
         """
         A function that splits the data into training and test sets and then trains the models
@@ -140,8 +143,10 @@ class Classifier:
 
         Parameters
         ----------
-        feature : DataParser
-            A class containing the training samples and the features
+        feature : pd.DataFrame
+            The features of the training set
+        label_name : str
+            The column name of the label in the feature DataFrame
         plot : tuple[str, ...], optional
             Plot the plots relevant to the models, by default 1, 4 and 5
                 1. learning: learning curve
@@ -161,7 +166,7 @@ class Classifier:
         pd.DataFrame
          
         """
-        sorted_results, sorted_models, top_params = trainer.analyse_models(feature, self._calculate_score_dataframe, self.test_size,
+        sorted_results, sorted_models, top_params = trainer.analyse_models(feature, label_name, self._calculate_score_dataframe, self.test_size,
                                                                            self.drop, self.selected, **kwargs) # type: ignore
         if plot:
             trainer.experiment.plots = plot
@@ -185,7 +190,7 @@ def main():
     # this is only used to read the data
     feature = DataParser(excel, label, outliers=outliers, sheets=sheet)
     # These are the classes used for classification
-    experiment = PycaretInterface("classification", feature.label, seed, scaler=scaler, budget_time=budget_time, # type: ignore
+    experiment = PycaretInterface("classification", seed, scaler=scaler, budget_time=budget_time, # type: ignore
                                   best_model=best_model, output_path=training_output, optimize=optimize)
     # It uses the PycaretInterface' models to perform the training but you could use other models as long as it implements the same methods
     training = Trainer(experiment, num_split, num_iter) # this can be used for classification or regression -> so it is generic
@@ -198,7 +203,8 @@ def main():
     partial_sort = partial(sort_classification_prediction, optimize=optimize, prec_weight=precision_weight, 
                            recall_weight=recall_weight, report_weight=report_weight)   
      
-    results, models_dict = generate_training_results(classifier, training, feature.features, plot, tune)
+    results, models_dict = generate_training_results(classifier, training, feature.features, feature.label, 
+                                                     plot, tune)
     test_set_predictions = generate_test_prediction(models_dict, training, partial_sort)
     evaluate_all_models(experiment.evaluate_model, models_dict, training_output)
 

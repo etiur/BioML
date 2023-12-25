@@ -133,7 +133,7 @@ class Regressor:
         
             return r2
     
-    def run_training(self, trainer: Trainer, feature: pd.DataFrame, plot: Iterable[str]=("residuals", "error", "learning"),
+    def run_training(self, trainer: Trainer, feature: pd.DataFrame, label_name: str, plot: Iterable[str]=("residuals", "error", "learning"),
                      **kwargs: Any)-> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
         """
         A function that splits the data into training and test sets and then trains the models
@@ -143,6 +143,8 @@ class Regressor:
         ----------
         feature : pd.DataFrame
             A dataframe containing the training samples and the features
+        label_name : str
+            The name of the column containing the labels in the feature dataframe
         plot : bool, optional
             Plot the plots relevant to the models, by default all of them
                 1. residuals: Plots the difference (predicted-actual value) vs predicted value for train and test
@@ -156,7 +158,7 @@ class Regressor:
             The sorted results, the sorted models and the top parameters
          
         """
-        sorted_results, sorted_models, top_params = trainer.analyse_models(feature, self._calculate_score_dataframe, self.test_size,
+        sorted_results, sorted_models, top_params = trainer.analyse_models(feature, label_name, self._calculate_score_dataframe, self.test_size,
                                                                            self.drop, self.selected, **kwargs) # type: ignore
         if plot:
             trainer.experiment.plots = plot
@@ -179,7 +181,7 @@ def main():
     # this is only used to read the data
     feature = DataParser(excel, label,  outliers=outliers, sheets=sheet)
     # These are the classes used for regression
-    experiment = PycaretInterface("regression", feature.label, seed, scaler=scaler, budget_time=trial_time, # type: ignore
+    experiment = PycaretInterface("regression", seed, scaler=scaler, budget_time=trial_time, # type: ignore
                                   best_model=best_model, output_path=training_output, optimize=optimize) 
 
     ranking_dict = dict(difference_weight=difference_weight)
@@ -190,7 +192,7 @@ def main():
     regressor = Regressor(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize) 
     
     # train the models and retunr the prediction results
-    results, models_dict = generate_training_results(regressor, training, feature.features, plot, tune)
+    results, models_dict = generate_training_results(regressor, training, feature.features, feature.label, plot, tune)
     partial_sort = partial(sort_regression_prediction, optimize=optimize) 
     test_set_predictions = generate_test_prediction(models_dict, training, partial_sort)
     evaluate_all_models(experiment.evaluate_model, models_dict, training_output)
