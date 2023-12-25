@@ -131,7 +131,7 @@ class ExtractPssm:
         """
         run the generate function
         """
-        self.fast_check(num: str |int)
+        self.fast_check(num)
         files = list(self.fasta_dir.glob(f"seq_{num}*.fsa"))
         files.sort(key=lambda x: int(x.stem.split("_")[1]))
         files = [x for x in files if not (self.pssm/f"{x.stem}.pssm").exists()]
