@@ -94,12 +94,18 @@ class ShuffleGroupKFold:
 
 @dataclass
 class ClusterSpliter:
-    cluster_info: dict[str | int, list[str|int]]
+    _cluster_info: dict[str | int, list[str|int]] | str
     num_splits: int = 5
     shuffle: bool = True
     random_state: int | None = None
 
-    @property
+    @cached_property
+    def cluster_info(self):
+        if isinstance(self._cluster_info, str):
+            return self.read_cluster_info(self._cluster_info)
+        return self._cluster_info
+
+    @cached_property
     def group_kfold(self):
         group = ShuffleGroupKFold(n_splits=self.num_splits, shuffle=self.shuffle, random_state=self.random_state)
         return group
@@ -111,6 +117,17 @@ class ClusterSpliter:
     @cached_property
     def cluster_group(self):
         return {self.group_index[x]: v for x, v in self.cluster_info.items()}
+    
+    def read_cluster_info(self, file_path):
+        cluster_info = {}
+        with open(file_path, "r") as f:
+            lines = [x.strip() for x in f.readlines()]
+        for x in lines:
+            X = x.split("\t")
+            if X[0] not in cluster_info:
+                cluster_info[X[0]] = []
+            cluster_info[X[0]].append(X[1])
+        return cluster_info
 
     def get_group_index(self, X: pd.DataFrame):
         group = []
@@ -177,10 +194,9 @@ class MutationSpliter:
     def get_mutations(self, X):
         
         match self.mutations:
-            case np.ndarray() | list() | tuple() as val:
-                mutations = val
+            case np.ndarray() | list() | tuple() as mutations:
                 train_data = X.copy()
-                if len(X) != len(self.mutations):
+                if len(X) != len(mutations):
                     raise ValueError("The number of samples in the data is not equal to the number of mutations")
                 return mutations, train_data
 
@@ -193,7 +209,7 @@ class MutationSpliter:
                 raise TypeError("mutations must be an array of number of mutations or a string if the mutations are in the columns")
         
     def train_test_split(self, X: pd.DataFrame, y: pd.Series | np.ndarray | None=None, 
-                         test_size:int | float = 0.2, groups=None):
+                         groups=None):
 
         mutations, train_data = self.get_mutations(X)
             

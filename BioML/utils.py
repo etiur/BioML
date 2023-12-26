@@ -442,18 +442,6 @@ class MmseqsClustering:
         run_program_subprocess(profile, "generate_profile")
         pssm = f"mmseqs profile2pssm result.profile {pssm_filename}"
         run_program_subprocess(pssm, "convert profile to pssm")
-
-    @classmethod
-    def read_cluster_info(cls, file_path):
-        cluster_info = {}
-        with open(file_path, "r") as f:
-            lines = [x.strip() for x in f.readlines()]
-        for x in lines:
-            X = x.split("\t")
-            if X[0] not in cluster_info:
-                cluster_info[X[0]] = []
-            cluster_info[X[0]].append(X[1])
-        return cluster_info
     
     @classmethod
     def easy_cluster(cls, input_file, cluster_tsv, cluster_at_sequence_identity=0.3, sensitivity=6.5, **cluster_kwargs):

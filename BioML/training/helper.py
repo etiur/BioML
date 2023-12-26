@@ -38,8 +38,9 @@ class FileParser:
                 raise ValueError(f"Unsupported file extension: {extension}")
 
 
-def generate_training_results(model: Modelor, training: base.Trainer, feature: pd.DataFrame, plot: tuple, 
-                              tune: bool=False, **kwargs: Any) -> tuple[dict[str, dict], dict[str, dict]]:
+def generate_training_results(model: Modelor, training: base.Trainer, feature: pd.DataFrame, 
+                              label_name: str, plot: tuple[str, ...], tune: bool=False, 
+                              **kwargs: Any) -> tuple[dict[str, dict], dict[str, dict]]:
     """
     Generate training results for a given model, training object, and feature data.
 
@@ -51,6 +52,8 @@ def generate_training_results(model: Modelor, training: base.Trainer, feature: p
         The training object to use.
     feature : pd.DataFrame
         The feature data to use.
+    label_name : str
+        The name of the label to use for training in the feature data.
     plot : tuple
         A tuple containing the plot title and axis labels.
     tune : bool, optional
@@ -63,7 +66,7 @@ def generate_training_results(model: Modelor, training: base.Trainer, feature: p
     tuple[dict, dict]
         A tuple of dictionary containing the training results and the models.
     """    
-    sorted_results, sorted_models, top_params = model.run_training(training, feature, plot, **kwargs)
+    sorted_results, sorted_models, top_params = model.run_training(training, feature, label_name, plot, **kwargs)
     if 'dummy' in sorted_results.index.unique(0)[:3]:
         warnings.warn(f"Dummy model is in the top {list(sorted_results.index.unique(0)).index('dummy')} models, turning off tuning")
         tune = False

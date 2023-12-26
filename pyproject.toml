@@ -16,6 +16,8 @@ dependencies = [
   "pycaret[analysis, models]",
   "openpyxl",
   "pyod",
+  "mlflow",
+  "optuna"
 ]
 
 authors = [
