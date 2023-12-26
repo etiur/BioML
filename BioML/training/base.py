@@ -410,7 +410,7 @@ class PycaretInterface:
         self
             PycaretInterface object.
         """
-        self.pycaret.setup(data=feature,target=label_name, normalize=True, preprocess=True, 
+        self.pycaret.setup(data=feature, target=label_name, normalize=True, preprocess=True, 
                            log_experiment=True, experiment_name=self.experiment_name, normalize_method=self.scaler,
                            session_id = self.seed, fold_shuffle=True, fold=fold, verbose=False, train_size=1-test_size, 
                            **kwargs)

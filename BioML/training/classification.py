@@ -7,7 +7,6 @@ from .helper import write_results, generate_training_results, evaluate_all_model
 from .helper import generate_test_prediction
 from functools import partial
 from .. import split_methods as split
-from sklearn.model_selection import train_test_split
 
 
 def arg_parse():
@@ -197,6 +196,9 @@ def main():
     if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
+
+    ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight,
+                        difference_weight=difference_weight, report_weight=report_weight)
     # instantiate all the classes
     # this is only used to read the data
     feature = DataParser(excel, label, outliers=outliers, sheets=sheet)
@@ -205,8 +207,7 @@ def main():
                                   best_model=best_model, output_path=training_output, optimize=optimize)
     # It uses the PycaretInterface' models to perform the training but you could use other models as long as it implements the same methods
     training = Trainer(experiment, num_split, num_iter) # this can be used for classification or regression -> so it is generic
-    ranking_dict = dict(precision_weight=precision_weight, recall_weight=recall_weight,
-                        difference_weight=difference_weight, report_weight=report_weight)
+
     # this class uses the trainer for classification purposes
     classifier = Classifier(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize)
 
@@ -214,13 +215,19 @@ def main():
     partial_sort = partial(sort_classification_prediction, optimize=optimize, prec_weight=precision_weight, 
                            recall_weight=recall_weight, report_weight=report_weight)   
     
-    spliting = {"random": "random", 
-                "cluster": split.ClusterSpliter(cluster, num_split, random_state=experiment.seed),
+    spliting = {"cluster": split.ClusterSpliter(cluster, num_split, random_state=experiment.seed),
                 "mutations": split.MutationSpliter(mutations, test_num_mutations, greater, 
                                                    num_splits=num_split, random_state=experiment.seed)}
-    X_train, X_test = spliting[split_strategy].train_test_split(feature.features)
-    results, models_dict = generate_training_results(classifier, training, X_train, feature.label, 
-                                                     plot, tune, test_data=X_test, fold_strategy=spliting[split_strategy])
+    # split the data based on the strategy
+    if split_strategy != "random":
+        X_train, X_test = spliting[split_strategy].train_test_split(feature.features)
+
+        results, models_dict = generate_training_results(classifier, training, X_train, feature.label,
+                                                         plot, tune, test_data=X_test, fold_strategy=spliting[split_strategy])
+    else:
+        results, models_dict = generate_training_results(classifier, training, feature.features, feature.label, 
+                                                         plot, tune)
+        
     test_set_predictions = generate_test_prediction(models_dict, training, partial_sort)
     evaluate_all_models(experiment.evaluate_model, models_dict, training_output)
 

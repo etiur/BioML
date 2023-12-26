@@ -4,8 +4,9 @@ import pandas as pd
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Protocol, Generator
-from sklearn.model_selection import GroupKFold
+from sklearn.model_selection import GroupKFold, KFold, StratifiedKFold, train_test_split
 import operator
+from functools import partial
 
 
 def match_type(data, train_index, test_index):
@@ -186,7 +187,7 @@ class MutationSpliter:
         return test_indices
     
     def get_train_indices(self, mutations, test_indices):
-        train_indices = [x for x in range(mutations) if x not in test_indices]
+        train_indices = [num for num, x in enumerate(mutations) if num not in test_indices]
         if self.shuffle:
             train_indices = shuffle(train_indices, random_state=self.random_state)
         return train_indices
@@ -222,4 +223,4 @@ class MutationSpliter:
             return X_train, X_test, y_train, y_test
         return X_train, X_test
     
-    
+
