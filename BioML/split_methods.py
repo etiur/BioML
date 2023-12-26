@@ -88,7 +88,7 @@ class ShuffleGroupKFold:
                 return X_train, X_test, y_train, y_test
             return X_train, X_test
     
-    def get_n_splits(self, X: pd.DataFrame | np.ndarray, y: pd.Series | np.ndarray | None=None, 
+    def get_n_splits(self, X: pd.DataFrame | np.ndarray | None= None, y: pd.Series | np.ndarray | None=None, 
                      groups=None) -> int:
         return self.n_splits
 
@@ -99,6 +99,7 @@ class ClusterSpliter:
     num_splits: int = 5
     shuffle: bool = True
     random_state: int | None = None
+    test_size:int | float = 0.2
 
     @cached_property
     def cluster_info(self):
@@ -141,9 +142,10 @@ class ClusterSpliter:
         return group
 
     def train_test_split(self, X: pd.DataFrame, y: pd.Series | np.ndarray | None=None, 
-                         test_size:int | float = 0.2, groups=None):
+                         groups=None):
         
-        return self.group_kfold.train_test_split(X, y, test_size=test_size, groups=self.get_group_index(X))
+        return self.group_kfold.train_test_split(X, y, test_size=self.test_size, 
+                                                 groups=self.get_group_index(X))
 
 
     def split(self, X: pd.DataFrame, y: pd.Series | np.ndarray | None=None, 
@@ -153,7 +155,7 @@ class ClusterSpliter:
         for train_index, test_index in self.group_kfold.split(X, y, groups=group):
             yield train_index, test_index
     
-    def get_n_splits(self, X: pd.DataFrame | np.ndarray, y: pd.Series | np.ndarray | None=None, 
+    def get_n_splits(self, X: pd.DataFrame | np.ndarray | None= None, y: pd.Series | np.ndarray | None=None, 
                      groups=None) -> int:
         return self.num_splits
 

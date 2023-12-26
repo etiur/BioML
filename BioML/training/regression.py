@@ -1,11 +1,14 @@
+"""
+A module that performs regression analysis on a dataset.
+"""
 from pathlib import Path
 import argparse
-from .base import PycaretInterface, Trainer, DataParser
-import pandas as pd
-from .helper import generate_training_results, evaluate_all_models, write_results, sort_regression_prediction
-from .helper import generate_test_prediction
 from functools import partial
 from typing import Iterable, Any
+import pandas as pd
+from .base import PycaretInterface, Trainer, DataParser
+from .helper import generate_training_results, evaluate_all_models, write_results, sort_regression_prediction
+from .helper import generate_test_prediction
 from .. import split_methods as split
 
 
@@ -203,7 +206,7 @@ def main():
     # this class uses the trainer for classification purposes
     regressor = Regressor(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize) 
     
-    spliting = {"cluster": split.ClusterSpliter(cluster, num_split, random_state=experiment.seed),
+    spliting = {"cluster": split.ClusterSpliter(cluster, num_split, random_state=experiment.seed, test_size=test_size),
                 "mutations": split.MutationSpliter(mutations, test_num_mutations, greater, 
                                                    num_splits=num_split, random_state=experiment.seed)}
     

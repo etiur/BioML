@@ -1,12 +1,16 @@
+"""
+This module contains the functions to train classification models using pycaret
+"""
+
 from typing import Iterable, Any
 import pandas as pd
-from .base import PycaretInterface, Trainer, DataParser
+from functools import partial
 import argparse
 from pathlib import Path
 from .helper import write_results, generate_training_results, evaluate_all_models, sort_classification_prediction
 from .helper import generate_test_prediction
-from functools import partial
 from .. import split_methods as split
+from .base import PycaretInterface, Trainer, DataParser
 
 
 def arg_parse():
@@ -215,7 +219,7 @@ def main():
     partial_sort = partial(sort_classification_prediction, optimize=optimize, prec_weight=precision_weight, 
                            recall_weight=recall_weight, report_weight=report_weight)   
     
-    spliting = {"cluster": split.ClusterSpliter(cluster, num_split, random_state=experiment.seed),
+    spliting = {"cluster": split.ClusterSpliter(cluster, num_split, random_state=experiment.seed, test_size=test_size),
                 "mutations": split.MutationSpliter(mutations, test_num_mutations, greater, 
                                                    num_splits=num_split, random_state=experiment.seed)}
     # split the data based on the strategy
