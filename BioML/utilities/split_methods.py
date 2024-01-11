@@ -4,9 +4,8 @@ import pandas as pd
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Protocol, Generator
-from sklearn.model_selection import GroupKFold, KFold, StratifiedKFold, train_test_split
+from sklearn.model_selection import GroupKFold
 import operator
-from functools import partial
 
 
 def match_type(data, train_index, test_index):

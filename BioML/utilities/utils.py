@@ -56,7 +56,7 @@ def scale(scaler: str, X_train: pd.DataFrame,
 
 
 def write_excel(file: str | pd.io.excel._openpyxl.OpenpyxlWriter, 
-                dataframe: pd.DataFrame | pd.Series, sheet_name: str, overwrite: bool=False) -> None:
+                dataframe: pd.DataFrame | pd.Series, sheet_name: str) -> None:
     """
     Write a pandas DataFrame to an Excel file.
 
@@ -68,8 +68,6 @@ def write_excel(file: str | pd.io.excel._openpyxl.OpenpyxlWriter,
         The DataFrame to write to the Excel file.
     sheet_name : str
         The name of the sheet to write to.
-    overwrite : bool, default=False
-        Whether to overwrite the file if it already exists.
 
     Returns
     -------

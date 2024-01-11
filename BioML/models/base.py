@@ -12,6 +12,7 @@ import warnings
 from collections import defaultdict
 from ..utilities.utils import Log
 from ..utilities.custom_errors import DifferentLabelFeatureIndexError
+from ..utilities.training import Modelor
 
 
 @dataclass(slots=True)
@@ -258,7 +259,7 @@ class PycaretInterface:
     seed: None | int = None
     optimize: str = "MCC"
     #verbose: bool = False
-    scaler: str = "robust"
+    scaler: str = "minmax"
     budget_time: None | int = None
     log = Log("model_training")
     best_model: int = 3
@@ -747,7 +748,7 @@ class PycaretInterface:
 
 
 class Trainer:
-    def __init__(self, caret_interface: PycaretInterface, training_arguments, num_splits: int=5, num_iter: int=30):
+    def __init__(self, caret_interface: PycaretInterface, training_arguments: Modelor, num_splits: int=5, num_iter: int=30):
         
         """
         Initialize a Trainer object with the given parameters.
@@ -1094,7 +1095,7 @@ class Trainer:
 
         return results, models_dict
     
-    def generate_test_prediction(self, models_dict: dict[str, dict], sorting_function: Callable) -> dict[str, pd.DataFrame]:
+    def generate_validation_prediction(self, models_dict: dict[str, dict]) -> dict[str, pd.DataFrame]:
         
         """
         Generate test set predictions for a given set of models.
@@ -1103,8 +1104,6 @@ class Trainer:
         ----------
         models_dict : dict[str, dict]
             A dictionary containing the models to use for each tuning status.
-        sorting_function : Callable
-            A function used to sort the predictions.
 
         Returns
         -------
@@ -1117,7 +1116,7 @@ class Trainer:
             for key, models in result_dict.items():
                 # get the test set prediction results
                 predictions.append(self.predict_on_test_set(models))
-            prediction_results[tune_status] = sorting_function(pd.concat(predictions))
+            prediction_results[tune_status] = self.arguments.sort_prediction(pd.concat(predictions))
         return prediction_results
 
            

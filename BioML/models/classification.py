@@ -1,13 +1,12 @@
 """
 This module contains the functions to train classification models using pycaret
 """
-
 from typing import Iterable
 import pandas as pd
 from functools import partial
 import argparse
 from pathlib import Path
-from ..utilities.helper import write_results, evaluate_all_models, sort_classification_prediction
+from ..utilities.training import write_results, evaluate_all_models, sort_classification_prediction
 from ..utilities import split_methods as split
 from .base import PycaretInterface, Trainer, DataParser
 
@@ -20,8 +19,8 @@ def arg_parse():
                         default="training_results")
     parser.add_argument("-l", "--label", required=True,
                         help="The path to the labels of the training set in a csv format or string if it is inside training features")
-    parser.add_argument("-s", "--scaler", required=False, default="robust", choices=("robust", "zscore", "minmax"),
-                        help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
+    parser.add_argument("-s", "--scaler", required=False, default="minmax", choices=("robust", "zscore", "minmax"),
+                        help="Choose one of the scaler available in scikit-learn, defaults to minmax")
     parser.add_argument("-i", "--training_features", required=True,
                         help="The file to where the training features are saved in excel or csv format")
     parser.add_argument("-k", "--kfold_parameters", required=False,
@@ -147,6 +146,24 @@ class Classifier:
         
         return mcc + self.report_weight * (self.pre_weight * prec + self.rec_weight * recall)
     
+    def sort_holdout_prediction(self, dataframe: pd.DataFrame) -> pd.DataFrame:
+        """
+        Sorts the predictions of a classification model based on a specified optimization metric and precision/recall scores.
+
+        Parameters
+        ----------
+        dataframe : pd.DataFrame
+            The DataFrame containing the predictions of the classification model.
+
+        Returns
+        -------
+        pd.DataFrame
+            The sorted DataFrame of predictions.
+        """
+        sort = dataframe.loc[(dataframe[self.optimize] + self.report_weight * (self.pre_weight * dataframe["Prec."] + 
+                        self.rec_weight * dataframe["Recall"])).sort_values(ascending=False).index]
+        return sort
+    
 
 
 def main():
@@ -187,12 +204,9 @@ def main():
                                                                   fold_strategy=spliting[split_strategy])
     else:
         results, models_dict = training.generate_training_results(feature.features, feature.label, tune)
-
-        # Train using the classes
-    partial_sort = partial(sort_classification_prediction, optimize=optimize, prec_weight=precision_weight, 
-                           recall_weight=recall_weight, report_weight=report_weight)
-
-    test_set_predictions = training.generate_test_prediction(models_dict,  partial_sort)
+    
+    # generate the holdout test set predictions
+    test_set_predictions = training.generate_holdout_prediction(models_dict)
     evaluate_all_models(experiment.evaluate_model, models_dict, training_output)
 
     # finally write the results

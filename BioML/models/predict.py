@@ -18,8 +18,8 @@ def arg_parse():
     parser.add_argument("-i", "--fasta_file", help="The fasta file path", required=True)
     parser.add_argument("-tr", "--training_features", required=True,
                         help="The file to where the training features are saved in excel or csv format")
-    parser.add_argument("-sc", "--scaler", default="robust", choices=("robust", "zscore", "minmax"),
-                        help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
+    parser.add_argument("-sc", "--scaler", default="minmax", choices=("robust", "zscore", "minmax"),
+                        help="Choose one of the scaler available in scikit-learn, defaults to minmax")
     parser.add_argument("-m", "--model_path", required=True,
                         help="The directory for the generated models")
     parser.add_argument("-te", "--test_features", required=True,

@@ -1,7 +1,6 @@
 from .utils import write_excel
 from pathlib import Path
 from ..models import base
-from collections import defaultdict
 from typing import Callable, Iterable, Iterator
 import pandas as pd
 from dataclasses import dataclass
@@ -21,6 +20,10 @@ class Modelor(Protocol):
     def run_training(self, trainer: base.Trainer, feature: pd.DataFrame, label_name: str, plot: tuple[str, ...], 
                      **kwargs: Any) -> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
         ...
+
+    def sort_holdout_prediction(self, dataframe: pd.DataFrame) -> pd.DataFrame:
+        ...
+
 
 
 @dataclass(slots=True)
@@ -66,8 +69,6 @@ def evaluate_all_models(evaluation_fn: Callable, results: dict[str, dict[str, tu
                     evaluation_fn(model, save=f"{training_output}/evaluation_plots/{tune_status}/{key}/{mod_name}")
 
 
-
-
 def write_results(training_output: Path | str, sorted_results: pd.DataFrame, top_params: pd.Series | None = None, 
                   sheet_name: str|None=None) -> None:
     """
@@ -95,57 +96,7 @@ def write_results(training_output: Path | str, sorted_results: pd.DataFrame, top
         write_excel(training_output / f"top_hyperparameters.xlsx", top_params, sheet_name) # type: ignore
 
 
-def sort_regression_prediction(dataframe: pd.DataFrame, optimize: str="RSME") -> pd.DataFrame: # type: ignore
-    """
-    Sorts the predictions of a regression model based on a specified optimization metric and R2 score.
-
-    Parameters
-    ----------
-    dataframe : pd.DataFrame
-        The DataFrame containing the predictions of the regression model.
-    optimize : str, optional
-        The name of the optimization metric to use for sorting the predictions. Default is "RMSE".
-
-    Returns
-    -------
-    pd.DataFrame
-        The sorted DataFrame of predictions.
-    """
-    if optimize == "R2":
-        return dataframe.sort_values(optimize, ascending=False)
-    if optimize != "R2":
-        return dataframe.sort_values(optimize,ascending=True)
-    
-
-def sort_classification_prediction(dataframe: pd.DataFrame, optimize:str="MCC", prec_weight:float=1.2, 
-                                   recall_weight:float=0.8, report_weight:float=0.6) -> pd.DataFrame:
-    """
-    Sorts the predictions of a classification model based on a specified optimization metric and precision/recall scores.
-
-    Parameters
-    ----------
-    dataframe : pd.DataFrame
-        The DataFrame containing the predictions of the classification model.
-    optimize : str, optional
-        The name of the optimization metric to use for sorting the predictions. Default is "MCC".
-    prec_weight : float, optional
-        The weight to give to the precision score when sorting the predictions. Default is 1.2.
-    recall_weight : float, optional
-        The weight to give to the recall score when sorting the predictions. Default is 0.8.
-    report_weight : float, optional
-        The weight to give to the classification report scores when sorting the predictions. Default is 0.6.
-
-    Returns
-    -------
-    pd.DataFrame
-        The sorted DataFrame of predictions.
-    """
-    sort = dataframe.loc[(dataframe[optimize] + report_weight * (prec_weight * dataframe["Prec."] + 
-                    recall_weight * dataframe["Recall"])).sort_values(ascending=False).index]
-    return sort
-
-
-def iterate_multiple_features(iterator: Iterator, model: Modelor, parser:base.DataParser, label: str | list[int | float], 
+def iterate_multiple_features(iterator: Iterator, parser:base.DataParser, label: str | list[int | float], 
                               training: base.Trainer, outliers: Iterable[str],
                               training_output: Path, **kwargs: Any) -> None:
     
@@ -156,8 +107,6 @@ def iterate_multiple_features(iterator: Iterator, model: Modelor, parser:base.Da
     ----------
     iterator : Iterator
         An iterator that yields a tuple of input features and sheet names.
-    model : Any
-        The machine learning model to use for training.
     parser : DataParser
         The data parser to use for parsing the input features.
     label : str or list[int or float]

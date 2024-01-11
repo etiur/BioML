@@ -7,7 +7,7 @@ from functools import partial
 from typing import Iterable
 import pandas as pd
 from .base import PycaretInterface, Trainer, DataParser
-from ..utilities.helper import evaluate_all_models, write_results, sort_regression_prediction
+from ..utilities.training import evaluate_all_models, write_results, sort_regression_prediction
 from ..utilities import split_methods as split
 
 
@@ -21,8 +21,8 @@ def arg_parse():
                         help="The path to the labels of the training set in a csv format of string if it is insde the features")
     parser.add_argument("-n", "--num_thread", required=False, default=50, type=int,
                         help="The number of threads to search for the hyperparameter space")
-    parser.add_argument("-s", "--scaler", required=False, default="robust", choices=("robust", "zscore", "minmax"),
-                        help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
+    parser.add_argument("-s", "--scaler", required=False, default="minmax", choices=("robust", "zscore", "minmax"),
+                        help="Choose one of the scaler available in scikit-learn, defaults to minmax")
     parser.add_argument("-i", "--training_features", required=True,
                         help="The file to where the training features are saved in excel or csv format")
     parser.add_argument("-k", "--kfold_parameters", required=False,
@@ -150,6 +150,25 @@ class Regressor:
                 - self.difference_weight * abs(cv_val["R2"] - cv_train["R2"])) # type: ignore
         
             return r2
+        
+    def sort_holdout_prediction(self, dataframe: pd.DataFrame) -> pd.DataFrame: # type: ignore
+        """
+        Sorts the predictions of a regression model based on a specified optimization metric and R2 score.
+
+        Parameters
+        ----------
+        dataframe : pd.DataFrame
+            The DataFrame containing the predictions of the regression model.
+
+        Returns
+        -------
+        pd.DataFrame
+            The sorted DataFrame of predictions.
+        """
+        if self.optimize == "R2":
+            return dataframe.sort_values(self.optimize, ascending=False)
+        if self.optimize != "R2":
+            return dataframe.sort_values(self.optimize,ascending=True)
     
     
 def main():
@@ -190,8 +209,8 @@ def main():
         # train the models and retunr the prediction results
         results, models_dict = training.generate_training_results(feature.features, feature.label, plot, tune)
     
-    partial_sort = partial(sort_regression_prediction, optimize=optimize) 
-    test_set_predictions = training.generate_test_prediction(models_dict, partial_sort)
+    # sort the results based on the optimization metric
+    test_set_predictions = training.generate_holdout_prediction(models_dict)
     evaluate_all_models(experiment.evaluate_model, models_dict, training_output)
 
     # finally write the results

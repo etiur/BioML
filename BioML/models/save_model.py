@@ -8,7 +8,7 @@ from typing import Any
 from .base import PycaretInterface, Trainer, DataParser
 from .classification import Classifier
 from .regression import Regressor
-from ..utilities.helper import FileParser
+from ..utilities.training import FileParser
 from ..utilities import split_methods as split
 
 
@@ -17,8 +17,8 @@ def arg_parse():
 
     parser.add_argument("-i", "--training_features", required=True,
                         help="The file to where the features for the training are in excel or csv format")
-    parser.add_argument("-sc", "--scaler", default="robust", choices=("robust", "zscore", "minmax"),
-                        help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
+    parser.add_argument("-sc", "--scaler", default="minmax", choices=("robust", "zscore", "minmax"),
+                        help="Choose one of the scaler available in scikit-learn, defaults to minmax")
     parser.add_argument("-l", "--label", required=True,
                         help="The path to the labels of the training set in a csv format")
     parser.add_argument("-o", "--model_output", required=False,
