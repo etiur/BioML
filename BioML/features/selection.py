@@ -1,7 +1,7 @@
 import argparse
 import pandas as pd
 from sklearn.feature_selection import VarianceThreshold
-from ..utils import Log, scale, write_excel
+from ..utilities.utils import Log, scale, write_excel
 from pathlib import Path
 from sklearn.linear_model import RidgeClassifier, Ridge
 import numpy as np
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from . import methods
 from sklearn.ensemble import RandomForestClassifier as rfc
 from sklearn.ensemble import RandomForestRegressor as rfr
-from ..custom_errors import DifferentLabelFeatureIndexError
+from ..utilities.custom_errors import DifferentLabelFeatureIndexError
 import xgboost as xgb
 
 

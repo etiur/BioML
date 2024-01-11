@@ -2,14 +2,13 @@
 This module contains the functions to train classification models using pycaret
 """
 
-from typing import Iterable, Any
+from typing import Iterable
 import pandas as pd
 from functools import partial
 import argparse
 from pathlib import Path
-from .helper import write_results, generate_training_results, evaluate_all_models, sort_classification_prediction
-from .helper import generate_test_prediction
-from .. import split_methods as split
+from ..utilities.helper import write_results, evaluate_all_models, sort_classification_prediction
+from ..utilities import split_methods as split
 from .base import PycaretInterface, Trainer, DataParser
 
 
@@ -90,7 +89,8 @@ def arg_parse():
 
 class Classifier:
     def __init__(self, ranking_params: dict[str, float] | None=None, drop: Iterable[str] = ("ada", "gpc", "lightgbm"), 
-                 selected: Iterable[str] =(), test_size: float=0.2, optimize: str="MCC"):
+                 selected: Iterable[str] =(), test_size: float=0.2, optimize: str="MCC", 
+                 plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report")):
 
         # change the ranking parameters
         ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
@@ -110,6 +110,7 @@ class Classifier:
         self.difference_weight = ranking_dict["difference_weight"]
         self.selected = selected
         self.optimize = optimize
+        self.plot = plot
     
     def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> int | float:
         """
@@ -125,7 +126,6 @@ class Classifier:
         -------
         int or float
             The calculated score of the DataFrame.
-
 
         Examples
         --------
@@ -146,46 +146,6 @@ class Classifier:
                 - self.difference_weight * abs(cv_val["Recall"] - cv_train["Recall"])) # type: ignore
         
         return mcc + self.report_weight * (self.pre_weight * prec + self.rec_weight * recall)
-    
-    def run_training(self, trainer: Trainer, feature: pd.DataFrame, label_name: str, 
-                     plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report"),
-                     **kwargs: Any) -> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
-        """
-        A function that splits the data into training and test sets and then trains the models
-        using cross-validation but only on the training data
-
-        Parameters
-        ----------
-        feature : pd.DataFrame
-            The features of the training set
-        label_name : str
-            The column name of the label in the feature DataFrame
-        plot : tuple[str, ...], optional
-            Plot the plots relevant to the models, by default 1, 4 and 5
-                1. learning: learning curve
-                2. pr: Precision recall curve
-                3. auc: the ROC curve
-                4. confusion_matrix 
-                5. class_report: read classification_report from sklearn.metrics
-
-        **kwargs : dict, optional
-            A dictionary containing the parameters for the setup function in pycaret.
-        Returns
-        -------
-        pd.DataFrame
-            A dictionary with the sorted results from pycaret
-        list[models]
-            A dictionary with the sorted models from pycaret
-        pd.DataFrame
-         
-        """
-        sorted_results, sorted_models, top_params = trainer.analyse_models(feature, label_name, self._calculate_score_dataframe, self.test_size,
-                                                                           self.drop, self.selected, **kwargs) # type: ignore
-        if plot:
-            trainer.experiment.plots = plot
-            trainer.experiment.plot_best_models(sorted_models)
-
-        return sorted_results, sorted_models, top_params
     
 
 
@@ -209,15 +169,12 @@ def main():
     # These are the classes used for classification
     experiment = PycaretInterface("classification", seed, scaler=scaler, budget_time=budget_time, # type: ignore
                                   best_model=best_model, output_path=training_output, optimize=optimize)
+    
+    # this class has the arguments for the trainer to do classification
+    classifier = Classifier(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize, plot=plot)
+
     # It uses the PycaretInterface' models to perform the training but you could use other models as long as it implements the same methods
-    training = Trainer(experiment, num_split, num_iter) # this can be used for classification or regression -> so it is generic
-
-    # this class uses the trainer for classification purposes
-    classifier = Classifier(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize)
-
-    # Train using the classes
-    partial_sort = partial(sort_classification_prediction, optimize=optimize, prec_weight=precision_weight, 
-                           recall_weight=recall_weight, report_weight=report_weight)   
+    training = Trainer(experiment, classifier, num_split, num_iter) # this can be used for classification or regression -> so it is generic
     
     spliting = {"cluster": split.ClusterSpliter(cluster, num_split, random_state=experiment.seed, test_size=test_size),
                 "mutations": split.MutationSpliter(mutations, test_num_mutations, greater, 
@@ -226,13 +183,16 @@ def main():
     if split_strategy != "random":
         X_train, X_test = spliting[split_strategy].train_test_split(feature.features)
 
-        results, models_dict = generate_training_results(classifier, training, X_train, feature.label,
-                                                         plot, tune, test_data=X_test, fold_strategy=spliting[split_strategy])
+        results, models_dict = training.generate_training_results(X_train, feature.label, tune, test_data=X_test, 
+                                                                  fold_strategy=spliting[split_strategy])
     else:
-        results, models_dict = generate_training_results(classifier, training, feature.features, feature.label, 
-                                                         plot, tune)
-        
-    test_set_predictions = generate_test_prediction(models_dict, training, partial_sort)
+        results, models_dict = training.generate_training_results(feature.features, feature.label, tune)
+
+        # Train using the classes
+    partial_sort = partial(sort_classification_prediction, optimize=optimize, prec_weight=precision_weight, 
+                           recall_weight=recall_weight, report_weight=report_weight)
+
+    test_set_predictions = training.generate_test_prediction(models_dict,  partial_sort)
     evaluate_all_models(experiment.evaluate_model, models_dict, training_output)
 
     # finally write the results

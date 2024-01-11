@@ -8,8 +8,8 @@ from typing import Any
 from .base import PycaretInterface, Trainer, DataParser
 from .classification import Classifier
 from .regression import Regressor
-from .helper import FileParser
-from .. import split_methods as split
+from ..utilities.helper import FileParser
+from ..utilities import split_methods as split
 
 
 def arg_parse():

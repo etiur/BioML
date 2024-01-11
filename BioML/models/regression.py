@@ -4,12 +4,11 @@ A module that performs regression analysis on a dataset.
 from pathlib import Path
 import argparse
 from functools import partial
-from typing import Iterable, Any
+from typing import Iterable
 import pandas as pd
 from .base import PycaretInterface, Trainer, DataParser
-from .helper import generate_training_results, evaluate_all_models, write_results, sort_regression_prediction
-from .helper import generate_test_prediction
-from .. import split_methods as split
+from ..utilities.helper import evaluate_all_models, write_results, sort_regression_prediction
+from ..utilities import split_methods as split
 
 
 def arg_parse():
@@ -92,12 +91,16 @@ class Regressor:
         The proportion of the dataset to use for testing. Default is 0.2.
     optimize : str, optional
         The name of the optimization metric to use for regression analysis. Default is "RMSE".
-
+    plot : bool, optional
+        Plot the plots relevant to the models, by default all of them
+            1. residuals: Plots the difference (predicted-actual value) vs predicted value for train and test
+            2. error: Plots the actual values vs predicted values
+            3. learning: learning curve
 
     """
     def __init__(self, ranking_params: dict[str, float] | None=None, 
                  drop: Iterable[str]=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), selected: Iterable[str]=(), 
-                 test_size: float = 0.2, optimize: str="RMSE"):
+                 test_size: float = 0.2, optimize: str="RMSE", plot: Iterable[str]=("residuals", "error", "learning")):
         
         ranking_dict = dict(difference_weight=1.2)
         if isinstance(ranking_params, dict):
@@ -110,6 +113,7 @@ class Regressor:
         self.difference_weight = ranking_dict["difference_weight"]
         self.selected = selected
         self.optimize = optimize
+        self.plot = plot
 
     def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> float | int: # type: ignore
         """
@@ -147,39 +151,6 @@ class Regressor:
         
             return r2
     
-    def run_training(self, trainer: Trainer, feature: pd.DataFrame, label_name: str, plot: Iterable[str]=("residuals", "error", "learning"),
-                     **kwargs: Any)-> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
-        """
-        A function that splits the data into training and test sets and then trains the models
-        using cross-validation but only on the training data
-
-        Parameters
-        ----------
-        feature : pd.DataFrame
-            A dataframe containing the training samples and the features
-        label_name : str
-            The name of the column containing the labels in the feature dataframe
-        plot : bool, optional
-            Plot the plots relevant to the models, by default all of them
-                1. residuals: Plots the difference (predicted-actual value) vs predicted value for train and test
-                2. error: Plots the actual values vs predicted values
-                3. learning: learning curve
-        **kwargs : dict, optional
-            A dictionary containing the parameters for the setup function in pycaret.
-        Returns
-        -------
-        tuple[pd.DataFrame, dict, pd.Series]
-            The sorted results, the sorted models and the top parameters
-         
-        """
-        sorted_results, sorted_models, top_params = trainer.analyse_models(feature, label_name, self._calculate_score_dataframe, self.test_size,
-                                                                           self.drop, self.selected, **kwargs) # type: ignore
-        if plot:
-            trainer.experiment.plots = plot
-            trainer.experiment.plot_best_models(sorted_models)
-
-        return sorted_results, sorted_models, top_params
-    
     
 def main():
     label, training_output, trial_time, scaler, excel, kfold, outliers, difference_weight, \
@@ -199,12 +170,11 @@ def main():
     # These are the classes used for regression
     experiment = PycaretInterface("regression", seed, scaler=scaler, budget_time=trial_time, # type: ignore
                                   best_model=best_model, output_path=training_output, optimize=optimize) 
+    # this class has the arguments for the trainer for regression 
+    regressor = Regressor(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize, plot=plot) 
 
     # It uses the PycaretInterface' models to perform the training but you could use other models as long as it implements the same methods
-    training = Trainer(experiment, num_split, num_iter) # this can be used for classification or regression -> so it is generic
-    
-    # this class uses the trainer for classification purposes
-    regressor = Regressor(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize) 
+    training = Trainer(experiment, regressor, num_split, num_iter) # this can be used for classification or regression -> so it is generic
     
     spliting = {"cluster": split.ClusterSpliter(cluster, num_split, random_state=experiment.seed, test_size=test_size),
                 "mutations": split.MutationSpliter(mutations, test_num_mutations, greater, 
@@ -214,14 +184,14 @@ def main():
     if split_strategy != "random":
         X_train, X_test = spliting[split_strategy].train_test_split(feature.features)
 
-        results, models_dict = generate_training_results(regressor, training, X_train, feature.label,
-                                                         plot, tune, test_data=X_test, fold_strategy=spliting[split_strategy])
+        results, models_dict = training.generate_training_results(X_train, feature.label, tune, 
+                                                                  test_data=X_test, fold_strategy=spliting[split_strategy])
     else:
         # train the models and retunr the prediction results
-        results, models_dict = generate_training_results(regressor, training, feature.features, feature.label, plot, tune)
+        results, models_dict = training.generate_training_results(feature.features, feature.label, plot, tune)
     
     partial_sort = partial(sort_regression_prediction, optimize=optimize) 
-    test_set_predictions = generate_test_prediction(models_dict, training, partial_sort)
+    test_set_predictions = training.generate_test_prediction(models_dict, partial_sort)
     evaluate_all_models(experiment.evaluate_model, models_dict, training_output)
 
     # finally write the results

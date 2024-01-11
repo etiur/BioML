@@ -1,11 +1,10 @@
-from ..utils import write_excel
+from .utils import write_excel
 from pathlib import Path
-from . import base
+from ..models import base
 from collections import defaultdict
 from typing import Callable, Iterable, Iterator
 import pandas as pd
 from dataclasses import dataclass
-import warnings
 import json
 import yaml
 from typing import Any, Callable, Protocol
@@ -19,7 +18,7 @@ class Modelor(Protocol):
     def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> int | float:
         ...
     
-    def run_training(self, trainer: base.Trainer, feature: base.DataParser, plot: tuple[str, ...], 
+    def run_training(self, trainer: base.Trainer, feature: pd.DataFrame, label_name: str, plot: tuple[str, ...], 
                      **kwargs: Any) -> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
         ...
 
@@ -36,70 +35,6 @@ class FileParser:
                 return yaml.load(file, Loader=yaml.FullLoader)
             else:
                 raise ValueError(f"Unsupported file extension: {extension}")
-
-
-def generate_training_results(model: Modelor, training: base.Trainer, feature: pd.DataFrame, 
-                              label_name: str, plot: tuple[str, ...], tune: bool=False, 
-                              **kwargs: Any) -> tuple[dict[str, dict], dict[str, dict]]:
-    """
-    Generate training results for a given model, training object, and feature data.
-
-    Parameters
-    ----------
-    model : classification.Classifier or regression.Regressor objects
-        The model to use for training.
-    training : Trainer
-        The training object to use.
-    feature : pd.DataFrame
-        The feature data to use.
-    label_name : str
-        The name of the label to use for training in the feature data.
-    plot : tuple
-        A tuple containing the plot title and axis labels.
-    tune : bool, optional
-        Whether to tune the hyperparameters. Defaults to True.
-    **kwargs : dict
-        Additional keyword arguments to pass to the pycaret setup function.
-
-    Returns
-    -------
-    tuple[dict, dict]
-        A tuple of dictionary containing the training results and the models.
-    """    
-    sorted_results, sorted_models, top_params = model.run_training(training, feature, label_name, plot, **kwargs)
-    if 'dummy' in sorted_results.index.unique(0)[:3]:
-        warnings.warn(f"Dummy model is in the top {list(sorted_results.index.unique(0)).index('dummy')} models, turning off tuning")
-        tune = False
-
-    # saving the results in a dictionary and writing it into excel files
-    models_dict = defaultdict(dict)
-    results = defaultdict(dict)
-    # save the results
-    results["not_tuned"]["holdout"] = sorted_results, top_params
-    stacked_results, stacked_models, stacked_params = training.stack_models(sorted_models)
-    results["not_tuned"]["stacked"] = stacked_results, stacked_params
-    majority_results, majority_models = training.create_majority_model(sorted_models)
-    results["not_tuned"]["majority"] = majority_results 
-    #satev the models
-    models_dict["not_tuned"]["holdout"] = sorted_models
-    models_dict["not_tuned"]["stacked"] = stacked_models
-    models_dict["not_tuned"]["majority"] = majority_models
-
-    if tune:
-        # save the results
-        sorted_result_tune, sorted_models_tune, top_params_tune = training.retune_best_models(sorted_models)
-        results["tuned"]["holdout"] = sorted_result_tune, top_params_tune
-        stacked_results_tune, stacked_models_tune, stacked_params_tune = training.stack_models(sorted_models_tune)
-        results["tuned"]["stacked"] = stacked_results_tune, stacked_params_tune
-        majority_results_tune, majority_models_tune = training.create_majority_model(sorted_models_tune)
-        results["tuned"]["majority"] = majority_results_tune,   
-
-        #save the models
-        models_dict["tuned"]["holdout"] = sorted_models_tune
-        models_dict["tuned"]["stacked"] = stacked_models_tune
-        models_dict["tuned"]["majority"] = majority_models_tune
-
-    return results, models_dict
 
 
 def evaluate_all_models(evaluation_fn: Callable, results: dict[str, dict[str, tuple | dict]], 
@@ -131,33 +66,6 @@ def evaluate_all_models(evaluation_fn: Callable, results: dict[str, dict[str, tu
                     evaluation_fn(model, save=f"{training_output}/evaluation_plots/{tune_status}/{key}/{mod_name}")
 
 
-def generate_test_prediction(models_dict: dict[str, dict], training: base.Trainer, 
-                             sorting_function: Callable) -> dict[str, pd.DataFrame]:
-    """
-    Generate test set predictions for a given set of models.
-
-    Parameters
-    ----------
-    models_dict : dict[str, dict]
-        A dictionary containing the models to use for each tuning status.
-    training : Trainer
-        An instance of the Trainer class used to train the models.
-    sorting_function : Callable
-        A function used to sort the predictions.
-
-    Returns
-    -------
-    dict[str, pd.DataFrame]
-        A dictionary containing the prediction results for each tuning status.
-    """
-    prediction_results = {}
-    for tune_status, result_dict in models_dict.items():
-        predictions = []
-        for key, models in result_dict.items():
-            # get the test set prediction results
-            predictions.append(training.predict_on_test_set(models))
-        prediction_results[tune_status] = sorting_function(pd.concat(predictions))
-    return prediction_results
 
 
 def write_results(training_output: Path | str, sorted_results: pd.DataFrame, top_params: pd.Series | None = None, 
@@ -269,11 +177,11 @@ def iterate_multiple_features(iterator: Iterator, model: Modelor, parser:base.Da
     performance_list = []
     for input_feature, sheet in iterator:
         feature = parser(input_feature, label=label, sheets=sheet, outliers=outliers)
-        sorted_results, sorted_models, top_params = model.run_training(training, feature, plot=(), **kwargs)
+        sorted_results, sorted_models, top_params = training.run_training(feature.feature, feature.label_name, **kwargs)
         index = sorted_results.index.unique(0)[:training.experiment.best_model]
         score = 0
         for i in index:
-            score += model._calculate_score_dataframe(sorted_results.loc[i])
+            score += training.arguments._calculate_score_dataframe(sorted_results.loc[i])
         performance_list.append((sheet, sorted_results.loc[index], score))
     performance_list.sort(key=lambda x: x[2], reverse=True)
     for sheet, performance, score in performance_list:

@@ -6,11 +6,13 @@ from pathlib import Path
 import time
 from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
-from ..utils import Log
 from sklearn.metrics import average_precision_score   
 from typing import Iterable
-from ..custom_errors import DifferentLabelFeatureIndexError
 import warnings
+from collections import defaultdict
+from ..utilities.utils import Log
+from ..utilities.custom_errors import DifferentLabelFeatureIndexError
+
 
 @dataclass(slots=True)
 class DataParser:
@@ -745,7 +747,7 @@ class PycaretInterface:
 
 
 class Trainer:
-    def __init__(self, caret_interface: PycaretInterface, num_splits: int=5, num_iter: int=30):
+    def __init__(self, caret_interface: PycaretInterface, training_arguments, num_splits: int=5, num_iter: int=30):
         
         """
         Initialize a Trainer object with the given parameters.
@@ -766,6 +768,7 @@ class Trainer:
         self.num_iter = num_iter
         self.log.info(f"Number of kfolds: {self.num_splits}")
         self.log.info(f"Number of iterations: {self.num_iter}")
+        self.arguments = training_arguments
 
     def rank_results(self, results: dict[str, pd.DataFrame], returned_models:dict[str, Any], 
                      scoring_function: Callable):
@@ -993,4 +996,128 @@ class Trainer:
                 result = self.experiment.predict(mod)
                 result = result.set_index("Model")
                 return result
+            
+    def run_training(self, feature: pd.DataFrame, label_name: str,
+                      **kwargs: Any) -> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
+            """
+            A function that splits the data into training and test sets and then trains the models
+            using cross-validation but only on the training data
+
+            Parameters
+            ----------
+            feature : pd.DataFrame
+                The features of the training set
+            label_name : str
+                The column name of the label in the feature DataFrame
+            plot : tuple[str, ...], optional
+                Plot the plots relevant to the models, by default 1, 4 and 5
+                    1. learning: learning curve
+                    2. pr: Precision recall curve
+                    3. auc: the ROC curve
+                    4. confusion_matrix 
+                    5. class_report: read classification_report from sklearn.metrics
+
+            **kwargs : dict, optional
+                A dictionary containing the parameters for the setup function in pycaret.
+            Returns
+            -------
+            pd.DataFrame
+                A dictionary with the sorted results from pycaret
+            list[models]
+                A dictionary with the sorted models from pycaret
+            pd.DataFrame
+            
+            """
+            sorted_results, sorted_models, top_params = self.analyse_models(feature, label_name, self.arguments._calculate_score_dataframe, 
+                                                                            self.arguments.test_size, self.arguments.drop, self.arguments.selected, 
+                                                                            **kwargs) # type: ignore
+            
+            if self.arguments.plot:
+                self.experiment.plots = self.arguments.plot
+                self.experiment.plot_best_models(sorted_models)
+
+            return sorted_results, sorted_models, top_params
+    
+    def generate_training_results(self, feature: pd.DataFrame, label_name: str, tune: bool=False, 
+                                  **kwargs: Any) -> tuple[dict[str, dict], dict[str, dict]]:
+        """
+        Generate training results for a given model, training object, and feature data.
+
+        Parameters
+        ----------
+        feature : pd.DataFrame
+            The feature data to use.
+        label_name : str
+            The name of the label to use for training in the feature data.
+        tune : bool, optional
+            Whether to tune the hyperparameters. Defaults to True.
+        **kwargs : dict
+            Additional keyword arguments to pass to the pycaret setup function.
+
+        Returns
+        -------
+        tuple[dict, dict]
+            A tuple of dictionary containing the training results and the models.
+        """    
+        sorted_results, sorted_models, top_params = self.run_training(feature, label_name, **kwargs)
+        if 'dummy' in sorted_results.index.unique(0)[:3]:
+            warnings.warn(f"Dummy model is in the top {list(sorted_results.index.unique(0)).index('dummy')} models, turning off tuning")
+            tune = False
+
+        # saving the results in a dictionary and writing it into excel files
+        models_dict = defaultdict(dict)
+        results = defaultdict(dict)
+        # save the results
+        results["not_tuned"]["holdout"] = sorted_results, top_params
+        stacked_results, stacked_models, stacked_params = self.stack_models(sorted_models)
+        results["not_tuned"]["stacked"] = stacked_results, stacked_params
+        majority_results, majority_models = self.create_majority_model(sorted_models)
+        results["not_tuned"]["majority"] = majority_results 
+        #satev the models
+        models_dict["not_tuned"]["holdout"] = sorted_models
+        models_dict["not_tuned"]["stacked"] = stacked_models
+        models_dict["not_tuned"]["majority"] = majority_models
+
+        if tune:
+            # save the results
+            sorted_result_tune, sorted_models_tune, top_params_tune = self.retune_best_models(sorted_models)
+            results["tuned"]["holdout"] = sorted_result_tune, top_params_tune
+            stacked_results_tune, stacked_models_tune, stacked_params_tune = self.stack_models(sorted_models_tune)
+            results["tuned"]["stacked"] = stacked_results_tune, stacked_params_tune
+            majority_results_tune, majority_models_tune = self.create_majority_model(sorted_models_tune)
+            results["tuned"]["majority"] = majority_results_tune,   
+
+            #save the models
+            models_dict["tuned"]["holdout"] = sorted_models_tune
+            models_dict["tuned"]["stacked"] = stacked_models_tune
+            models_dict["tuned"]["majority"] = majority_models_tune
+
+        return results, models_dict
+    
+    def generate_test_prediction(self, models_dict: dict[str, dict], sorting_function: Callable) -> dict[str, pd.DataFrame]:
+        
+        """
+        Generate test set predictions for a given set of models.
+
+        Parameters
+        ----------
+        models_dict : dict[str, dict]
+            A dictionary containing the models to use for each tuning status.
+        sorting_function : Callable
+            A function used to sort the predictions.
+
+        Returns
+        -------
+        dict[str, pd.DataFrame]
+            A dictionary containing the prediction results for each tuning status.
+        """
+        prediction_results = {}
+        for tune_status, result_dict in models_dict.items():
+            predictions = []
+            for key, models in result_dict.items():
+                # get the test set prediction results
+                predictions.append(self.predict_on_test_set(models))
+            prediction_results[tune_status] = sorting_function(pd.concat(predictions))
+        return prediction_results
+
            

@@ -10,7 +10,7 @@ from Bio import SeqIO
 from Bio.SeqIO import FastaIO
 from subprocess import call
 import shlex
-from ..utils import rewrite_possum, MmseqsClustering
+from ..utilities.utils import rewrite_possum, MmseqsClustering
 
 
 def arg_parse():
