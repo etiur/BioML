@@ -68,10 +68,10 @@ def arg_parse():
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.budget_time, args.scaler,
-            args.training_features, args.kfold_parameters, args.outliers,
-            args.difference_weight, args.strategy, args.best_model,
-            args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected, args.sheet_name, args.num_iter,
-            args.split_strategy, args.cluster, args.mutations, args.test_num_mutations, args.greater]
+            args.training_features, args.kfold_parameters, args.outliers, args.difference_weight, 
+            args.best_model, args.seed, args.drop, args.tune, args.plot, args.optimize, 
+            args.selected, args.sheet_name, args.num_iter, args.split_strategy, args.cluster, 
+            args.mutations, args.test_num_mutations, args.greater]
 
 
 class Regressor:
@@ -173,7 +173,7 @@ class Regressor:
     
 def main():
     label, training_output, trial_time, scaler, excel, kfold, outliers, difference_weight, \
-    seed, best_model, drop, tune, plot, optimize, selected, sheet, num_iter, split_strategy, cluster, mutations, \
+    best_model, seed, drop, tune, plot, optimize, selected, sheet, num_iter, split_strategy, cluster, mutations, \
         test_num_mutations, greater = arg_parse()
     
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])

@@ -13,6 +13,7 @@ class Modelor(Protocol):
     drop: Iterable[str]
     selected: Iterable[str]
     optimize: str
+    test_size: float
 
     def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> int | float:
         ...
@@ -23,7 +24,6 @@ class Modelor(Protocol):
 
     def sort_holdout_prediction(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         ...
-
 
 
 @dataclass(slots=True)

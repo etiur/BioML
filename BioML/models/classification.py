@@ -81,7 +81,7 @@ def arg_parse():
 
     return [args.label, args.training_output, args.budget_time, args.scaler, args.training_features, args.kfold_parameters, 
             args.outliers, args.precision_weight, args.recall_weight, args.report_weight, args.difference_weight, 
-            args.strategy, args.best_model, args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected,
+            args.best_model, args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected,
             args.sheet_name, args.num_iter, args.split_strategy, args.cluster, args.mutations, 
             args.test_num_mutations, args.greater]
 
@@ -90,7 +90,25 @@ class Classifier:
     def __init__(self, ranking_params: dict[str, float] | None=None, drop: Iterable[str] = ("ada", "gpc", "lightgbm"), 
                  selected: Iterable[str] =(), test_size: float=0.2, optimize: str="MCC", 
                  plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report")):
+        """
+        A class to rank the performance of classification models based on the optimization metric, precision, recall,
+        and classification report.
 
+        Parameters
+        ----------
+        ranking_params : dict[str, float], optional
+            A dictionary containing the ranking parameters, by default None
+        drop : Iterable[str], optional
+            The models to drop, by default ("ada", "gpc", "lightgbm")
+        selected : Iterable[str], optional  
+            The models to train, by default ()
+        test_size : float, optional
+            The size of the test set, by default 0.2
+        optimize : str, optional
+            The metric to optimize for retuning the best models, by default "MCC"
+        plot : tuple[str, ...], optional
+            The plots to save, by default ("learning", "confusion_matrix", "class_report")
+        """
         # change the ranking parameters
         ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
                             difference_weight=1.2)
