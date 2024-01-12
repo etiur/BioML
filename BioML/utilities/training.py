@@ -6,24 +6,7 @@ import pandas as pd
 from dataclasses import dataclass
 import json
 import yaml
-from typing import Any, Callable, Protocol
-
-
-class Modelor(Protocol):
-    drop: Iterable[str]
-    selected: Iterable[str]
-    optimize: str
-    test_size: float
-
-    def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> int | float:
-        ...
-    
-    def run_training(self, trainer: base.Trainer, feature: pd.DataFrame, label_name: str, plot: tuple[str, ...], 
-                     **kwargs: Any) -> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
-        ...
-
-    def sort_holdout_prediction(self, dataframe: pd.DataFrame) -> pd.DataFrame:
-        ...
+from typing import Any, Callable
 
 
 @dataclass(slots=True)

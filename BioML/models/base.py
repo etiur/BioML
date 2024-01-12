@@ -10,9 +10,30 @@ from sklearn.metrics import average_precision_score
 from typing import Iterable
 import warnings
 from collections import defaultdict
+from typing import Protocol
 from ..utilities.utils import Log
 from ..utilities.custom_errors import DifferentLabelFeatureIndexError
-from ..utilities.training import Modelor
+
+
+class ModelArguments(Protocol):
+    """
+    It defines the methods and the attributes of a class.
+
+    Parameters
+    ----------
+    Protocol : [type]
+        _description_
+    """
+    drop: Iterable[str]
+    selected: Iterable[str]
+    optimize: str
+    test_size: float
+
+    def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> int | float:
+        ...
+
+    def sort_holdout_prediction(self, dataframe: pd.DataFrame) -> pd.DataFrame:
+        ...
 
 
 @dataclass(slots=True)
@@ -748,15 +769,17 @@ class PycaretInterface:
 
 
 class Trainer:
-    def __init__(self, caret_interface: PycaretInterface, training_arguments: Modelor, num_splits: int=5, num_iter: int=30):
+    def __init__(self, caret_interface: PycaretInterface, training_arguments: ModelArguments, num_splits: int=5, num_iter: int=30):
         
         """
         Initialize a Trainer object with the given parameters.
 
         Parameters
         ----------
-        model : PycaretInterface
+        caret_interface : PycaretInterface
             The model to use for training.
+        training_arguments : ModelArguments
+            The arguments to use for training, classification or regression.
         num_splits : int, optional
             The number of splits to use in cross-validation. Defaults to 5.
         num_iter : int, optional

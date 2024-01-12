@@ -2,7 +2,6 @@ from dataclasses import dataclass, field
 from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
 from functools import cached_property
-from .base import DataParser
 import argparse
 from scipy.spatial import distance
 from Bio import SeqIO
@@ -11,6 +10,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from ..utilities.utils import scale
+from .base import DataParser
 
 
 def arg_parse():

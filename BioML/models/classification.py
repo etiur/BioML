@@ -3,10 +3,9 @@ This module contains the functions to train classification models using pycaret
 """
 from typing import Iterable
 import pandas as pd
-from functools import partial
 import argparse
 from pathlib import Path
-from ..utilities.training import write_results, evaluate_all_models, sort_classification_prediction
+from ..utilities.training import write_results, evaluate_all_models
 from ..utilities import split_methods as split
 from .base import PycaretInterface, Trainer, DataParser
 

@@ -7,7 +7,7 @@ from functools import partial
 from typing import Iterable
 import pandas as pd
 from .base import PycaretInterface, Trainer, DataParser
-from ..utilities.training import evaluate_all_models, write_results, sort_regression_prediction
+from ..utilities.training import evaluate_all_models, write_results
 from ..utilities import split_methods as split
 
 
