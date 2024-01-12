@@ -10,10 +10,10 @@ from pyod.models.ocsvm import OCSVM
 from pyod.models.ecod import ECOD
 from openpyxl import load_workbook
 import pandas as pd
-from .utils import scale
 from pathlib import Path
 import random
 import argparse
+from .utils import scale
 
 
 def arg_parse():
@@ -40,8 +40,26 @@ def arg_parse():
 
 
 class OutlierDetection:
-    def __init__(self, feature_file="training_features/selected_features.xlsx", output="training_results/outliers.csv",
-                 scaler="robust", contamination=0.06, num_thread=10, num_feature=1):
+    def __init__(self, feature_file: str, output: str="training_results/outliers.csv", scaler: str="minmax", 
+                 contamination: float=0.06, num_thread: int=10, num_feature: float=1.0):
+        """
+        Class to detect outliers from the selected features
+
+        Parameters
+        ----------
+        feature_file : str
+            The path to the excel file where the selected features are saved
+        output : str, optional
+            The output file, by default "training_results/outliers.csv"
+        scaler : str, optional
+            The scaler used, by default minmax
+        contamination : float, optional
+            How much outliers, by default 0.06
+        num_thread : int, optional
+            To paralelize the training, by default 10
+        num_feature : float, optional
+            The fraction of features to use, by default 1.0
+        """
         self.scaler = scaler
         self.contamination = contamination
         self.feature_file = feature_file
