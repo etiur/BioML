@@ -13,6 +13,7 @@ import pandas as pd
 from pathlib import Path
 import random
 import argparse
+from typing import Iterable
 from .utils import scale
 
 
@@ -101,8 +102,22 @@ class OutlierDetection:
         return prediction
 
     @staticmethod
-    def counting(prediction, index):
+    def counting(prediction: dict, index: Iterable[str]):
+        """
+        Given the prediction from outlier detection it will return the number of times each feature was an outlier
 
+        Parameters
+        ----------
+        prediction : dict
+            The prediction from outlier detection
+        index : Iterable[str]
+            The index of the features    
+
+        Returns
+        -------
+        pd.DataFrame
+            A dataframe with the number of times each feature was an outlier
+        """
         pred = {key: pd.DataFrame(value).T for key, value in prediction.items()}
         pred = pd.concat(pred)
         summed = pred.sum()
@@ -110,27 +125,36 @@ class OutlierDetection:
         summed.sort_values(ascending=False, inplace=True)
         return summed
 
-    def _check_features(self, book):
-        features = pd.read_excel(self.feature_file, index_col=0, header=[0, 1], engine='openpyxl')
-        if f"split_{0}" not in features.columns.unique(0):
-            self.with_split = False
-        if self.with_split:
-            new_excel = {}
-            excel_data = pd.read_excel(self.feature_file, index_col=0, sheet_name=book, header=[0, 1])
-            for key, values in excel_data.items():
-                for col in values.columns.unique(level=0):
-                    ind = int(col.split("_")[-1])
-                    new_excel[f"{key}_{ind}"] = values.loc[:, f"split_{ind}"]
-            excel_data = new_excel
-        else:
-            excel_data = pd.read_excel(self.feature_file, index_col=0, sheet_name=book, header=0)
+    def _read_features(self, book):
+        """
+        Read the features from the excel file
+
+        Parameters
+        ----------
+        book : 
+            The excel list of sheets
+
+        Returns
+        -------
+        dict
+            The features from each sheet
+        """
+        excel_data = pd.read_excel(self.feature_file, index_col=0, sheet_name=book, header=0)
+        excel_data = {key: x.sample(frac=1, random_state=0) for key, x in excel_data.items()}
         return excel_data
 
     def run(self):
+        """
+        Run the outlier detection and save the results
+
+        Returns
+        -------
+        _ : pd.DataFrame
+            The number of times each feature was an outlier
+        """
         results = {}
         book = self.book.sheetnames
-        excel_data = self._check_features(book)
-        excel_data = {key: x.sample(frac=1, random_state=0) for key, x in excel_data.items()}
+        excel_data = self._read_features(book)
         scaled_data = []
         for key, x in excel_data.items():
             transformed_x, scaler_dict = scale(self.scaler, x)
