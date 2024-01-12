@@ -280,7 +280,7 @@ class PycaretInterface:
     seed: None | int = None
     optimize: str = "MCC"
     #verbose: bool = False
-    scaler: str = "minmax"
+    scaler: str = "zscore"
     budget_time: None | int = None
     log = Log("model_training")
     best_model: int = 3
@@ -1118,7 +1118,7 @@ class Trainer:
 
         return results, models_dict
     
-    def generate_validation_prediction(self, models_dict: dict[str, dict]) -> dict[str, pd.DataFrame]:
+    def generate_holdout_prediction(self, models_dict: dict[str, dict]) -> dict[str, pd.DataFrame]:
         
         """
         Generate test set predictions for a given set of models.
