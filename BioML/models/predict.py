@@ -5,11 +5,12 @@ from functools import cached_property
 import argparse
 from scipy.spatial import distance
 from Bio import SeqIO
+import Bio
 from Bio.SeqIO import FastaIO
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from ..utilities.utils import scale
+from ..utilities.utils import scale, read_outlier_file
 from .base import DataParser
 
 
@@ -217,7 +218,7 @@ class FastaExtractor:
         self.fasta_file = Path(self.fasta_file)
         self.resdir = Path(self.resdir)
 
-    def separate_negative_positive(self, pred: pd.DataFrame, domain: bool=True):
+    def separate_negative_positive(self, pred: pd.DataFrame):
         """
         Parameters
         ______________
@@ -259,7 +260,7 @@ class FastaExtractor:
         return positive, negative
     
     @staticmethod    
-    def _sorting_function(sequence: SeqIO.SeqRecord):
+    def _sorting_function(sequence: Bio.SeqRecord):
         scores = []
         id_ = sequence.id.split("-###")
         for x in id_:
@@ -271,16 +272,16 @@ class FastaExtractor:
                 scores.append(float(x.split(":")[1]))
         return tuple(scores)
 
-    def extract(self, positive_list: list[SeqIO.SeqRecord], negative_list: list[SeqIO.SeqRecord], 
+    def extract(self, positive_list: list[Bio.SeqRecord], negative_list: list[Bio.SeqRecord], 
                 positive_fasta: str="positive.fasta", negative_fasta: str="negative.fasta"):
         """
         A function to extract those test fasta sequences that passed the filter
 
         Parameters
         ___________
-        positive_list: list[SeqIO.SeqRecord]
+        positive_list: list[Bio.SeqRecord]
             The positive class sequences
-        negative_list: list[SeqIO.SeqRecord]
+        negative_list: list[Bio.SeqRecord]
             The negative class sequences
         positive_fasta: str, optional
             The new filtered fasta file with positive predictions
@@ -402,14 +403,11 @@ def main():
     fasta, training_features, scaler, model_path, test_features, res_dir, number_similar_samples, \
     outlier_train, outlier_test, problem, label, applicability_domain, sheet_name = arg_parse()
 
-    if outlier_test and Path(outlier_test[0]).exists():
-        with open(outlier_test) as out_test:
-            outlier_test = tuple(x.strip() for x in out_test.readlines())
-    
-    if outlier_train and Path(outlier_train[0]).exists():
-        with open(outlier_train) as out_train:
-            outlier_train = tuple(x.strip() for x in out_train.readlines())
+    # read outliers
+    outlier_test = read_outlier_file(outlier_test)
+    outlier_train = read_outlier_file(outlier_train)
 
+    # preparing the prediction
     feature = DataParser(training_features, label, outliers=outlier_train, sheets=sheet_name)
     test_features = feature.remove_outliers(feature.read_features(test_features), outlier_test)
     predictions = predict(test_features, model_path, problem)

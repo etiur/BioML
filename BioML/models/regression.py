@@ -3,12 +3,12 @@ A module that performs regression analysis on a dataset.
 """
 from pathlib import Path
 import argparse
-from functools import partial
 from typing import Iterable
 import pandas as pd
 from .base import PycaretInterface, Trainer, DataParser
 from ..utilities.training import evaluate_all_models, write_results
 from ..utilities import split_methods as split
+from ..utilities.utils import read_outlier_file
 
 
 def arg_parse():
@@ -176,11 +176,10 @@ def main():
     best_model, seed, drop, tune, plot, optimize, selected, sheet, num_iter, split_strategy, cluster, mutations, \
         test_num_mutations, greater = arg_parse()
     
+    # creating the arguments for the classes
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
     training_output = Path(training_output)
-    if outliers and Path(outliers[0]).exists():
-        with open(outliers) as out:
-            outliers = tuple(x.strip() for x in out.readlines())
+    outliers = read_outlier_file(outliers)
     
     ranking_dict = dict(difference_weight=difference_weight)
     # instantiate all the classes

@@ -55,6 +55,13 @@ def scale(scaler: str, X_train: pd.DataFrame,
     return transformed, scaler_dict, test_x
 
 
+def read_outlier_file(outliers):
+    if outliers and Path(outliers[0]).exists():
+        with open(outliers) as out:
+            outliers = tuple(x.strip() for x in out.readlines())
+    return outliers
+
+
 def write_excel(file: str | pd.io.excel._openpyxl.OpenpyxlWriter, 
                 dataframe: pd.DataFrame | pd.Series, sheet_name: str) -> None:
     """
