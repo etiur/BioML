@@ -1,7 +1,7 @@
 import argparse
 import pandas as pd
 from sklearn.feature_selection import VarianceThreshold
-from ..utilities.utils import Log, scale, write_excel
+from dataclasses import dataclass
 from pathlib import Path
 from sklearn.linear_model import RidgeClassifier, Ridge
 import numpy as np
@@ -9,12 +9,12 @@ from multiprocessing import get_context  # https://pythonspeed.com/articles/pyth
 import time
 from sklearn.model_selection import train_test_split
 from typing import Iterable, Any
-from dataclasses import dataclass
-from . import methods
 from sklearn.ensemble import RandomForestClassifier as rfc
 from sklearn.ensemble import RandomForestRegressor as rfr
-from ..utilities.custom_errors import DifferentLabelFeatureIndexError
 import xgboost as xgb
+from ..utilities.utils import Log, scale, write_excel
+from ..utilities.custom_errors import DifferentLabelFeatureIndexError
+from . import methods
 
 
 def arg_parse():
