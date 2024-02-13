@@ -260,7 +260,7 @@ class FastaExtractor:
         return positive, negative
     
     @staticmethod    
-    def _sorting_function(sequence: Bio.SeqRecord):
+    def _sorting_function(sequence: Bio.SeqRecord.SeqRecord):
         scores = []
         id_ = sequence.id.split("-###")
         for x in id_:
@@ -272,16 +272,16 @@ class FastaExtractor:
                 scores.append(float(x.split(":")[1]))
         return tuple(scores)
 
-    def extract(self, positive_list: list[Bio.SeqRecord], negative_list: list[Bio.SeqRecord], 
+    def extract(self, positive_list: list[Bio.SeqRecord.SeqRecord], negative_list: list[Bio.SeqRecord.SeqRecord], 
                 positive_fasta: str="positive.fasta", negative_fasta: str="negative.fasta"):
         """
         A function to extract those test fasta sequences that passed the filter
 
         Parameters
         ___________
-        positive_list: list[Bio.SeqRecord]
+        positive_list: list[Bio.SeqRecord.SeqRecord]
             The positive class sequences
-        negative_list: list[Bio.SeqRecord]
+        negative_list: list[Bio.SeqRecord.SeqRecord]
             The negative class sequences
         positive_fasta: str, optional
             The new filtered fasta file with positive predictions

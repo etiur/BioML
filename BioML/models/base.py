@@ -1139,7 +1139,7 @@ class Trainer:
             for key, models in result_dict.items():
                 # get the test set prediction results
                 predictions.append(self.predict_on_test_set(models))
-            prediction_results[tune_status] = self.arguments.sort_prediction(pd.concat(predictions))
+            prediction_results[tune_status] = self.arguments.sort_holdout_prediction(pd.concat(predictions))
         return prediction_results
 
            

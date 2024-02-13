@@ -1,5 +1,4 @@
 tests/*.log
-tests/*.ipynb*
 tests/*.pyc
 tests/__pycache__
 data/*.pkl

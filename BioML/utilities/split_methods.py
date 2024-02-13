@@ -119,7 +119,7 @@ class ClusterSpliter:
     def cluster_group(self):
         return {self.group_index[x]: v for x, v in self.cluster_info.items()}
     
-    def read_cluster_info(self, file_path):
+    def read_cluster_info(self, file_path: str):
         cluster_info = {}
         with open(file_path, "r") as f:
             lines = [x.strip() for x in f.readlines()]
