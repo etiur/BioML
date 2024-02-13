@@ -1,12 +1,14 @@
-from .utils import write_excel
 from pathlib import Path
-from ..models import base
 from typing import Callable, Iterable, Iterator
 import pandas as pd
 from dataclasses import dataclass
 import json
 import yaml
 from typing import Any, Callable
+from transformers import PreTrainedModel
+import torch
+from ..models import base
+from .utils import write_excel
 
 
 @dataclass(slots=True)
@@ -139,5 +141,25 @@ def iterate_excel(excel_file: str | Path):
             df = pd.read_excel(excel_file, index_col=0, sheet_name=sheet)
             yield df, sheet
 
+
+def estimate_model_size(model: PreTrainedModel, precision: torch.dtype):
+    """
+    Estimate the size of the model in memory.
+
+    Parameters
+    ----------
+    model : PreTrainedModel
+        The pre-trained model to estimate the size of.
+    precision : torch.dtype
+        The precision of the model's parameters. Can be torch.float16 for half precision or torch.float32 for single precision.
+
+    Returns
+    -------
+    str
+        The estimated size of the model in megabytes (MB), rounded to two decimal places.
+    """
+    num = 2 if precision==torch.float16 else 4
+    size = round(model.num_parameters() * num/1000_000, 2)
+    return f"{size} MB"
 
 

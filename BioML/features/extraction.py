@@ -2,14 +2,14 @@ import argparse
 import shutil
 from Bio import SeqIO
 from Bio.SeqIO import FastaIO
-from ..utilities.utils import rewrite_possum, run_program_subprocess
 from multiprocessing import get_context
 from pathlib import Path
 from typing import Iterable, Sequence, Callable
 from functools import partial
-from ..models.base import DataParser
 from dataclasses import dataclass, field
 import pandas as pd
+from ..models.base import DataParser
+from ..utilities.utils import rewrite_possum, run_program_subprocess
 
 
 def arg_parse():
