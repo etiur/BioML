@@ -103,7 +103,7 @@ class ApplicabilityDomain:
     """
     x_train: pd.DataFrame = field(default=None, init=False, repr=False)
     x_test: pd.DataFrame = field(default=None, init=False, repr=False)
-    thresholds: list = field(default_factory=None, init=False, repr=False)
+    thresholds: list = field(default_factory=None, init=False, repr=False) # adsdas
     n_insiders: list =field(default_factory=list, init=False, repr=False)
 
     def fit(self, x_train: pd.DataFrame) -> np.ndarray:
