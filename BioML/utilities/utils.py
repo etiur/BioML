@@ -55,7 +55,20 @@ def scale(scaler: str, X_train: pd.DataFrame,
     return transformed, scaler_dict, test_x
 
 
-def read_outlier_file(outliers):
+def read_outlier_file(outliers: tuple[str,...] | str | None=None) -> tuple[str,...] | None:
+    """
+    Read the outliers from a file.
+
+    Parameters
+    ----------
+    outliers : tuple[str,...] | str | None, optional
+        A tuple containing the outliers or the path to the file containing the outliers.
+
+    Returns
+    -------
+    tuple[str,...] | None
+        A tuple containing the outliers.
+    """
     if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
@@ -105,13 +118,13 @@ def write_excel(file: str | pd.io.excel._openpyxl.OpenpyxlWriter,
         dataframe.to_excel(file, sheet_name=sheet_name)
 
 
-def run_program_subprocess(commands: list[str], program_name: str | None=None, 
+def run_program_subprocess(commands: list[str] | str, program_name: str | None=None, 
                            shell: bool=False):
     """
     Run in parallel the subprocesses from the command
     Parameters
     ----------
-    commands: list[str]
+    commands: list[str] | str
         A list of commandline commands that calls to Possum programs or ifeature programs
     program_name: str, optional
         A name to identify the commands
@@ -389,16 +402,16 @@ class Threshold:
 
 class MmseqsClustering:
     @classmethod
-    def create_database(cls, input_file, output_database):
+    def create_database(cls, input_file: str | Path, output_database: str):
         """
-        _summary_
+        Create a database from a fasta file.
 
         Parameters
         ----------
-        input_file : _type_
-            _description_
-        output_database : _type_
-            _description_
+        input_file : str | Path
+            The path to the input fasta file.
+        output_database : str
+            The path to the output database.
         """
         input_file = Path(input_file)
         output_index = Path(output_database)
@@ -407,23 +420,56 @@ class MmseqsClustering:
         run_program_subprocess(command, "createdb")
 
     @classmethod
-    def index_database(cls, database):
+    def index_database(cls, database: str | Path):
         """
         Index the target database if it is going to be reused for search 
         frequently. This will speed up the search process because it loads in memory.
 
         Parameters
         ----------
-        database : _type_
-            _description_
+        database : str | Path
+            The path to the database.
         """
         database = Path(database)
         command = f"mmseqs createindex {database} tmp"
         run_program_subprocess(command, "create index")
     
     @classmethod
-    def cluster(cls, database, cluster_tsv="cluster.tsv", cluster_at_sequence_identity=0.3, 
-                sensitivity=6.5, **cluster_kwargs):
+    def cluster(cls, database: str | Path, cluster_tsv: str="cluster.tsv", 
+                cluster_at_sequence_identity: float =0.3, 
+                sensitivity: float=6.5, **cluster_kwargs: dict):
+        
+        """
+        Cluster sequences in the given database using MMseqs2.
+
+        Parameters
+        ----------
+        database : str or Path
+            Path to the input sequence database.
+        cluster_tsv : str or Path, optional
+            Path to the output cluster TSV file, by default "cluster.tsv".
+        cluster_at_sequence_identity : float, optional
+            Sequence identity threshold for clustering, by default 0.3.
+        sensitivity : float, optional
+            Sensitivity parameter for MMseqs2, by default 6.5.
+        **cluster_kwargs : dict, optional
+            Additional keyword arguments to pass to the MMseqs2 cluster command.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        SubprocessError
+            If the MMseqs2 commands fail.
+
+        Notes
+        -----
+        This method runs two MMseqs2 commands: 'cluster' and 'createtsv'.
+        The 'cluster' command performs the actual clustering of sequences,
+        and the 'createtsv' command creates a TSV file with the clustering results.
+        """
         database = Path(database)
         intermediate_output = Path("cluster_output/clusterdb")
         intermediate_output.parent.mkdir(exist_ok=True, parents=True)
@@ -437,8 +483,47 @@ class MmseqsClustering:
         run_program_subprocess(createtsv, "create tsv")
     
     @classmethod
-    def generate_pssm(cls, query_db, search_db, evalue=0.01, num_iterations=3, pssm_filename="result.pssm", max_seqs=600, 
-                      sensitivity=6.5, **search_kwags):
+    def generate_pssm(cls, query_db: str | Path, search_db: str | Path, 
+                      evalue: float=0.01, num_iterations: int=3, pssm_filename: str="result.pssm", 
+                      max_seqs: int=600, sensitivity: float=6.5, **search_kwags):
+        """
+        Generate a Position-Specific Scoring Matrix (PSSM) using MMseqs2.
+
+        Parameters
+        ----------
+        query_db : str or Path
+            Path to the query sequence database.
+        search_db : str or Path
+            Path to the search sequence database.
+        evalue : float, optional
+            E-value threshold for the search, by default 0.01.
+        num_iterations : int, optional
+            Number of search iterations, by default 3.
+        pssm_filename : str or Path, optional
+            Path to the output PSSM file, by default "result.pssm".
+        max_seqs : int, optional
+            Maximum number of sequences to keep per query, by default 600.
+        sensitivity : float, optional
+            Sensitivity parameter for MMseqs2, by default 6.5.
+        **search_kwags : dict, optional
+            Additional keyword arguments to pass to the MMseqs2 search command.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        SubprocessError
+            If the MMseqs2 commands fail.
+
+        Notes
+        -----
+        This method runs three MMseqs2 commands: 'search', 'result2profile', and 'profile2pssm'.
+        The 'search' command performs the sequence search,
+        the 'result2profile' command generates a profile from the search results,
+        and the 'profile2pssm' command converts the profile to a PSSM.
+        """
         search = f"mmseqs search {query_db} {search_db} result.out tmp -e {evalue} --num-iterations {num_iterations} --max-seqs {max_seqs} -s {sensitivity} -a"
         for key, value in search_kwags.items():
             search += f" --{key} {value}"
@@ -449,17 +534,108 @@ class MmseqsClustering:
         run_program_subprocess(pssm, "convert profile to pssm")
     
     @classmethod
-    def easy_cluster(cls, input_file, cluster_tsv, cluster_at_sequence_identity=0.3, sensitivity=6.5, **cluster_kwargs):
+    def easy_cluster(cls, input_file: str | Path, cluster_tsv: str | Path, 
+                    cluster_at_sequence_identity: float = 0.3, sensitivity: float = 6.5, 
+                    **cluster_kwargs: dict):
+        """
+        Easily cluster sequences in the given input file using MMseqs2.
+
+        Parameters
+        ----------
+        input_file : str or Path
+            Path to the input sequence file.
+        cluster_tsv : str or Path
+            Path to the output cluster TSV file.
+        cluster_at_sequence_identity : float, optional
+            Sequence identity threshold for clustering, by default 0.3.
+        sensitivity : float, optional
+            Sensitivity parameter for MMseqs2, by default 6.5.
+        **cluster_kwargs : dict, optional
+            Additional keyword arguments to pass to the MMseqs2 cluster command.
+
+        Returns
+        -------
+        dict
+            Dictionary with cluster information.
+
+        Notes
+        -----
+        This method creates a database from the input file, clusters the sequences,
+        and reads the cluster information.
+        """
         query_db = Path(input_file).with_suffix("")/"querydb"
         if not query_db.exists():
             cls.create_database(input_file, query_db)
-        cls.cluster(query_db, cluster_tsv, cluster_at_sequence_identity, sensitivity, **cluster_kwargs)
+        cls.cluster(query_db, cluster_tsv, cluster_at_sequence_identity, 
+                    sensitivity, **cluster_kwargs)
         return cls.read_cluster_info(cluster_tsv)
+    
+    @classmethod
+    def read_cluster_info(cls, file_path: str | Path):
+        """
+        Read cluster information from a file.
+
+        Parameters
+        ----------
+        file_path : str or Path
+            Path to the file with cluster information.
+
+        Returns
+        -------
+        dict
+            Dictionary with cluster information.
+        """
+        cluster_info = {}
+        with open(file_path, "r") as f:
+            lines = [x.strip() for x in f.readlines()]
+        for x in lines:
+            X = x.split("\t")
+            if X[0] not in cluster_info:
+                cluster_info[X[0]] = []
+            cluster_info[X[0]].append(X[1])
+        return cluster_info
 
     @classmethod
-    def easy_generate_pssm(cls, input_file, database_file, evalue=0.01, num_iterations=3, sensitivity=6.5,
-                           pssm_filename="result.pssm", generate_searchdb=False, **search_kwags):
-        
+    def easy_generate_pssm(cls, input_file: str | Path, database_file: str | Path, 
+                        evalue: float = 0.01, num_iterations: int = 3, 
+                        sensitivity: float = 6.5, pssm_filename: str = "result.pssm", 
+                        generate_searchdb: bool = False, max_seqs: int = 600, 
+                        **search_kwags: dict):
+        """
+        Easily generate a Position-Specific Scoring Matrix (PSSM) using MMseqs2.
+
+        Parameters
+        ----------
+        input_file : str or Path
+            Path to the input sequence file.
+        database_file : str or Path
+            Path to the database file.
+        evalue : float, optional
+            E-value threshold for the search, by default 0.01.
+        num_iterations : int, optional
+            Number of search iterations, by default 3.
+        sensitivity : float, optional
+            Sensitivity parameter for MMseqs2, by default 6.5.
+        pssm_filename : str or Path, optional
+            Path to the output PSSM file, by default "result.pssm".
+        generate_searchdb : bool, optional
+            Whether to generate a search database from the database file, by default False.
+        max_seqs : int, optional
+            Maximum number of sequences to keep per query, by default 600.
+        **search_kwags : dict, optional
+            Additional keyword arguments to pass to the MMseqs2 search command.
+
+        Returns
+        -------
+        str
+            Path to the generated PSSM file.
+
+        Notes
+        -----
+        This method creates databases from the input and database files if they do not exist,
+        and generates a PSSM from the query and search databases.
+        """
+
         query_db = Path(input_file).with_suffix("")/"querydb"
         search_db = Path(database_file)
         # generate the databases using the fasta files from input and the search databse like uniref
@@ -471,7 +647,7 @@ class MmseqsClustering:
 
         # generate the pssm files
         cls.generate_pssm(query_db, search_db, evalue, num_iterations, pssm_filename, 
-                          sensitivity, **search_kwags)
+                          max_seqs, sensitivity, **search_kwags)
         return pssm_filename
     
     @classmethod
@@ -479,7 +655,7 @@ class MmseqsClustering:
         cls.write_pssm(cls.iterate_pssm(pssm_filename), output_dir)
 
     @classmethod
-    def iterate_pssm(cls, pssm_filename: str | Path):
+    def iterate_pssm(cls, pssm_filename: str | Path) -> Generator[tuple[int, list[str]], None, None]:
         pssm_dict = defaultdict(list)
         current_seq = None
         with open(pssm_filename, "r") as f:
@@ -495,7 +671,7 @@ class MmseqsClustering:
             yield current_seq, pssm_dict[current_seq] 
 
     @classmethod
-    def write_pssm(cls, pssm_tuple: Generator[tuple[str, list[str]], None, None], 
+    def write_pssm(cls, pssm_tuple: Generator[tuple[int, list[str]], None, None], 
                    output_dir: str | Path ="pssm"):
         Path(output_dir).mkdir(exist_ok=True, parents=True)
         for key, value in pssm_tuple:
