@@ -11,7 +11,6 @@ build
 BioML.egg-info
 data/training_features
 data/*.log
-data/*.tsv
 tests/*training*
 tests/mlruns
 data/esterase_spp.xlsx
