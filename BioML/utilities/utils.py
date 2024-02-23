@@ -8,6 +8,9 @@ from subprocess import Popen, PIPE
 import time
 from collections import defaultdict
 from typing import Generator
+import random
+import numpy as np
+import torch
 
 
 def scale(scaler: str, X_train: pd.DataFrame, 
@@ -680,3 +683,19 @@ class MmseqsClustering:
             with open(f"{output_dir}/pssm_{key}.pssm", "w") as f:
                 f.writelines(hold)
 
+def set_seed(seed: int):
+    """
+    Set the seed for reproducibility.
+    
+    Parameters
+    ----------
+    seed : int
+        The seed value to set.
+
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True # use deterministic algorithms
+    torch.use_deterministic_algorithms(True, warn_only=True)

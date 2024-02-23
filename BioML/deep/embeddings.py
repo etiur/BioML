@@ -2,21 +2,28 @@ from transformers import AutoTokenizer, AutoModel
 from dataclasses import dataclass, field
 import torch
 from datasets import Dataset
-import random
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from Bio import SeqIO
 from torch.utils.data import DataLoader
+import argparse
+from ..utilities.utils import set_seed
 
 
-def set_seed(seed: int):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True # use deterministic algorithms
-    torch.use_deterministic_algorithms(True, warn_only=True)
+def arg_parse():
+    parser = argparse.ArgumentParser(description="Generate embeddings from the protein large language model in Huggingface")
+    parser.add_argument("fasta_file", type=str, help="Path to the FASTA file")
+    parser.add_argument("--model_name", type=str, default="facebook/esm2_t6_8M_UR50D", help="Name of the language model")
+    parser.add_argument("--disable_gpu", action="store_true", help="Whether to disable the GPU")
+    parser.add_argument("--batch_size", type=int, default=8, help="The batch size")
+    parser.add_argument("--save_path", type=str, default="embeddings.csv", help="The path to save the emebeddings in csv format")
+    parser.add_argument("--seed", type=int, default=12891245318, help="Seed for reproducibility")
+    parser.add_argument("--option", type=str, default="mean", help="Option to concatenate the embeddings")
+
+    args = parser.parse_args()
+    return [args.fasta_file, args.model_name, args.disable_gpu, args.batch_size, args.save_path, args.seed, args.option]
+
 
 
 @dataclass(slots=True)
@@ -209,7 +216,7 @@ class ExtractEmbeddings:
 
 
 def generate_embeddings(model_name: str, fasta_file: str, disable_gpu: bool=False, 
-                        batch_size: int=8, save_path: str = "embeddings.csv"):
+                        batch_size: int=8, save_path: str = "embeddings.csv", option: str = "mean"):
     """
     Generate embeddings from a FASTA file.
 
@@ -225,6 +232,8 @@ def generate_embeddings(model_name: str, fasta_file: str, disable_gpu: bool=Fals
         The batch size, by default 8
     save_path : str, optional
         The path to save the emebeddings in csv format, by default "embeddings.csv"
+    option : str, optional
+        Option to concatenate the embeddings, by default "mean"
     """
 
     config = LLMConfig(model_name, disable_gpu=disable_gpu)
@@ -233,5 +242,13 @@ def generate_embeddings(model_name: str, fasta_file: str, disable_gpu: bool=Fals
     tok = tokenizer.tokenize(fasta_file)
 
     # even if I have more columns in tok, it will only get the input_ids and the attention_mask
-    embeddings.batch_extract_save(tok["id"], tok, batch_size, save_path)
-    
+    embeddings.batch_extract_save(tok["id"], tok, batch_size, save_path, option)
+
+def main():
+    fasta_file, model_name, disable_gpu, batch_size, save_path, seed, option = arg_parse()
+    set_seed(seed)
+    generate_embeddings(model_name, fasta_file, disable_gpu, batch_size, save_path, option)
+
+
+if __name__ == "__main__":
+    main()
