@@ -492,7 +492,7 @@ class PycaretInterface:
 
         return results, returned_models
     
-    def plot_best_models(self, sorted_models: dict[str, Any], split_ind: int | None=None):
+    def plot_best_models(self, sorted_models: dict[str, Any], key: str | None=None):
         """
         Analyze the best models and plot them.
 
@@ -500,18 +500,18 @@ class PycaretInterface:
         ----------
         sorted_models : dict
             A dictionary containing the trained models sorted by performance.
-        split_ind : int, optional
-            The index of the data split to use for plotting. Defaults to None.
+        key : str, optional
+            Something to separate even more. Defaults to None.
         """
         
         self.log.info("Analyse the best models and plotting them")
         for ind, (name, model) in enumerate(sorted_models.items(), 1):
             if ind <= self.best_model:
                 self.log.info(f"Analyse the top {ind} model: {name}")
-                if not split_ind:
+                if not key:
                     plot_path = self.output_path / "model_plots" / name # type: ignore
                 else:
-                    plot_path = self.output_path / "model_plots" / f"{name}" / f"split_{split_ind}" # type: ignore
+                    plot_path = self.output_path / "model_plots" / name / key # type: ignore
                 plot_path.mkdir(parents=True, exist_ok=True)
                 for pl in self.plots:
                     self.pycaret.plot_model(model, pl, save=plot_path, verbose=False)
@@ -770,7 +770,8 @@ class PycaretInterface:
 
 
 class Trainer:
-    def __init__(self, caret_interface: PycaretInterface, training_arguments: ModelArguments, num_splits: int=5, num_iter: int=30):
+    def __init__(self, caret_interface: PycaretInterface, training_arguments: ModelArguments, 
+                 num_splits: int=5, num_iter: int=30):
         
         """
         Initialize a Trainer object with the given parameters.
@@ -794,6 +795,8 @@ class Trainer:
         self.log.info(f"Number of kfolds: {self.num_splits}")
         self.log.info(f"Number of iterations: {self.num_iter}")
         self.arguments = training_arguments
+        self.experiment.plots = self.arguments.plot
+
 
     def rank_results(self, results: dict[str, pd.DataFrame], returned_models:dict[str, Any], 
                      scoring_function: Callable):
@@ -1056,10 +1059,6 @@ class Trainer:
             sorted_results, sorted_models, top_params = self.analyse_models(feature, label_name, self.arguments._calculate_score_dataframe, 
                                                                             self.arguments.test_size, self.arguments.drop, self.arguments.selected, 
                                                                             **kwargs) # type: ignore
-            
-            if self.arguments.plot:
-                self.experiment.plots = self.arguments.plot
-                self.experiment.plot_best_models(sorted_models)
 
             return sorted_results, sorted_models, top_params
     
@@ -1089,11 +1088,13 @@ class Trainer:
             warnings.warn(f"Dummy model is in the top {list(sorted_results.index.unique(0)).index('dummy')} models, turning off tuning")
             tune = False
 
+        self.experiment.plot_best_models(sorted_models, "not_tuned")
         results, models_dict = self.save_results_and_models(sorted_results, sorted_models, top_params, "not_tuned")
 
         if tune:
             sorted_result_tune, sorted_models_tune, top_params_tune = self.retune_best_models(sorted_models)
             results_tuned, models_dict_tuned = self.save_results_and_models(sorted_result_tune, sorted_models_tune, top_params_tune, "tuned")
+            self.experiment.plot_best_models(sorted_models_tune, "tuned")
             results.update(results_tuned)
             models_dict.update(models_dict_tuned)
 
