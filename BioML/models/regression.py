@@ -216,7 +216,7 @@ def main():
     for tune_status, result_dict in results.items():
         for key, value in result_dict.items():
             write_results(f"{training_output}/{tune_status}", *value, sheet_name=key)
-        write_results(f"{training_output}/{tune_status}", test_set_predictions[tune_status] , sheet_name=f"test_results")
+        write_results(f"{training_output}/{tune_status}", test_set_predictions[tune_status] , sheet_name="test_results")
 
 
 if __name__ == "__main__":

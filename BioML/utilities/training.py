@@ -48,10 +48,16 @@ def evaluate_all_models(evaluation_fn: Callable, results: dict[str, dict[str, tu
     for tune_status, result_dict in results.items():
         for key, value in result_dict.items():
             if key == "stacked" or key == "majority":
-                evaluation_fn(value, save=f"{training_output}/evaluation_plots/{tune_status}/{key}")
+                try:
+                    evaluation_fn(value, save=f"{training_output}/evaluation_plots/{tune_status}/{key}")
+                except AttributeError:
+                    pass
             elif tune_status == "tuned" and key == "holdout":
                 for mod_name, model in value.items(): # type: ignore
-                    evaluation_fn(model, save=f"{training_output}/evaluation_plots/{tune_status}/{key}/{mod_name}")
+                    try:
+                        evaluation_fn(model, save=f"{training_output}/evaluation_plots/{tune_status}/{key}/{mod_name}")
+                    except AttributeError:
+                        pass
 
 
 def write_results(training_output: Path | str, sorted_results: pd.DataFrame, top_params: pd.Series | None = None, 

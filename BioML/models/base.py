@@ -28,6 +28,7 @@ class ModelArguments(Protocol):
     selected: Iterable[str]
     optimize: str
     test_size: float
+    plot: Iterable[str]
 
     def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> int | float:
         ...
@@ -1063,7 +1064,7 @@ class Trainer:
             return sorted_results, sorted_models, top_params
     
     def generate_training_results(self, feature: pd.DataFrame, label_name: str, tune: bool=False, 
-                                  **kwargs: Any) -> tuple[dict[str, dict], dict[str, dict]]:
+                              **kwargs: Any) -> tuple[dict[str, dict], dict[str, dict]]:
         """
         Generate training results for a given model, training object, and feature data.
 
@@ -1088,33 +1089,49 @@ class Trainer:
             warnings.warn(f"Dummy model is in the top {list(sorted_results.index.unique(0)).index('dummy')} models, turning off tuning")
             tune = False
 
-        # saving the results in a dictionary and writing it into excel files
-        models_dict = defaultdict(dict)
-        results = defaultdict(dict)
-        # save the results
-        results["not_tuned"]["holdout"] = sorted_results, top_params
-        stacked_results, stacked_models, stacked_params = self.stack_models(sorted_models)
-        results["not_tuned"]["stacked"] = stacked_results, stacked_params
-        majority_results, majority_models = self.create_majority_model(sorted_models)
-        results["not_tuned"]["majority"] = majority_results 
-        #satev the models
-        models_dict["not_tuned"]["holdout"] = sorted_models
-        models_dict["not_tuned"]["stacked"] = stacked_models
-        models_dict["not_tuned"]["majority"] = majority_models
+        results, models_dict = self.save_results_and_models(sorted_results, sorted_models, top_params, "not_tuned")
 
         if tune:
-            # save the results
             sorted_result_tune, sorted_models_tune, top_params_tune = self.retune_best_models(sorted_models)
-            results["tuned"]["holdout"] = sorted_result_tune, top_params_tune
-            stacked_results_tune, stacked_models_tune, stacked_params_tune = self.stack_models(sorted_models_tune)
-            results["tuned"]["stacked"] = stacked_results_tune, stacked_params_tune
-            majority_results_tune, majority_models_tune = self.create_majority_model(sorted_models_tune)
-            results["tuned"]["majority"] = majority_results_tune,   
+            results_tuned, models_dict_tuned = self.save_results_and_models(sorted_result_tune, sorted_models_tune, top_params_tune, "tuned")
+            results.update(results_tuned)
+            models_dict.update(models_dict_tuned)
 
-            #save the models
-            models_dict["tuned"]["holdout"] = sorted_models_tune
-            models_dict["tuned"]["stacked"] = stacked_models_tune
-            models_dict["tuned"]["majority"] = majority_models_tune
+        return results, models_dict
+
+    def save_results_and_models(self, sorted_results: pd.DataFrame, sorted_models: dict[str, Any], 
+                                top_params: pd.DataFrame | pd.Series, key: str):
+        """
+        Save the results and models in a dictionary.
+
+        Parameters
+        ----------
+        sorted_results : pd.DataFrame
+            The sorted results from the training.
+        sorted_models : dict[str, Any]
+            The sorted models from the training.
+        top_params : pd.DataFrame | pd.Series
+            The parameters of the models.
+        key : str
+            The key to use for the results and models (tuned and notuned)
+
+        Returns
+        -------
+        dict, dict
+            A dictionary containing the results and a dictionary containing the models.
+        """
+        results = defaultdict(dict)
+        models_dict = defaultdict(dict)
+
+        results[key]["holdout"] = sorted_results, top_params
+        stacked_results, stacked_models, stacked_params = self.stack_models(sorted_models)
+        results[key]["stacked"] = stacked_results, stacked_params
+        majority_results, majority_models = self.create_majority_model(sorted_models)
+        results[key]["majority"] = majority_results,  
+
+        models_dict[key]["holdout"] = sorted_models
+        models_dict[key]["stacked"] = stacked_models
+        models_dict[key]["majority"] = majority_models
 
         return results, models_dict
     
