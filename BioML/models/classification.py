@@ -214,7 +214,7 @@ def main():
                 "mutations": split.MutationSpliter(mutations, test_num_mutations, greater, 
                                                    num_splits=num_split, random_state=experiment.seed)}
     # split the data based on the strategy
-    if split_strategy in ["cluster", "mutations"]:
+    if split_strategy in ["cluster", "mutations"]: # TODO: add the GroupKFold which is generic
         X_train, X_test = spliting[split_strategy].train_test_split(feature.features)
 
         results, models_dict = training.generate_training_results(X_train, feature.label, tune, test_data=X_test, 

@@ -61,6 +61,16 @@ class LLMConfig:
 
 @dataclass(slots=True)
 class TokenizeFasta:
+    """
+    Tokenize the fasta file.
+
+    Parameters
+    ----------
+    config : LLMConfig
+        Configuration for the language model.
+    tokenizer : None
+        Tokenizer for the language model.
+    """
     config: LLMConfig
     tokenizer: None = field(default=None, init=False)
      
@@ -109,6 +119,17 @@ class TokenizeFasta:
 
 @dataclass(slots=True)
 class ExtractEmbeddings:
+    """
+    Extract embeddings from the tokenized sequences.
+
+    Parameters
+    ----------
+    config : LLMConfig
+        Configuration for the language model.
+    model : None
+        Language model to use for the embeddings.
+
+    """
     config: LLMConfig
     model: None = field(default=None, init=False)
 
@@ -196,7 +217,7 @@ class ExtractEmbeddings:
         seq_keys : list[str]
             Keys for the sequences.
         dataset : Dataset
-            Tokenized sequences saved in a Dataset objectf from Huggingface.
+            Tokenized sequences saved in a Dataset object from Huggingface.
         batch_size : int, optional
             The batch size, by default 8
         save_path : str, optional
