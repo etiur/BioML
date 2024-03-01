@@ -17,3 +17,6 @@ data/esterase_spp.xlsx
 tests/result.pssm
 data/db_seq.fasta
 examples/*.log
+examples/mlruns
+examples/catboost_info
+examples/outputs
