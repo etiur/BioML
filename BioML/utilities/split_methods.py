@@ -3,13 +3,13 @@ import numpy as np
 import pandas as pd
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Protocol, Generator, Iterable
+from typing import Protocol, Generator, Sequence
 from sklearn.model_selection import GroupKFold
 import operator
 
 
-def match_type(data: pd.DataFrame | pd.Series | np.ndarray,
-               train_index: list[int] | np.ndarray, test_index: list[int] | np.ndarray):
+def match_type(data: Sequence[int | str], train_index: list[int] | np.ndarray, 
+               test_index: list[int] | np.ndarray):
     """
     A function to match the type of the data and return the train and test sets.
 
@@ -37,6 +37,8 @@ def match_type(data: pd.DataFrame | pd.Series | np.ndarray,
             return val.iloc[train_index], val.iloc[test_index]
         case np.ndarray() as val:
             return val[train_index], val[test_index]
+        case list(val) | tuple(val):
+            return np.array(val)[train_index], np.array(val)[test_index]
         case _:
             raise TypeError("data must be a pandas DataFrame or a numpy array")
 
@@ -90,7 +92,7 @@ class ShuffleGroupKFold:
     random_state: int | None = None
 
     @staticmethod
-    def get_sample_size(test_size:int | float, X: pd.DataFrame | np.ndarray):
+    def get_sample_size(test_size:int | float, X: Sequence[int | str]):
         """
         Get the sample size for the test set.
 
@@ -113,16 +115,16 @@ class ShuffleGroupKFold:
         """
         match test_size:
             case float(val) if 1 > val > 0 :
-                num_test = int(val*X.shape[0])
-            case int(val) if val < X.shape[0]:
+                num_test = int(val*len(X))
+            case int(val) if val < len(X):
                 num_test = val
             case _:
                 raise TypeError("test_size must be an integer less than the sample size or a float between 0 and 1")
 
         return num_test
 
-    def split(self, X: pd.DataFrame, y: pd.Series | np.ndarray | None=None, 
-              groups: Iterable[str|int] =None) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
+    def split(self, X: Sequence[int | str] | pd.DataFrame, y: Sequence[int] | None=None, 
+              groups: Sequence[str|int] | None = None) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
         """
         Split the data into train and test sets.
 
@@ -140,16 +142,14 @@ class ShuffleGroupKFold:
         Generator[tuple[np.ndarray, np.ndarray], None, None]
             The train and test indices for each fold
         """
-        train_data = X.copy()
-        train_group = np.array(groups).copy()
         group_kfold = GroupKFold(n_splits=self.n_splits)
         if self.shuffle:
-            train_data, train_group = shuffle(train_data, train_group, random_state=self.random_state)
+            train_data, train_group = shuffle(X, groups, random_state=self.random_state)
         for i, (train_index, test_index) in enumerate(group_kfold.split(train_data, y, groups=train_group)):
             yield train_index, test_index
     
-    def train_test_split(self, X: pd.DataFrame, y: pd.Series | np.ndarray | None=None, 
-                         test_size:int | float = 0.2, groups: Iterable[str|int] | None =None):
+    def train_test_split(self, X: Sequence[int | str] | pd.DataFrame, y: Sequence[int] | None=None, 
+                         test_size:int | float = 0.2, groups: Sequence[str|int] | None =None):
         """
         Split the data into train and test sets.
 
@@ -171,12 +171,10 @@ class ShuffleGroupKFold:
             
         """
         num_test = self.get_sample_size(test_size, X)
-        train_group = np.array(groups).copy()
-        train_data = X.copy()
         if self.shuffle:
-            train_data, train_group = shuffle(train_data, train_group, random_state=self.random_state)
+            train_data, train_group = shuffle(X, groups, random_state=self.random_state)
         # generate the train_test_split
-        group_kfold = GroupKFold(n_splits=X.shape[0]//num_test)
+        group_kfold = GroupKFold(n_splits=len(X)//num_test)
         for i, (train_index, test_index) in enumerate(group_kfold.split(train_data, y, groups=train_group)):
             X_train, X_test = match_type(train_data, train_index, test_index)
             if y is not None:
@@ -184,7 +182,7 @@ class ShuffleGroupKFold:
                 return X_train, X_test, y_train, y_test
             return X_train, X_test
     
-    def get_n_splits(self, X: pd.DataFrame | np.ndarray | None= None, y: pd.Series | np.ndarray | None=None, 
+    def get_n_splits(self, X: Sequence[int | str] | None= None, y: Sequence[int] | None=None, 
                      groups=None) -> int:
         return self.n_splits
 
@@ -212,7 +210,6 @@ class ClusterSpliter:
     num_splits: int = 5
     shuffle: bool = True
     random_state: int | None = None
-    test_size:int | float = 0.2
 
     @property
     def cluster_info(self) -> dict[str | int, list[str|int]]:
@@ -265,16 +262,16 @@ class ClusterSpliter:
             cluster_info[X[0]].append(X[1])
         return cluster_info
 
-    def get_group_index(self, index: Iterable[str | int]) -> np.ndarray:
+    def get_group_index(self, index: Sequence[str | int]) -> np.ndarray:
         """
         Now for each sample in the data, assign a group using the cluster info dictionary.
         The groups will be the keys of the cluster info.
 
-        X.index should be the same as the cluster_info values.
+        index should be the same as the cluster_info values.
 
         Parameters
         ----------
-        X : Iterable[str | int]
+        X : Sequence[str | int]
             The index of the data which should be in cluster info values.
 
         Returns
@@ -291,42 +288,54 @@ class ClusterSpliter:
         group = np.array(group)
         return group
 
-    def train_test_split(self, X: pd.DataFrame, y: pd.Series | np.ndarray | None=None, 
-                         groups: Iterable[str|int] | None=None):
+    def train_test_split(self, X: Sequence[str | int] | pd.DataFrame, y: Sequence[int] | None=None,
+                         groups: Sequence[str|int] | None=None, test_size:int | float = 0.2, 
+                         index: Sequence[str | int] | None=None):
         """
         Split the data into train and test sets.
 
         Parameters
         ----------
-        X : pd.DataFrame
+        X : Sequence[str | int]
+            The data
             
-        y : pd.Series | np.ndarray | None, optional
+        y : Sequence | None, optional
             _description_, by default None
-        groups : _type_, optional
-            _description_, by default None
+        groups : Sequence[str|int] | None, optional
+            A list of group indexes, by default None
+        test_size : int | float, optional
+            The size of the test set, by default 0.2
+        index : Sequence[str | int] | None, optional
+            The index of the data to generate the groups with the values for cluster info, by default None
+            Used when X is not the same as the values in the cluster info.
 
         Returns
         -------
-        _type_
-            _description_
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+            The train and test sets or indices
         """
         if not groups:
-            groups = self.get_group_index(X.index)
+            if not index:
+                groups = self.get_group_index(X.index) 
+            else:
+                groups = self.get_group_index(index)
 
-        return self.group_kfold.train_test_split(X, y, test_size=self.test_size, 
-                                                 groups=groups)
+        return self.group_kfold.train_test_split(X, y, test_size=test_size, groups=groups)
 
-
-    def split(self, X: pd.DataFrame, y: pd.Series | np.ndarray | None=None, 
-              groups: None | Iterable[str | int] =None) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
+    def split(self, X: Sequence[int | str] | pd.DataFrame, y: Sequence[int] | None=None, 
+              groups: None | Sequence[str | int] =None, 
+              index: Sequence[str | int] | None=None) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
         
         if not groups:
-            groups = self.get_group_index(X.index)
+            if not index:
+                groups = self.get_group_index(X.index) 
+            else:
+                groups = self.get_group_index(index)
 
         for train_index, test_index in self.group_kfold.split(X, y, groups=groups):
             yield train_index, test_index
     
-    def get_n_splits(self, X: pd.DataFrame | np.ndarray | None= None, y: pd.Series | np.ndarray | None=None, 
+    def get_n_splits(self, X: Sequence[int | str] | None= None, y: Sequence[str] | None=None, 
                      groups=None) -> int:
         return self.num_splits
 
@@ -338,7 +347,7 @@ class MutationSpliter:
 
     Parameters
     ----------
-    mutations : np.ndarray | list[int] | str | tuple[int, ...]
+    mutations : Sequence[int] | str
         The number of mutations for each sample.
     test_num_mutations : int
         The number of mutations used as threshold for the sampel to be included in the test set.
@@ -359,7 +368,7 @@ class MutationSpliter:
     TypeError
         mutations must be an array of number of mutations or a string if the mutations are in the columns
     """
-    mutations: np.ndarray | list[int] | str | tuple[int, ...]
+    mutations: Sequence[int] | str 
     test_num_mutations: int
     greater: bool = True
     num_splits: int = 5
@@ -394,7 +403,7 @@ class MutationSpliter:
             return operator.ge(num1, num2)
         return operator.le(num1, num2)
 
-    def get_test_indices(self, mutations: list[int] | np.ndarray):
+    def get_test_indices(self, mutations: Sequence[int]):
         """
         Get the test indices.
 
@@ -416,7 +425,7 @@ class MutationSpliter:
             test_indices =  shuffle(test_indices, random_state=self.random_state)
         return test_indices
     
-    def get_train_indices(self, mutations: list[int] | np.ndarray, test_indices: list[int] | np.ndarray):
+    def get_train_indices(self, mutations: Sequence[int], test_indices: Sequence[int]):
         """
         Get the train indices.
 
@@ -437,7 +446,7 @@ class MutationSpliter:
             train_indices = shuffle(train_indices, random_state=self.random_state)
         return train_indices
 
-    def get_mutations(self, X: pd.DataFrame) -> tuple[pd.DataFrame, Iterable[int]]:
+    def get_mutations(self, X: pd.DataFrame | Sequence[int]) -> tuple[pd.DataFrame, Sequence[int]]:
         """
         Get the mutations from the data.
 
@@ -473,7 +482,7 @@ class MutationSpliter:
             case _:
                 raise TypeError("mutations must be an array of number of mutations or a string if the mutations are in the columns of the dataframe")
         
-    def train_test_split(self, X: pd.DataFrame, y: pd.Series | np.ndarray | None=None, 
+    def train_test_split(self, X: pd.DataFrame | Sequence[int], y: Sequence[int] | None=None, 
                          groups=None):
         """
         Split the data into train and test sets.

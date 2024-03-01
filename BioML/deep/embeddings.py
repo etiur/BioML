@@ -100,6 +100,22 @@ class TokenizeFasta:
             for seq in seqs:
                 yield {"id":seq.id, "seq":str(seq.seq)}
 
+    def create_dataset(self, fasta_file: str):
+        """
+        Create a dataset from the fasta file.
+
+        Parameters
+        ----------
+        fasta_file : str
+            Path to the FASTA file.
+
+        Returns
+        -------
+        Dataset
+            Dataset of the fasta sequences.
+        """
+        return Dataset.from_generator(self.chunks, gen_kwargs={"fasta_file": fasta_file})
+
     def tokenize(self, fasta_file: str):
         """
         Tokenize the batch of sequences.
@@ -114,7 +130,7 @@ class TokenizeFasta:
         dict[str, torch.Tensor]
             Tokenized sequences.
         """
-        dataset = Dataset.from_generator(self.chunks, gen_kwargs={"fasta_file": fasta_file})
+        dataset = self.create_dataset(fasta_file)
         tok = dataset.map(lambda examples: self.tokenizer(examples["seq"], return_tensors="np", 
                           padding=True, truncation=True), batched=True)
         tok.set_format(type="torch", columns=["input_ids", "attention_mask"], device=self.config.device)
