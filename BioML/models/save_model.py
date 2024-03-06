@@ -184,24 +184,28 @@ def main():
     
     experiment = PycaretInterface(problem, seed, scaler=scaler, best_model=len(selected_models), optimize=optimize, 
                                   output_path=model_output)
-    training = Trainer(experiment, num_split, num_iter)
-    if problem == "classification":
-        model = Classifier(drop=(), selected=selected_models, test_size=test_size, optimize=optimize)
-    elif problem == "regression":
-        model = Regressor(drop=(), selected=selected_models, test_size=test_size, optimize=optimize)
     
-    spliting = {"cluster": split.ClusterSpliter(cluster, num_split, random_state=experiment.seed, test_size=test_size),
+    if problem == "classification":
+        model = Classifier(drop=(), selected=selected_models, test_size=test_size, optimize=optimize, plot=())
+    elif problem == "regression":
+        model = Regressor(drop=(), selected=selected_models, test_size=test_size, optimize=optimize, plot=())
+
+    training = Trainer(experiment, model, num_split, num_iter)
+
+    spliting = {"cluster": split.ClusterSpliter(cluster, num_split, random_state=experiment.seed),
                 "mutations": split.MutationSpliter(mutations, test_num_mutations, greater, 
                                                    num_splits=num_split, random_state=experiment.seed)}
-    
-    # run the training using random split or the predefined splits
-    if split_strategy != "random":
-        X_train, X_test = spliting[split_strategy].train_test_split(feature.features)
-        _, sorted_models, _ = model.run_training(training, X_train, feature.label, plot=(), test_data=X_test, 
-                                                 fold_strategy=spliting[split_strategy], **setup_config)
-    else:
-        _, sorted_models, _ = model.run_training(training, feature.features, feature.label, plot=(), **setup_config)
+    # split the data based on the strategy
+    if split_strategy in ["cluster", "mutations"]:
+        X_train, X_test = spliting[split_strategy].train_test_split(feature.features, test_size=test_size)
 
+        _, sorted_models, _ = training.run_training(X_train, feature.label, test_data=X_test, 
+                                                     fold_strategy=spliting[split_strategy], **setup_config)
+    else:
+        _, sorted_models, _ = training.run_training(feature.features, feature.label, fold_strategy=split_strategy, 
+                                                    **setup_config)
+    
+    # tune the models if they were tuned
     if tune:
         _, sorted_models, _ = training.retune_best_models(sorted_models)
 

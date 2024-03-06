@@ -130,7 +130,7 @@ class Classifier:
         self.difference_weight = ranking_dict["difference_weight"]
         self.selected = selected
         self.optimize = optimize
-        self.plot = plot
+        self.plot = plot if plot else ()
     
     def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> int | float:
         """
@@ -217,7 +217,7 @@ def main():
                 "mutations": split.MutationSpliter(mutations, test_num_mutations, greater, shuffle=shuffle,
                                                    num_splits=num_split, random_state=experiment.seed)}
     # split the data based on the strategy
-    if split_strategy in ["cluster", "mutations"]: # TODO: add the GroupKFold which is generic
+    if split_strategy in ["cluster", "mutations"]:
         X_train, X_test = spliting[split_strategy].train_test_split(feature.features, test_size=test_size)
 
         results, models_dict = training.generate_training_results(X_train, feature.label, tune, test_data=X_test, 

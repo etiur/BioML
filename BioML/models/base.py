@@ -1037,13 +1037,6 @@ class Trainer:
                 The features of the training set
             label_name : str
                 The column name of the label in the feature DataFrame
-            plot : tuple[str, ...], optional
-                Plot the plots relevant to the models, by default 1, 4 and 5
-                    1. learning: learning curve
-                    2. pr: Precision recall curve
-                    3. auc: the ROC curve
-                    4. confusion_matrix 
-                    5. class_report: read classification_report from sklearn.metrics
 
             **kwargs : dict, optional
                 A dictionary containing the parameters for the setup function in pycaret.

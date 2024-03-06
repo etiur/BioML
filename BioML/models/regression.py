@@ -116,7 +116,8 @@ class Regressor:
         self.difference_weight = ranking_dict["difference_weight"]
         self.selected = selected
         self.optimize = optimize
-        self.plot = plot
+        self.plot = plot if plot else ()
+        
 
     def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> float | int: # type: ignore
         """
