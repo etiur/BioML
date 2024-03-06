@@ -246,7 +246,7 @@ class ExtractEmbeddings:
     
     def batch_extract_save(self, seq_keys: list[str], dataset: Dataset, batch_size: int=8, 
                            save_path: str | Path = "embeddings.csv", option: str = "mean",
-                           format: str = "csv"):
+                           format_: str = "csv"):
         """
         Extract and save embeddings from a batch of sequences.
 
@@ -262,7 +262,7 @@ class ExtractEmbeddings:
             The path to save the emebeddings in csv format, by default "embeddings.csv"
         option : str, optional
             Option to concatenate the embeddings, by default "mean"
-        format : str, optional
+        format_ : str, optional
             Format to save the embeddings, by default "csv" but can also be parquet
         Note
         ----
@@ -274,13 +274,13 @@ class ExtractEmbeddings:
             batch_seq_keys = seq_keys[num*batch_size:(num+1)*batch_size]
             results = self.extract(batch_seq_keys, batch, option)
             self.save(results, save_path)
-        if format == "parquet":
+        if format_ == "parquet":
             self.convert_to_parquet(save_path, save_path.with_suffix(".parquet"))
 
 
 def generate_embeddings(model_name: str, fasta_file: str, disable_gpu: bool=False, 
                         batch_size: int=8, save_path: str = "embeddings.csv", 
-                        option: str = "mean", format: str = "csv"):
+                        option: str = "mean", format_: str = "csv"):
     """
     Generate embeddings from a FASTA file.
 
@@ -298,7 +298,7 @@ def generate_embeddings(model_name: str, fasta_file: str, disable_gpu: bool=Fals
         The path to save the emebeddings in csv format, by default "embeddings.csv"
     option : str, optional
         Option to concatenate the embeddings, by default "mean"
-    format : str, optional
+    format_ : str, optional
         Format to save the embeddings, by default "csv" but can also be parquet
     """
 
@@ -308,7 +308,7 @@ def generate_embeddings(model_name: str, fasta_file: str, disable_gpu: bool=Fals
     tok = tokenizer.tokenize(fasta_file)
 
     # even if I have more columns in tok, it will only get the input_ids and the attention_mask
-    embeddings.batch_extract_save(tok["id"], tok, batch_size, save_path, option, format)
+    embeddings.batch_extract_save(tok["id"], tok, batch_size, save_path, option, format_)
 
 
 def main():

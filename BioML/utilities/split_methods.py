@@ -483,7 +483,7 @@ class MutationSpliter:
                 raise TypeError("mutations must be an array of number of mutations or a string if the mutations are in the columns of the dataframe")
         
     def train_test_split(self, X: pd.DataFrame | Sequence[int], y: Sequence[int] | None=None, 
-                         groups=None):
+                         groups=None, test_size:int | float = 0.2):
         """
         Split the data into train and test sets.
 
@@ -495,6 +495,8 @@ class MutationSpliter:
             The labels, by default None
         groups : _type_, optional
             _description_, by default None
+        test_size : int | float, optional
+            For compatibility issues, by default 0.2
 
         """
         mutations, train_data = self.get_mutations(X)
