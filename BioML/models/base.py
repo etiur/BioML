@@ -770,7 +770,7 @@ class Trainer:
         self.log.info(f"Number of iterations: {self.num_iter}")
         self.arguments = training_arguments
         self.experiment.plots = self.arguments.plot
-        self.cross_validation = True
+        self.cross_validation = cross_validation
 
 
     def rank_results(self, results: dict[str, pd.DataFrame], returned_models:dict[str, Any], 
@@ -963,7 +963,7 @@ class Trainer:
         
         return ensemble_results, ensemble_model
     
-    def predict(self, sorted_models: dict | list, target_data: pd.DataFrame|None=None) -> pd.DataFrame:
+    def predict(self, sorted_models: dict | list | Any, target_data: pd.DataFrame|None=None) -> pd.DataFrame:
         """
         Generate predictions on the test set using the specified models.
 

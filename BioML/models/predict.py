@@ -74,10 +74,11 @@ class Predictor:
 
     @cached_property
     def loaded_model(self):
+        """Load the model from the model path and return it"""
         return self.model.load_model(self.model_path, verbose=False)
         
 
-    def predicting(self, problem: str="classification") -> pd.DataFrame:
+    def predict(self, problem: str="classification") -> pd.DataFrame:
         """
         Make predictions on new samples
 
@@ -343,7 +344,7 @@ def predict(test_features: pd.DataFrame, model_path: str | Path, problem: str="c
         experiment = RegressionExperiment()
 
     predictor = Predictor(test_features, experiment, model_path)
-    pred = predictor.predicting(problem)
+    pred = predictor.predict(problem)
     return pred
 
 
