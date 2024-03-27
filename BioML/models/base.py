@@ -52,28 +52,6 @@ class DataParser:
         An iterable containing the indices of the outliers in the feature and label data. Defaults to an empty ().
     sheets : str or int, optional
         The sheet name or index to read from an Excel file. Defaults to 0.
-
-    Attributes
-    ----------
-    features : pd.DataFrame
-        The feature data.
-    label : pd.Series or None
-        The label data.
-    outliers : Iterable[str]
-        An iterable containing the indices of the outliers in the feature and label data.
-    sheets : str or int
-        The sheet name or index to read from an Excel file.
-
-    Methods
-    -------
-    read_features(features)
-        Reads the feature data from a file or returns the input data.
-    read_labels(label)
-        Reads the label data from a file or returns the input data.
-    scale(X_train, X_test)
-        Scales the feature data.
-    process(transformed_x, test_x, y_train, y_test)
-        Concatenates the feature and label data so that it can be used by pycaret.
     """
     features: pd.DataFrame | str | list | np.ndarray
     label: pd.Series | pd.DataFrame | str | Iterable[int|float|str] | None = None
@@ -89,8 +67,9 @@ class DataParser:
                     raise DifferentLabelFeatureIndexError("The label and feature indices are different")
                 self.features = pd.concat([self.features, self.label.rename("target")], axis=1)
                 self.label = "target"
-
-        self.features = self.remove_outliers(self.features, self.outliers)
+        
+        if self.outliers:
+            self.features = self.remove_outliers(self.features, self.outliers)
 
     def read_features(self, features: str | pd.DataFrame | list | np.ndarray, sheets: str | int | None=None) -> pd.DataFrame:
         """
@@ -107,11 +86,6 @@ class DataParser:
         -------
         pd.DataFrame
             The feature data as a pandas DataFrame.
-
-        Raises
-        ------
-        ValueError
-            If the input data type is not supported.
         """
         # concatenate features and labels
         match features:
@@ -147,11 +121,6 @@ class DataParser:
         -------
         pd.Series
             The label data as a pandas Series.
-
-        Raises
-        ------
-        ValueError
-            If the input data type is not supported.
         """
         match label:
             case pd.Series() as labels:
@@ -245,37 +214,6 @@ class PycaretInterface:
     model : ClassificationExperiment or RegressionExperiment
         The PyCaret experiment object for the machine learning model.
 
-    Methods
-    -------
-    setup_training(features, label_name, fold, test_size, scaler, **kwargs)
-        Set up the training data for the machine learning models.
-    train()
-        Train the machine learning models.
-    get_best_models(results)
-        Get the best models from the training results.
-    evaluate_models(returned_models, X_test, y_test)
-        Evaluate the performance of the trained models on the test data.
-    save_models(returned_models)
-        Save the trained models to files.
-    load_models(model_names)
-        Load the trained models from files.
-    predict(X_test, model_names)
-        Generate predictions on new data using the trained models.
-    evaluate(X_test, y_test, model_names)
-        Evaluate the performance of the trained models on new data.
-    plot_best_models(sorted_models, split_ind=None)
-        Analyze the best models and plot them.
-    retune_model(name, model,, num_iter=30, fold=5)
-        Retune the specified model using Optuna.
-    stack_models(estimator_list, fold=5, meta_model=None)
-        Create a stacked ensemble model from a list of models.
-    get_params(name, model)
-        Get the parameters of a trained model.
-    get_best_params_multiple(sorted_models)
-        Get the best parameters for multiple models.
-    get_params_stacked(stacked_models)
-        Get the parameters of the final estimator in a stacked ensemble model.
-
     """
     objective: str
     seed: None | int = None
@@ -329,16 +267,39 @@ class PycaretInterface:
     
     @staticmethod
     def _check_value(value: str | Iterable[str], element_list: list[str], element_name: str) -> list[str]:
-        if isinstance(value, (list, np.ndarray, tuple, set)):
+        """
+        To set the value of the plots and models
+
+        Parameters
+        ----------
+        value : str | Iterable[str]
+            The model or plot names to check
+        element_list : list[str]
+            The list to check against
+        element_name : str
+            If it is plot or model
+
+        Returns
+        -------
+        list[str]
+            The list of the models or plots
+
+        Raises
+        ------
+        ValueError
+            If the value is not in the element_list
+        ValueError
+            If the value is not a string or an array of strings
+        """
+        if element_name == "plots" and isinstance(value, (list, np.ndarray, tuple, set)):
             test = list(set(value).difference(element_list))
             if test:
                 raise ValueError(f"the {element_name} should be one of the following: {element_list} and not {test}")
-        elif isinstance(value, str):
+        if isinstance(value, str):
             if value not in element_list:
                 raise ValueError(f"the {element_name} should be one of the following: {element_list} and not {value}")
             value = [value]
-        else:
-            raise TypeError(f"the {element_name} should be a string or an array of strings")
+
         return list(value)
 
     @property
@@ -356,7 +317,8 @@ class PycaretInterface:
     def final_models(self) -> list[str]:
         """
         The models to be used for classification or regression use one of the keys, 
-        you can include custom models as long as it is compatibl with scit-learn API
+        you can include custom models
+        just pass an untrained model object consistent with scikit-learn API (fit, predict, predict_proba, etc.)
 
         ---------------Classification models---------------
         {'lr': 'Logistic Regression',
@@ -450,9 +412,14 @@ class PycaretInterface:
             config.to_csv(self.output_path / "config_setup_pycaret.csv") 
         return self
 
-    def train(self):
+    def train(self, cross_validation: bool=True):
         """
         Train the machine learning models using all default hyperparameters so just one set of parameters
+        
+        Parameters
+        ----------
+        cross_validation : bool, optional
+            If True, use cross-validation, by default True
 
         Returns
         -------
@@ -471,7 +438,8 @@ class PycaretInterface:
         runtime_start = time.time()
         count=0
         for m in self.final_models:
-            model =self.pycaret.create_model(m, return_train_score=True, verbose=False)
+            model_time_start = time.time()
+            model = self.pycaret.create_model(m, return_train_score=True, verbose=False, cross_validation=cross_validation)
             model_results = self.pycaret.pull(pop=True)
             model_results = model_results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
             if not isinstance(m, str):
@@ -481,7 +449,9 @@ class PycaretInterface:
             results[m] = model_results
             runtime_train = time.time()
             total_runtime = round((runtime_train - runtime_start) / 60, 3)
-            
+            model_time = round((runtime_train - model_time_start) / 60, 3)
+            print(f"Model {m} trained in {model_time} minutes")
+            self.log.info(f"Model {m} trained in {model_time} minutes")
             if self.budget_time and total_runtime > self.budget_time:
                 self.log.info(
                     f"Total runtime {total_runtime} is over time budget by {total_runtime - self.budget_time} minutes, breaking loop"
@@ -576,9 +546,11 @@ class PycaretInterface:
         for ind, (name, model) in enumerate(sorted_models.items(), 1):
             if ind > self.best_model:
                 break
-            params = self.get_params(name, model)
-            model_params[name] = params
-
+            try:
+                params = self.get_params(name, model)
+                model_params[name] = params
+            except AttributeError: # in case the model does not have get_params method
+                pass
         return pd.concat(model_params) # type: ignore
     
     def retune_model(self, name: str, model: Any, num_iter: int=30, 
@@ -707,7 +679,7 @@ class PycaretInterface:
 
     def predict(self, estimador: Any, target_data: pd.DataFrame|None=None) -> pd.DataFrame:
         """
-        Predict with teh new data or if not specified predict on the holdout data.
+        Predict with the new data or if not specified predict on the holdout data.
 
         Parameters
         ----------
@@ -771,7 +743,7 @@ class PycaretInterface:
 
 class Trainer:
     def __init__(self, caret_interface: PycaretInterface, training_arguments: ModelArguments, 
-                 num_splits: int=5, num_iter: int=30):
+                 num_splits: int=5, num_iter: int=30, cross_validation: bool=True):
         
         """
         Initialize a Trainer object with the given parameters.
@@ -786,6 +758,8 @@ class Trainer:
             The number of splits to use in cross-validation. Defaults to 5.
         num_iter : int, optional
             The number of iterations to use for tuning. Defaults to 30.
+        cross_validation : bool, optional
+            If True, use cross-validation. Defaults to True.
         """
         self.log = Log("model_training")
         self.log.info("----------------Trainer inputs-------------------------")
@@ -796,6 +770,7 @@ class Trainer:
         self.log.info(f"Number of iterations: {self.num_iter}")
         self.arguments = training_arguments
         self.experiment.plots = self.arguments.plot
+        self.cross_validation = True
 
 
     def rank_results(self, results: dict[str, pd.DataFrame], returned_models:dict[str, Any], 
@@ -874,14 +849,15 @@ class Trainer:
             self.experiment.final_models = [x for x in self.experiment.final_models if x not in drop]   
         if selected_models:
             self.experiment.final_models = selected_models
-        results, returned_models = self.experiment.train()
+        results, returned_models = self.experiment.train(self.cross_validation)
         
         return results, returned_models
     
     def analyse_models(self, features: pd.DataFrame | np.ndarray, label_name:str, 
                        scoring_fn: Callable, test_size: float=0.2,
-                       drop: Iterable[str] | None=None, selected: Iterable[str] | None=None, 
-                       **kwargs: Any) -> tuple[pd.DataFrame, dict, pd.Series]:
+                       drop: Iterable[str] | None=None, selected: Iterable[str] | None=None,
+                       **kwargs: Any) -> tuple[pd.DataFrame, dict, pd.Series]: 
+  
         """
         Analyze the trained models and rank them based on the specified scoring function.
 
@@ -987,7 +963,7 @@ class Trainer:
         
         return ensemble_results, ensemble_model
     
-    def predict_on_test_set(self, sorted_models: dict | list) -> pd.DataFrame:
+    def predict(self, sorted_models: dict | list, target_data: pd.DataFrame|None=None) -> pd.DataFrame:
         """
         Generate predictions on the test set using the specified models.
 
@@ -995,6 +971,8 @@ class Trainer:
         ----------
         sorted_models : dict or list
             The sorted models to use for prediction.
+        target_data : pd.DataFrame, optional
+            The data to predict on. Defaults to None. Which then will use the holdout data
 
         Returns
         -------
@@ -1006,7 +984,7 @@ class Trainer:
                 final = []
                 # it keeps the original sorted order
                 for mod in list_models:
-                    result = self.experiment.predict(mod)
+                    result = self.experiment.predict(mod, target_data)
                     result = result.set_index("Model")
                     final.append(result)
                 return pd.concat(final)
@@ -1014,14 +992,14 @@ class Trainer:
             case {**dict_models}: # for single models
                 final = []
                 for name, model in list(dict_models.items())[:self.experiment.best_model]:
-                    result = self.experiment.predict(model)
+                    result = self.experiment.predict(model, target_data)
                     result = result.set_index("Model")
                     result.index = [f"{name}_{x}" for x in result.index]
                     final.append(result)
                 return pd.concat(final)
 
             case mod: # for stacked or majority models
-                result = self.experiment.predict(mod)
+                result = self.experiment.predict(mod, target_data)
                 result = result.set_index("Model")
                 return result
             
@@ -1084,7 +1062,7 @@ class Trainer:
         self.experiment.plot_best_models(sorted_models, "not_tuned")
         results, models_dict = self.save_results_and_models(sorted_results, sorted_models, top_params, "not_tuned")
 
-        if tune:
+        if tune and self.cross_validation:
             sorted_result_tune, sorted_models_tune, top_params_tune = self.retune_best_models(sorted_models)
             results_tuned, models_dict_tuned = self.save_results_and_models(sorted_result_tune, sorted_models_tune, top_params_tune, "tuned")
             self.experiment.plot_best_models(sorted_models_tune, "tuned")
@@ -1118,14 +1096,15 @@ class Trainer:
         models_dict = defaultdict(dict)
 
         results[key]["holdout"] = sorted_results, top_params
-        stacked_results, stacked_models, stacked_params = self.stack_models(sorted_models)
-        results[key]["stacked"] = stacked_results, stacked_params
-        majority_results, majority_models = self.create_majority_model(sorted_models)
-        results[key]["majority"] = majority_results,  
-
         models_dict[key]["holdout"] = sorted_models
-        models_dict[key]["stacked"] = stacked_models
-        models_dict[key]["majority"] = majority_models
+
+        if self.cross_validation:
+            stacked_results, stacked_models, stacked_params = self.stack_models(sorted_models)
+            results[key]["stacked"] = stacked_results, stacked_params
+            majority_results, majority_models = self.create_majority_model(sorted_models)
+            results[key]["majority"] = majority_results,  
+            models_dict[key]["stacked"] = stacked_models
+            models_dict[key]["majority"] = majority_models
 
         return results, models_dict
     
@@ -1149,7 +1128,7 @@ class Trainer:
             predictions = []
             for key, models in result_dict.items():
                 # get the test set prediction results
-                predictions.append(self.predict_on_test_set(models))
+                predictions.append(self.predict(models))
             prediction_results[tune_status] = self.arguments.sort_holdout_prediction(pd.concat(predictions))
         return prediction_results
 
