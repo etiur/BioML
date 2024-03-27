@@ -73,9 +73,8 @@ class OutlierDetection:
             self.output.with_suffix(".csv")
         self.with_split = True
 
-    def outlier(self, transformed_x):
-        """Given a model it will return all its scores for each of the worksheets"""
-
+    
+    def initalize_models(self):
         iforest = IForest(n_estimators=200, random_state=0, max_features=0.8, contamination=self.contamination,
                           n_jobs=self.num_threads)
         knn = KNN(method="mean", contamination=self.contamination, n_jobs=self.num_threads)
@@ -88,7 +87,12 @@ class OutlierDetection:
         ecod = ECOD(contamination=self.contamination, n_jobs=self.num_threads)
         classifiers = {"iforest": iforest, "knn": knn, "bagging": bagging, "hbos": hbos, "abod": abod,
                        "pca": pca, "ocsvm": ocsvm, "ecod": ecod}
+        return classifiers
 
+    def outlier(self, transformed_x):
+        """Given a model it will return all its scores for each of the worksheets"""
+        classifiers = self.initalize_models()
+    
         prediction = {}
         raw = {}
         for name, clf in classifiers.items():
