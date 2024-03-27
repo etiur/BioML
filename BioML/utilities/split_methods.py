@@ -218,6 +218,7 @@ class ClusterSpliter:
     num_splits: int = 5
     shuffle: bool = True
     random_state: int | None = None
+    stratified: bool = False
 
     @property
     def cluster_info(self) -> dict[str | int, list[str|int]]:
@@ -243,7 +244,8 @@ class ClusterSpliter:
         ShuffleGroupKFold
             The group kfold object which is the general object for splitting the data based on a list of groups
         """
-        group = ShuffleGroupKFold(n_splits=self.num_splits, shuffle=self.shuffle, random_state=self.random_state)
+        group = ShuffleGroupKFold(n_splits=self.num_splits, shuffle=self.shuffle, random_state=self.random_state,
+                                  stratified=self.stratified)
         return group
     
     def read_cluster_info(self, file_path: str) -> dict[str | int, list[str|int]]:
@@ -382,13 +384,15 @@ class MutationSpliter:
     num_splits: int = 5
     shuffle: bool = True
     random_state: int | None = None
+    stratified: bool = False
 
     @property
     def group_kfold(self):
         """
         Get the group kfold object.
         """
-        group = ShuffleGroupKFold(n_splits=self.num_splits, shuffle=self.shuffle, random_state=self.random_state)
+        group = ShuffleGroupKFold(n_splits=self.num_splits, shuffle=self.shuffle, random_state=self.random_state,
+                                  stratified=self.stratified)
         return group
     
     def apply_operator(self, num1: int | float, num2: int | float):
