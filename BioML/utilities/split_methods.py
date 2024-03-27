@@ -4,7 +4,7 @@ import pandas as pd
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Protocol, Generator, Sequence
-from sklearn.model_selection import GroupKFold
+from sklearn.model_selection import GroupKFold, StratifiedGroupKFold
 import operator
 
 
@@ -90,6 +90,7 @@ class ShuffleGroupKFold:
     n_splits: int = 5
     shuffle: bool = True
     random_state: int | None = None
+    stratified: bool = False
 
     @staticmethod
     def get_sample_size(test_size:int | float, X: Sequence[int | str]):
@@ -142,7 +143,11 @@ class ShuffleGroupKFold:
         Generator[tuple[np.ndarray, np.ndarray], None, None]
             The train and test indices for each fold
         """
-        group_kfold = GroupKFold(n_splits=self.n_splits)
+        if self.stratified:
+            group_kfold = StratifiedGroupKFold(n_splits=self.n_splits)
+        else:
+            group_kfold = GroupKFold(n_splits=self.n_splits)
+        
         if self.shuffle:
             train_data, train_group = shuffle(X, groups, random_state=self.random_state)
         for i, (train_index, test_index) in enumerate(group_kfold.split(train_data, y, groups=train_group)):
@@ -174,7 +179,10 @@ class ShuffleGroupKFold:
         if self.shuffle:
             train_data, train_group = shuffle(X, groups, random_state=self.random_state)
         # generate the train_test_split
-        group_kfold = GroupKFold(n_splits=len(X)//num_test)
+        if self.stratified:
+            group_kfold = StratifiedGroupKFold(n_splits=len(X)//num_test)
+        else:
+            group_kfold = GroupKFold(n_splits=len(X)//num_test)
         for i, (train_index, test_index) in enumerate(group_kfold.split(train_data, y, groups=train_group)):
             X_train, X_test = match_type(train_data, train_index, test_index)
             if y is not None:
