@@ -266,7 +266,7 @@ class PycaretInterface:
         self.log.info(f"Output path: {self.output_path}")
     
     @staticmethod
-    def _check_value(value: str | Iterable[str], element_list: list[str], element_name: str) -> list[str]:
+    def _check_value(value: str | Iterable[str] | Any, element_list: list[str], element_name: str) -> list[str]:
         """
         To set the value of the plots and models
 
@@ -291,16 +291,19 @@ class PycaretInterface:
         ValueError
             If the value is not a string or an array of strings
         """
-        if element_name == "plots" and isinstance(value, (list, np.ndarray, tuple, set)):
-            test = list(set(value).difference(element_list))
-            if test:
-                raise ValueError(f"the {element_name} should be one of the following: {element_list} and not {test}")
-        if isinstance(value, str):
+        if isinstance(value, (list, np.ndarray, tuple, set)):
+            if isinstance(value[0], str):
+                test = list(set(value).difference(element_list))
+                if test:
+                    raise ValueError(f"the {element_name} should be one of the following: {element_list} and not {test}")
+        elif isinstance(value, str):
             if value not in element_list:
                 raise ValueError(f"the {element_name} should be one of the following: {element_list} and not {value}")
             value = [value]
-
-        return list(value)
+        
+        else:
+            value = [value]
+        return value
 
     @property
     def plots(self) -> list[str]:
