@@ -128,6 +128,7 @@ class GenerateModel:
         model_output.parent.mkdir(exist_ok=True, parents=True)
         if model_output.suffix:
             model_output = model_output.with_suffix("")
+
         self.trainer.experiment.save(model, str(model_output))
     
     def train_by_strategy(self, sorted_models: dict, model_strategy: str):
@@ -164,7 +165,7 @@ class GenerateModel:
         elif "simple" in model_strategy:
             index = int(model_strategy.split(":")[1])
             models = list(sorted_models.values())[index]
-    
+
         return models
     
 

@@ -14,9 +14,12 @@ data/*.log
 tests/*training*
 tests/mlruns
 data/esterase_spp.xlsx
-tests/result.pssm
 data/db_seq.fasta
 examples/*.log
 examples/mlruns
 examples/catboost_info
-examples/outputs
+examples/*output*
+examples/classification*
+examples/regression*
+examples/*results*
+

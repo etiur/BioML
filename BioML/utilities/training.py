@@ -84,7 +84,7 @@ def write_results(training_output: Path | str, sorted_results: pd.DataFrame, top
     training_output.mkdir(exist_ok=True, parents=True)
     write_excel(training_output / "training_results.xlsx", sorted_results, sheet_name) # type: ignore
     if top_params is not None:
-        write_excel(training_output / f"top_hyperparameters.xlsx", top_params, sheet_name) # type: ignore
+        write_excel(training_output / "top_hyperparameters.xlsx", top_params, sheet_name) # type: ignore
 
 
 def iterate_multiple_features(iterator: Iterator, parser:base.DataParser, label: str | list[int | float], 
@@ -128,7 +128,7 @@ def iterate_multiple_features(iterator: Iterator, parser:base.DataParser, label:
         write_results(training_output, performance, sheet_name=sheet)
     
 
-def iterate_excel(excel_file: str | Path):
+def iterate_excel(excel_file: str | Path, sheet_names: Iterable[str] = ()):
     """
     Iterates over the sheets of an Excel file and yields a tuple of the sheet data and sheet name.
 
@@ -136,7 +136,8 @@ def iterate_excel(excel_file: str | Path):
     ----------
     excel_file : str or Path
         The path to the Excel file.
-
+    sheet_names : Iterable[str], optional
+        An iterable containing the names of the sheets to iterate over. Defaults to an empty tuple.
     Yields
     ------
     Tuple[pd.DataFrame, str]
@@ -144,6 +145,7 @@ def iterate_excel(excel_file: str | Path):
     """
     with pd.ExcelFile(excel_file) as file:
         for sheet in file.sheet_names:
+            if sheet_names and sheet not in sheet_names: continue
             df = pd.read_excel(excel_file, index_col=0, sheet_name=sheet)
             yield df, sheet
 

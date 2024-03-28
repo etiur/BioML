@@ -453,14 +453,13 @@ class PycaretInterface:
             runtime_train = time.time()
             total_runtime = round((runtime_train - runtime_start) / 60, 3)
             model_time = round((runtime_train - model_time_start) / 60, 3)
-            print(f"Model {m} trained in {model_time} minutes")
             self.log.info(f"Model {m} trained in {model_time} minutes")
             if self.budget_time and total_runtime > self.budget_time:
                 self.log.info(
                     f"Total runtime {total_runtime} is over time budget by {total_runtime - self.budget_time} minutes, breaking loop"
                 )
                 break
-            
+
         self.log.info(f"Training over: Total runtime {total_runtime} minutes") # type: ignore
 
         return results, returned_models
@@ -556,7 +555,7 @@ class PycaretInterface:
                 pass
         return pd.concat(model_params) # type: ignore
     
-    def retune_model(self, name: str, model: Any, num_iter: int=30, 
+    def retune_model(self, name: str, model: Any, num_iter: int=50, 
                      fold: int=5) -> tuple[Any, pd.DataFrame, pd.Series]:
         """
         Retune the specified model using Optuna.
@@ -582,7 +581,7 @@ class PycaretInterface:
         self.log.info(f"fold: {fold}")
         tuned_model = self.pycaret.tune_model(model, optimize=self.optimize, search_library="optuna", search_algorithm="tpe", 
                                             early_stopping="asha", return_train_score=True, n_iter=num_iter, fold=fold,
-                                            verbose=False)
+                                            verbose=False, choose_better=False)
         results = self.pycaret.pull(pop=True)
         tuned_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
         params = self.get_params(name, tuned_model)
@@ -746,7 +745,7 @@ class PycaretInterface:
 
 class Trainer:
     def __init__(self, caret_interface: PycaretInterface, training_arguments: ModelArguments, 
-                 num_splits: int=5, num_iter: int=30, cross_validation: bool=True):
+                 num_splits: int=5, num_iter: int=50, cross_validation: bool=True):
         
         """
         Initialize a Trainer object with the given parameters.
@@ -770,7 +769,7 @@ class Trainer:
         self.experiment = caret_interface
         self.num_iter = num_iter
         self.log.info(f"Number of kfolds: {self.num_splits}")
-        self.log.info(f"Number of iterations: {self.num_iter}")
+        self.log.info(f"Number of retuning iterations: {self.num_iter}")
         self.arguments = training_arguments
         self.experiment.plots = self.arguments.plot
         self.cross_validation = cross_validation

@@ -4,6 +4,7 @@ This module contains the functions to train classification models using pycaret
 from typing import Iterable
 import pandas as pd
 import argparse
+import numpy as np
 from pathlib import Path
 from ..utilities.training import write_results, evaluate_all_models
 from ..utilities import split_methods as split
@@ -92,7 +93,7 @@ def arg_parse():
 
 
 class Classifier:
-    def __init__(self, ranking_params: dict[str, float] | None=None, drop: Iterable[str] = ("ada", "gpc", "lightgbm"), 
+    def __init__(self, ranking_params: dict[str, float] | None=None, drop: Iterable[str] = ("ada", "gpc"), 
                  selected: Iterable[str] =(), test_size: float=0.2, optimize: str="MCC", 
                  plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report")):
         """
@@ -157,6 +158,7 @@ class Classifier:
         """
         cv_train = dataframe.loc[("CV-Train", "Mean")]
         cv_val = dataframe.loc[("CV-Val", "Mean")]
+        penalize = -np.inf if (cv_train[self.optimize] == 1 or cv_train["Prec."] == 1) else 0
 
         mcc = ((cv_train[self.optimize] + cv_val[self.optimize]) # type: ignore
                 - self.difference_weight * abs(cv_val[self.optimize] - cv_train[self.optimize] )) # type: ignore
@@ -167,7 +169,7 @@ class Classifier:
         recall = ((cv_train["Recall"] + cv_val["Recall"]) # type: ignore
                 - self.difference_weight * abs(cv_val["Recall"] - cv_train["Recall"])) # type: ignore
         
-        return mcc + self.report_weight * (self.pre_weight * prec + self.rec_weight * recall)
+        return mcc + self.report_weight * (self.pre_weight * prec + self.rec_weight * recall) + penalize
     
     def sort_holdout_prediction(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """
