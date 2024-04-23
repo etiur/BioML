@@ -150,7 +150,7 @@ def iterate_excel(excel_file: str | Path, sheet_names: Iterable[str] = ()):
             yield df, sheet
 
 
-def estimate_model_size(model: PreTrainedModel, precision: torch.dtype):
+def estimate_deepmodel_size(model: PreTrainedModel, precision: torch.dtype):
     """
     Estimate the size of the model in memory.
 
@@ -166,7 +166,7 @@ def estimate_model_size(model: PreTrainedModel, precision: torch.dtype):
     str
         The estimated size of the model in megabytes (MB), rounded to two decimal places.
     """
-    num = 2 if precision==torch.float16 else 4
+    num = 2 if precision==torch.float16 else 4 # float16 takes 2 bytes and float32 takes 4 bytes per parameter
     size = round(model.num_parameters() * num/1000_000, 2)
     return f"{size} MB"
 

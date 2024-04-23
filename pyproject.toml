@@ -19,6 +19,7 @@ dependencies = [
   "mlflow",
   "optuna",
   "transformers",
+  "werkzeug<=2.3.0"
 ]
 
 authors = [
