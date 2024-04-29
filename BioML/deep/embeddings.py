@@ -8,7 +8,7 @@ from pathlib import Path
 from Bio import SeqIO
 from torch.utils.data import DataLoader
 import argparse
-from ..utilities.utils import set_seed
+from ..utilities.utils import set_seed, convert_to_parquet
 
 
 def arg_parse():
@@ -79,7 +79,7 @@ class TokenizeFasta:
     tokenizer: None = field(default=None, init=False)
      
     def __post_init__(self):
-        self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_name, low_cpu_mem_usage=True)
 
     def chunks(self, fasta_file: str):
         """
@@ -155,7 +155,7 @@ class ExtractEmbeddings:
 
     def __post_init__(self):
 
-        self.model = AutoModel.from_pretrained(self.config.model_name, add_pooling_layer=False, output_hidden_states=True)
+        self.model = AutoModel.from_pretrained(self.config.model_name, add_pooling_layer=False, output_hidden_states=True, low_cpu_mem_usage=True)
         self.model.to(self.config.device)
 
     @staticmethod
@@ -228,21 +228,6 @@ class ExtractEmbeddings:
         embeddings = pd.DataFrame(results).T 
         embeddings.to_csv(path, mode='a', header=not Path(path).exists())
     
-    @staticmethod
-    def convert_to_parquet(csv_file: str | Path, parquet_file: str | Path):
-        """
-        Convert a CSV file to parquet format.
-
-        Parameters
-        ----------
-        csv_file : str
-            Path to the CSV file.
-        parquet_file : str
-            Path to the parquet file.
-        """
-        df = pd.read_csv(csv_file, index_col=0)
-        df.to_parquet(parquet_file)
-        Path(csv_file).unlink()
     
     def batch_extract_save(self, seq_keys: list[str], dataset: Dataset, batch_size: int=8, 
                            save_path: str | Path = "embeddings.csv", option: str = "mean",
@@ -275,7 +260,7 @@ class ExtractEmbeddings:
             results = self.extract(batch_seq_keys, batch, option)
             self.save(results, save_path)
         if format_ == "parquet":
-            self.convert_to_parquet(save_path, save_path.with_suffix(".parquet"))
+            convert_to_parquet(save_path, save_path.with_suffix(".parquet"))
 
 
 def generate_embeddings(model_name: str, fasta_file: str, disable_gpu: bool=False, 
