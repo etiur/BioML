@@ -312,12 +312,12 @@ class ClusterSpliter:
         y : Sequence | None, optional
             _description_, by default None
         groups : Sequence[str|int] | None, optional
-            A list of group indexes, by default None
+            A list of group indexes to generate the clusters, by default None because it is supplied as a TSV file
         test_size : int | float, optional
             The size of the test set, by default 0.2
         index : Sequence[str | int] | None, optional
-            The index of the data to generate the groups with the values for cluster info, by default None
-            Used when X is not the same as the values in the cluster info.
+            If the supplied X doesn't have a .index to get the group info, the supplied index 
+            needs to contain the group or cluster info.
 
         Returns
         -------

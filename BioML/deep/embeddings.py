@@ -29,7 +29,6 @@ def arg_parse():
             args.format]
 
 
-
 @dataclass(slots=True)
 class LLMConfig:
     """
@@ -47,6 +46,7 @@ class LLMConfig:
     model_name: str = "facebook/esm2_t6_8M_UR50D"
     disable_gpu: bool = False
     _device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.float32
 
     @property
     def device(self):
@@ -75,7 +75,7 @@ class TokenizeFasta:
     tokenizer : None
         Tokenizer for the language model.
     """
-    config: LLMConfig
+    config: LLMConfig = field(default_factory=LLMConfig)
     tokenizer: None = field(default=None, init=False)
      
     def __post_init__(self):
@@ -116,7 +116,7 @@ class TokenizeFasta:
         """
         return Dataset.from_generator(self.chunks, gen_kwargs={"fasta_file": fasta_file})
 
-    def tokenize(self, fasta_file: str):
+    def tokenize(self, fasta_file: str, add_columns: tuple=(), removes_column: str | list[str]=[]):
         """
         Tokenize the batch of sequences.
 
@@ -124,6 +124,10 @@ class TokenizeFasta:
         ----------
         batch_seq : dict[str, str]
             Batch of sequences.
+        add_columns : tuple[list]
+            Additional columns to add to the tokenized sequences. Tuple of list[column_name, column_values].
+        removes_column : str | list[str]
+            Columns to remove from the tokenized sequences.
 
         Returns
         -------
@@ -134,6 +138,10 @@ class TokenizeFasta:
         tok = dataset.map(lambda examples: self.tokenizer(examples["seq"], return_tensors="np", 
                           padding=True, truncation=True), batched=True)
         tok.set_format(type="torch", columns=["input_ids", "attention_mask"], device=self.config.device)
+        for x in add_columns:
+            tok = tok.add_column(x[0], x[1])
+        if removes_column:
+            tok = tok.remove_columns(x)
         return tok
 
 
@@ -150,13 +158,16 @@ class ExtractEmbeddings:
         Language model to use for the embeddings.
 
     """
-    config: LLMConfig
+    config: LLMConfig = field(default_factory=LLMConfig)
     model: None = field(default=None, init=False)
 
     def __post_init__(self):
 
-        self.model = AutoModel.from_pretrained(self.config.model_name, add_pooling_layer=False, output_hidden_states=True)
-        self.model.to(self.config.device)
+        device = "auto" if self.config.device == "cuda" else self.config.device
+ 
+        self.model = AutoModel.from_pretrained(self.config.model_name, add_pooling_layer=False, 
+                                               output_hidden_states=True, device_map=device, torch_dtype=self.config.dtype)
+        
 
     @staticmethod
     def concatenate_options(embedings: torch.Tensor, option: str = "mean"):

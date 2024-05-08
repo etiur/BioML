@@ -28,7 +28,8 @@ class ModelArguments(Protocol):
     selected: Iterable[str]
     optimize: str
     test_size: float
-    plot: Iterable[str]
+    plot: tuple[str, ...]
+    ranking_params: dict[str, float]
 
     def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> int | float:
         ...
