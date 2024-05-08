@@ -13,6 +13,22 @@ import numpy as np
 import torch
 
 
+def convert_to_parquet(csv_file: str | Path, parquet_file: str | Path):
+    """
+    Convert a CSV file to parquet format.
+
+    Parameters
+    ----------
+    csv_file : str
+        Path to the CSV file.
+    parquet_file : str
+        Path to the parquet file.
+    """
+    df = pd.read_csv(csv_file, index_col=0)
+    df.to_parquet(parquet_file)
+    Path(csv_file).unlink()
+
+
 def scale(scaler: str, X_train: pd.DataFrame, 
           X_test: pd.DataFrame | None=None) -> tuple[pd.DataFrame, ...]:
     """
