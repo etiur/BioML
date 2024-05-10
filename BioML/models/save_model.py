@@ -8,7 +8,7 @@ from typing import Any
 from .base import PycaretInterface, Trainer, DataParser
 from .classification import Classifier
 from .regression import Regressor
-from ..utilities.training import FileParser
+from ..utilities.utils import FileParser
 from ..utilities import split_methods as split
 
 

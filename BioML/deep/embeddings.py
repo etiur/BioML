@@ -29,7 +29,7 @@ def arg_parse():
             args.format]
 
 
-@dataclass(slots=True)
+@dataclass
 class LLMConfig:
     """
     Configuration for the language model.
@@ -275,7 +275,7 @@ class ExtractEmbeddings:
 
 def generate_embeddings(model_name: str, fasta_file: str, disable_gpu: bool=False, 
                         batch_size: int=8, save_path: str = "embeddings.csv", 
-                        option: str = "mean", format_: str = "csv"):
+                        option: str = "mean", format_: str = "csv", dtype=torch.float32):
     """
     Generate embeddings from a FASTA file.
 
@@ -295,6 +295,8 @@ def generate_embeddings(model_name: str, fasta_file: str, disable_gpu: bool=Fals
         Option to concatenate the embeddings, by default "mean"
     format_ : str, optional
         Format to save the embeddings, by default "csv" but can also be parquet
+    dtype : torch.dtype, optional
+        Data type for the embeddings, by default torch.float32
     """
 
     config = LLMConfig(model_name, disable_gpu=disable_gpu)

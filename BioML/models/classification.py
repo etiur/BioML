@@ -6,7 +6,7 @@ import pandas as pd
 import argparse
 import numpy as np
 from pathlib import Path
-from ..utilities.training import write_results, evaluate_all_models
+from ..utilities.utils import write_results, evaluate_all_models
 from ..utilities import split_methods as split
 from ..utilities.utils import read_outlier_file
 from .base import PycaretInterface, Trainer, DataParser

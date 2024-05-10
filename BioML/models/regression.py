@@ -6,7 +6,7 @@ import argparse
 from typing import Iterable
 import pandas as pd
 from .base import PycaretInterface, Trainer, DataParser
-from ..utilities.training import evaluate_all_models, write_results
+from ..utilities.utils import evaluate_all_models, write_results
 from ..utilities import split_methods as split
 from ..utilities.utils import read_outlier_file
 

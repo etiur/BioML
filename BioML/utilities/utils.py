@@ -7,224 +7,30 @@ import shlex
 from subprocess import Popen, PIPE
 import time
 from collections import defaultdict
-from typing import Generator
+from typing import Generator, Callable, Iterable, Iterator
 import random
 import numpy as np
 import torch
+import json
+import yaml
+from typing import Any, Callable
+from transformers import PreTrainedModel
+from dataclasses import dataclass
 
 
-def convert_to_parquet(csv_file: str | Path, parquet_file: str | Path):
-    """
-    Convert a CSV file to parquet format.
+@dataclass(slots=True)
+class FileParser:
+    file_path: str | Path
 
-    Parameters
-    ----------
-    csv_file : str
-        Path to the CSV file.
-    parquet_file : str
-        Path to the parquet file.
-    """
-    df = pd.read_csv(csv_file, index_col=0)
-    df.to_parquet(parquet_file)
-    Path(csv_file).unlink()
-
-
-def scale(scaler: str, X_train: pd.DataFrame, 
-          X_test: pd.DataFrame | None=None) -> tuple[pd.DataFrame, ...]:
-    """
-    Scale the features using RobustScaler, StandardScaler or MinMaxScaler.
-
-    Parameters
-    ----------
-    scaler : str
-        The type of scaler to use. Must be one of "robust", "zscore", or "minmax".
-    X_train : pandas DataFrame object
-        The training data.
-    X_test : pandas DataFrame object, default=None
-        The test data.
-
-    Returns
-    -------
-    tuple
-        A tuple containing:
-        - transformed : pandas DataFrame object
-            The transformed training data.
-        - scaler_dict : dictionary
-            A dictionary containing the scaler object used for scaling.
-        - test_x : pandas DataFrame object, default=None
-            The transformed test data.
-
-    Notes
-    -----
-    This function scales the features using RobustScaler, StandardScaler or MinMaxScaler. 
-    The function first creates a dictionary containing the scaler objects for each type of scaler. 
-    It then applies the selected scaler to the training data and returns the transformed data as a pandas DataFrame object. 
-    If test data is provided, the function applies the same scaler to the test data and returns the transformed test data as a pandas DataFrame object. 
-    The function also returns a dictionary containing the scaler object used for scaling.
-
-    """
-    scaler_dict = {"robust": RobustScaler(), "zscore": StandardScaler(), "minmax": MinMaxScaler()}
-    transformed = scaler_dict[scaler].fit_transform(X_train)
-    #transformed = pd.DataFrame(transformed, index=X_train.index, columns=X_train.columns)
-    if X_test is None:
-        return transformed, scaler_dict
-    
-    test_x = scaler_dict[scaler].transform(X_test)
-    #test_x = pd.DataFrame(test_x, index=X_test.index, columns=X_test.columns)
-    return transformed, scaler_dict, test_x
-
-
-def read_outlier_file(outliers: tuple[str,...] | str | None=None) -> tuple[str,...] | None:
-    """
-    Read the outliers from a file.
-
-    Parameters
-    ----------
-    outliers : tuple[str,...] | str | None, optional
-        A tuple containing the outliers or the path to the file containing the outliers.
-
-    Returns
-    -------
-    tuple[str,...] | None
-        A tuple containing the outliers.
-    """
-    if outliers and Path(outliers[0]).exists():
-        with open(outliers) as out:
-            outliers = tuple(x.strip() for x in out.readlines())
-    return outliers
-
-
-def write_excel(file: str | pd.io.excel._openpyxl.OpenpyxlWriter, 
-                dataframe: pd.DataFrame | pd.Series, sheet_name: str) -> None:
-    """
-    Write a pandas DataFrame to an Excel file.
-
-    Parameters
-    ----------
-    file : str or pandas ExcelWriter object
-        The file path or ExcelWriter object to write to.
-    dataframe : pandas DataFrame object
-        The DataFrame to write to the Excel file.
-    sheet_name : str
-        The name of the sheet to write to.
-
-    Returns
-    -------
-    None
-
-    Notes
-    -----
-    This function writes a pandas DataFrame to an Excel file. If the file does not exist, it creates a new file. 
-    If the file exists and `overwrite` is set to `True`, it overwrites the file. 
-    If the file exists and `overwrite` is set to `False`, it appends the DataFrame to the existing file. 
-    The function uses the `openpyxl` engine to write to the Excel file.
-
-    Examples
-    --------
-    >>> from utilities import write_excel
-    >>> import pandas as pd
-    >>> df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
-    >>> write_excel('example.xlsx', df, 'Sheet1')
-    """
-    if not isinstance(file, pd.io.excel._openpyxl.OpenpyxlWriter):
-        if not Path(file).exists():
-            with pd.ExcelWriter(file, mode="w", engine="openpyxl") as writer:
-                dataframe.to_excel(writer, sheet_name=sheet_name)
-        else:
-            with pd.ExcelWriter(file, mode="a", engine="openpyxl", if_sheet_exists="replace") as writer:
-                dataframe.to_excel(writer, sheet_name=sheet_name)              
-    else:
-        dataframe.to_excel(file, sheet_name=sheet_name)
-
-
-def run_program_subprocess(commands: list[str] | str, program_name: str | None=None, 
-                           shell: bool=False):
-    """
-    Run in parallel the subprocesses from the command
-    Parameters
-    ----------
-    commands: list[str] | str
-        A list of commandline commands that calls to Possum programs or ifeature programs
-    program_name: str, optional
-        A name to identify the commands
-    shell: bool, optional
-        If running the commands through the shell, allowing you to use shell features like 
-        environment variable expansion, wildcard matching, and various other shell-specific features
-        If False, the command is expected to be a list of individual command-line arguments, 
-        and no shell features are applied. It is safer shell=False when there is user input to avoid
-        shell injections.
-    """
-    if isinstance(commands, str):
-        commands = [commands]
-    proc = []
-    for command in commands:
-        if shell:
-            proc.append(Popen(command, stderr=PIPE, stdout=PIPE, text=True, shell=shell))
-        else:
-            proc.append(Popen(shlex.split(command), stderr=PIPE, stdout=PIPE, text=True, shell=shell))
-
-    start = time.time()
-    err = []
-    out = []
-    for p in proc:
-        output, errors = p.communicate()
-        if output: out.append(output)
-        if errors: err.append(errors)
-    
-    if err:
-        with open("error_file.txt", "w") as ou:
-            ou.writelines(f"{err}")
-    if out:
-        with open("output_file.txt", "w") as ou:
-            ou.writelines(f"{out}")
-            
-    end = time.time()
-    if program_name:
-        print(f"start running {program_name}")
-    print(f"It took {end - start} second to run")
-
-
-def rewrite_possum(possum_stand_alone_path: str | Path) -> None:
-    """
-    Rewrite the Possum standalone file to use the local Possum package.
-
-    Parameters
-    ----------
-    possum_stand_alone_path : str or Path object
-        The path to the Possum standalone file ending in .pl since it is in perl.
-
-    Returns
-    -------
-    None
-
-    Notes
-    -----
-    This function rewrites the Possum standalone file to use the local Possum package. 
-    It takes in the path to the Possum standalone file as a string or Path object. 
-    The function reads the file, replaces the path to the Possum package with the local path, and writes the updated file.
-
-    Examples
-    --------
-    >>> from utilities import rewrite_possum
-    >>> rewrite_possum('possum_standalone.pl')
-    """
-    possum_path = Path(possum_stand_alone_path)
-    with possum_path.open() as possum:
-        possum = possum.readlines()
-        new_possum = []
-        for line in possum:
-            if "python" in line:
-                new_line = line.split(" ")
-                if "possum.py" in line:
-                    new_line[2] = f"{possum_path.parent}/src/possum.py"
-                else:
-                    new_line[2] = f"{possum_path.parent}/src/headerHandler.py"
-                line = " ".join(new_line)
-                new_possum.append(line)
+    def load(self, extension: str="json") -> dict[str, Any]:
+        with open(self.file_path) as file:
+            if extension == "json":
+                with open(self.file_path) as file:
+                    return json.load(file)
+            elif extension == "yaml":
+                return yaml.load(file, Loader=yaml.FullLoader)
             else:
-                new_possum.append(line)
-    with open(possum_path, "w") as possum_out:
-        possum_out.writelines(new_possum)
+                raise ValueError(f"Unsupported file extension: {extension}")
 
 class Log:
     """
@@ -504,7 +310,7 @@ class MmseqsClustering:
     @classmethod
     def generate_pssm(cls, query_db: str | Path, search_db: str | Path, 
                       evalue: float=0.01, num_iterations: int=3, pssm_filename: str="result.pssm", 
-                      max_seqs: int=600, sensitivity: float=6.5, **search_kwags):
+                      max_seqs: int=600, sensitivity: float=6.5, **search_kwags: dict):
         """
         Generate a Position-Specific Scoring Matrix (PSSM) using MMseqs2.
 
@@ -715,3 +521,378 @@ def set_seed(seed: int):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True # use deterministic algorithms
     torch.use_deterministic_algorithms(True, warn_only=True)
+    
+def convert_to_parquet(csv_file: str | Path, parquet_file: str | Path):
+    """
+    Convert a CSV file to parquet format.
+
+    Parameters
+    ----------
+    csv_file : str
+        Path to the CSV file.
+    parquet_file : str
+        Path to the parquet file.
+    """
+    df = pd.read_csv(csv_file, index_col=0)
+    df.to_parquet(parquet_file)
+    Path(csv_file).unlink()
+
+
+def scale(scaler: str, X_train: pd.DataFrame, 
+          X_test: pd.DataFrame | None=None) -> tuple[pd.DataFrame, ...]:
+    """
+    Scale the features using RobustScaler, StandardScaler or MinMaxScaler.
+
+    Parameters
+    ----------
+    scaler : str
+        The type of scaler to use. Must be one of "robust", "zscore", or "minmax".
+    X_train : pandas DataFrame object
+        The training data.
+    X_test : pandas DataFrame object, default=None
+        The test data.
+
+    Returns
+    -------
+    tuple
+        A tuple containing:
+        - transformed : pandas DataFrame object
+            The transformed training data.
+        - scaler_dict : dictionary
+            A dictionary containing the scaler object used for scaling.
+        - test_x : pandas DataFrame object, default=None
+            The transformed test data.
+
+    Notes
+    -----
+    This function scales the features using RobustScaler, StandardScaler or MinMaxScaler. 
+    The function first creates a dictionary containing the scaler objects for each type of scaler. 
+    It then applies the selected scaler to the training data and returns the transformed data as a pandas DataFrame object. 
+    If test data is provided, the function applies the same scaler to the test data and returns the transformed test data as a pandas DataFrame object. 
+    The function also returns a dictionary containing the scaler object used for scaling.
+
+    """
+    scaler_dict = {"robust": RobustScaler(), "zscore": StandardScaler(), "minmax": MinMaxScaler()}
+    transformed = scaler_dict[scaler].fit_transform(X_train)
+    #transformed = pd.DataFrame(transformed, index=X_train.index, columns=X_train.columns)
+    if X_test is None:
+        return transformed, scaler_dict
+    
+    test_x = scaler_dict[scaler].transform(X_test)
+    #test_x = pd.DataFrame(test_x, index=X_test.index, columns=X_test.columns)
+    return transformed, scaler_dict, test_x
+
+
+def read_outlier_file(outliers: tuple[str,...] | str | None=None) -> tuple[str,...] | None:
+    """
+    Read the outliers from a file.
+
+    Parameters
+    ----------
+    outliers : tuple[str,...] | str | None, optional
+        A tuple containing the outliers or the path to the file containing the outliers.
+
+    Returns
+    -------
+    tuple[str,...] | None
+        A tuple containing the outliers.
+    """
+    if outliers and Path(outliers[0]).exists():
+        with open(outliers) as out:
+            outliers = tuple(x.strip() for x in out.readlines())
+    return outliers
+
+
+def write_excel(file: str | pd.io.excel._openpyxl.OpenpyxlWriter, 
+                dataframe: pd.DataFrame | pd.Series, sheet_name: str) -> None:
+    """
+    Write a pandas DataFrame to an Excel file.
+
+    Parameters
+    ----------
+    file : str or pandas ExcelWriter object
+        The file path or ExcelWriter object to write to.
+    dataframe : pandas DataFrame object
+        The DataFrame to write to the Excel file.
+    sheet_name : str
+        The name of the sheet to write to.
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    This function writes a pandas DataFrame to an Excel file. If the file does not exist, it creates a new file. 
+    If the file exists and `overwrite` is set to `True`, it overwrites the file. 
+    If the file exists and `overwrite` is set to `False`, it appends the DataFrame to the existing file. 
+    The function uses the `openpyxl` engine to write to the Excel file.
+
+    Examples
+    --------
+    >>> from utilities import write_excel
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
+    >>> write_excel('example.xlsx', df, 'Sheet1')
+    """
+    if not isinstance(file, pd.io.excel._openpyxl.OpenpyxlWriter):
+        if not Path(file).exists():
+            with pd.ExcelWriter(file, mode="w", engine="openpyxl") as writer:
+                dataframe.to_excel(writer, sheet_name=sheet_name)
+        else:
+            with pd.ExcelWriter(file, mode="a", engine="openpyxl", if_sheet_exists="replace") as writer:
+                dataframe.to_excel(writer, sheet_name=sheet_name)              
+    else:
+        dataframe.to_excel(file, sheet_name=sheet_name)
+
+
+def run_program_subprocess(commands: list[str] | str, program_name: str | None=None, 
+                           shell: bool=False):
+    """
+    Run in parallel the subprocesses from the command
+    Parameters
+    ----------
+    commands: list[str] | str
+        A list of commandline commands that calls to Possum programs or ifeature programs
+    program_name: str, optional
+        A name to identify the commands
+    shell: bool, optional
+        If running the commands through the shell, allowing you to use shell features like 
+        environment variable expansion, wildcard matching, and various other shell-specific features
+        If False, the command is expected to be a list of individual command-line arguments, 
+        and no shell features are applied. It is safer shell=False when there is user input to avoid
+        shell injections.
+    """
+    if isinstance(commands, str):
+        commands = [commands]
+    proc = []
+    for command in commands:
+        if shell:
+            proc.append(Popen(command, stderr=PIPE, stdout=PIPE, text=True, shell=shell))
+        else:
+            proc.append(Popen(shlex.split(command), stderr=PIPE, stdout=PIPE, text=True, shell=shell))
+
+    start = time.time()
+    err = []
+    out = []
+    for p in proc:
+        output, errors = p.communicate()
+        if output: out.append(output)
+        if errors: err.append(errors)
+    
+    if err:
+        with open("error_file.txt", "w") as ou:
+            ou.writelines(f"{err}")
+    if out:
+        with open("output_file.txt", "w") as ou:
+            ou.writelines(f"{out}")
+            
+    end = time.time()
+    if program_name:
+        print(f"start running {program_name}")
+    print(f"It took {end - start} second to run")
+
+
+def rewrite_possum(possum_stand_alone_path: str | Path) -> None:
+    """
+    Rewrite the Possum standalone file to use the local Possum package.
+
+    Parameters
+    ----------
+    possum_stand_alone_path : str or Path object
+        The path to the Possum standalone file ending in .pl since it is in perl.
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    This function rewrites the Possum standalone file to use the local Possum package. 
+    It takes in the path to the Possum standalone file as a string or Path object. 
+    The function reads the file, replaces the path to the Possum package with the local path, and writes the updated file.
+
+    Examples
+    --------
+    >>> from utilities import rewrite_possum
+    >>> rewrite_possum('possum_standalone.pl')
+    """
+    possum_path = Path(possum_stand_alone_path)
+    with possum_path.open() as possum:
+        possum = possum.readlines()
+        new_possum = []
+        for line in possum:
+            if "python" in line:
+                new_line = line.split(" ")
+                if "possum.py" in line:
+                    new_line[2] = f"{possum_path.parent}/src/possum.py"
+                else:
+                    new_line[2] = f"{possum_path.parent}/src/headerHandler.py"
+                line = " ".join(new_line)
+                new_possum.append(line)
+            else:
+                new_possum.append(line)
+    with open(possum_path, "w") as possum_out:
+        possum_out.writelines(new_possum)
+
+
+def evaluate_all_models(evaluation_fn: Callable, results: dict[str, dict[str, tuple | dict]], 
+                        training_output: str | Path) -> None:
+    """
+    Evaluate all models using the given evaluation function and save the results. The function used here plots the learning curve.
+    It is easier to extend this function to evaluate it other ways.
+
+    Parameters
+    ----------
+    evaluation_fn : Callable
+        The evaluation function to use for evaluating the models.
+    results : dict[str, dict[str, tuple]]
+        A dictionary containing the results of the models to be evaluated.
+    training_output : str | Path
+        The path to the directory where the evaluation results will be saved.
+
+    Returns
+    -------
+    None
+        This function does not return anything, it only saves the evaluation results.
+    """
+    for tune_status, result_dict in results.items():
+        for key, value in result_dict.items():
+            if key == "stacked" or key == "majority":
+                try:
+                    evaluation_fn(value, save=f"{training_output}/evaluation_plots/{tune_status}/{key}")
+                except AttributeError:
+                    pass
+            elif tune_status == "tuned" and key == "holdout":
+                for mod_name, model in value.items(): # type: ignore
+                    try:
+                        evaluation_fn(model, save=f"{training_output}/evaluation_plots/{tune_status}/{key}/{mod_name}")
+                    except AttributeError:
+                        pass
+
+
+def write_results(training_output: Path | str, sorted_results: pd.DataFrame, top_params: pd.Series | None = None, 
+                  sheet_name: str|None=None) -> None:
+    """
+    Writes the training results and top hyperparameters to Excel files.
+
+    Parameters
+    ----------
+    training_output : Path | str
+        The path to the directory where the Excel files will be saved.
+    sorted_results : pd.DataFrame
+        A pandas DataFrame containing the sorted training results.
+    top_params : pd.Series or None, optional
+        A pandas Series containing the top hyperparameters. Defaults to None.
+    sheet_name : str or None, optional
+        The name of the sheet to write the results to. Defaults to None.
+
+    Returns
+    -------
+    None
+    """
+    training_output = Path(training_output)
+    training_output.mkdir(exist_ok=True, parents=True)
+    write_excel(training_output / "training_results.xlsx", sorted_results, sheet_name) # type: ignore
+    if top_params is not None:
+        write_excel(training_output / "top_hyperparameters.xlsx", top_params, sheet_name) # type: ignore
+
+
+def iterate_multiple_features(iterator: Iterator, parser, label: str | list[int | float], 
+                              training, outliers: Iterable[str],
+                              training_output: Path, **kwargs: Any) -> None:
+    
+    """
+    Iterates over multiple input features and generates training results for each feature.
+
+    Parameters
+    ----------
+    iterator : Iterator
+        An iterator that yields a tuple of input features and sheet names.
+    parser : DataParser
+        The data parser to use for parsing the input features.
+    label : str or list[int or float]
+        The label or list of labels to use for training.
+    training : Trainer
+        The training object to use for training the model.
+    outliers : Iterable[str]
+        An iterable containing the names of the outlier detection methods to use for each sheet.
+    training_output : Path
+        The path to the directory where the training results will be saved.
+
+    Returns
+    -------
+    None
+    """
+
+    performance_list = []
+    for input_feature, sheet in iterator:
+        feature = parser(input_feature, label=label, sheets=sheet, outliers=outliers)
+        sorted_results, sorted_models, top_params = training.run_training(feature.feature, feature.label_name, **kwargs)
+        index = sorted_results.index.unique(0)[:training.experiment.best_model]
+        score = 0
+        for i in index:
+            score += training.arguments._calculate_score_dataframe(sorted_results.loc[i])
+        performance_list.append((sheet, sorted_results.loc[index], score))
+    performance_list.sort(key=lambda x: x[2], reverse=True)
+    for sheet, performance, score in performance_list:
+        write_results(training_output, performance, sheet_name=sheet)
+    
+
+def iterate_excel(excel_file: str | Path, sheet_names: Iterable[str] = ()):
+    """
+    Iterates over the sheets of an Excel file and yields a tuple of the sheet data and sheet name.
+
+    Parameters
+    ----------
+    excel_file : str or Path
+        The path to the Excel file.
+    sheet_names : Iterable[str], optional
+        An iterable containing the names of the sheets to iterate over. Defaults to an empty tuple.
+    Yields
+    ------
+    Tuple[pd.DataFrame, str]
+        A tuple of the sheet data and sheet name.
+    """
+    with pd.ExcelFile(excel_file) as file:
+        for sheet in file.sheet_names:
+            if sheet_names and sheet not in sheet_names: continue
+            df = pd.read_excel(excel_file, index_col=0, sheet_name=sheet)
+            yield df, sheet
+
+
+def estimate_deepmodel_size(model: PreTrainedModel, precision: torch.dtype):
+    """
+    Estimate the size of the model in memory.
+
+    Parameters
+    ----------
+    model : PreTrainedModel
+        The pre-trained model to estimate the size of.
+    precision : torch.dtype
+        The precision of the model's parameters. Can be torch.float16 for half precision or torch.float32 for single precision.
+
+    Returns
+    -------
+    str
+        The estimated size of the model in megabytes (MB), rounded to two decimal places.
+    """
+    num = 2 if precision==torch.float16 else 4 # float16 takes 2 bytes and float32 takes 4 bytes per parameter
+    size = round(model.num_parameters() * num/1000_000, 2)
+    return f"{size} MB"
+
+
+def print_trainable_parameters(model: PreTrainedModel):
+    """
+    Prints the number of trainable parameters in the model.
+    """
+    trainable_params = 0
+    all_param = 0
+    for _, param in model.named_parameters():
+        all_param += param.numel()
+        if param.requires_grad:
+            trainable_params += param.numel()
+    print(
+        f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param}"
+    )
+
