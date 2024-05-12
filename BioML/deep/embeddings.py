@@ -8,6 +8,7 @@ from pathlib import Path
 from Bio import SeqIO
 from torch.utils.data import DataLoader
 import argparse
+from train_config import LLMConfig
 from ..utilities.utils import set_seed, convert_to_parquet
 
 
@@ -28,41 +29,7 @@ def arg_parse():
     return [args.fasta_file, args.model_name, args.disable_gpu, args.batch_size, args.save_path, args.seed, args.option,
             args.format]
 
-
-@dataclass
-class LLMConfig:
-    """
-    Configuration for the language model.
-
-    Parameters
-    ----------  
-    model_name : str
-        Name of the language model.
-    _device : str
-        Device to use for the language model.
-    disbale_gpu : bool
-        Whether to disable the GPU.
-    """
-    model_name: str = "facebook/esm2_t6_8M_UR50D"
-    disable_gpu: bool = False
-    _device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.float32
-
-    @property
-    def device(self):
-        """
-        Get the device to use for the language model.
-
-        Returns
-        -------
-        str
-            Device to use for the language model.
-        """
-        if self.disable_gpu:
-            return "cpu"
-        return self._device
     
-
 @dataclass(slots=True)
 class TokenizeFasta:
     """
@@ -116,7 +83,8 @@ class TokenizeFasta:
         """
         return Dataset.from_generator(self.chunks, gen_kwargs={"fasta_file": fasta_file})
 
-    def tokenize(self, fasta_file: str, add_columns: tuple=(), removes_column: str | list[str]=[]):
+    def tokenize(self, fasta_file: str, add_columns: tuple=(), 
+                 removes_column: str | list[str]=[]) -> Dataset:
         """
         Tokenize the batch of sequences.
 
@@ -131,7 +99,7 @@ class TokenizeFasta:
 
         Returns
         -------
-        dict[str, torch.Tensor]
+        Dataset
             Tokenized sequences.
         """
         dataset = self.create_dataset(fasta_file)
