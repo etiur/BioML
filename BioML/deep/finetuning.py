@@ -75,6 +75,49 @@ def calculate_regression_metrics(split: str, loss: torch.tensor, preds: torch.te
                 f"{split}_MSLE": mean_squared_log_error(preds, target)}
     return metrics
 
+    
+def get_target_module_names_for_peft(model: PreTrainedModel, filter_: str | Iterable[str] ="attention"):
+    """
+    Get the target module names for the LoraConfigs target module option. 
+    It will look if the names in target modules matches the end of the layers names or 
+    it can be an exact match
+
+    Parameters
+    ----------
+    model : Hugging Face model
+        The model to get the target modules from
+    filter_ : str | Iterable[str], optional
+        Filter the names that are returned, by default "attention"
+
+    Returns
+    -------
+    list[str]
+        List of the target module names
+    """
+    if isinstance(filter_, str):
+        filter_ = [filter_] # if it is a string, convert it to a list
+    module_names = []
+    for name, module in model.named_modules():
+        n = name.split(".")
+        if filter_ and set(n).intersection(filter_):
+            module_names.append(name)
+        elif not filter_:
+            module_names.append(name)
+    return module_names
+    
+def get_lora_config(rank: int, target_modules: str | list[str], lora_alpha: int | None=None):
+    
+    if lora_alpha is None:
+        lora_alpha = rank * 2
+    else:
+        print("Warning lora_alpha is set to a value. For optimal performance, it is recommended to set it double the rank")
+    
+    # get the lora models
+    peft_config = LoraConfig(inference_mode=False, r=rank, lora_alpha=lora_alpha, lora_dropout=0.1, 
+                            target_modules=target_modules)
+    
+    return peft_config
+
 
 @dataclass(slots=True)
 class PrepareSplit:
@@ -103,56 +146,6 @@ class PrepareSplit:
         train_indices, validation_indices = self.get_split_indices(train_)
         train, validation = train_.select(train_indices), train_.select(validation_indices)
         return train, validation, test
-
-
-@dataclass(slots=True)
-class PEFTSetter:
-    model: PreTrainedModel
-    
-    def get_target_module_names_for_peft(self, filter_: str | Iterable[str] ="attention"):
-        """
-        Get the target module names for the LoraConfigs target module option. 
-        It will look if the names in target modules matches the end of the layers names or 
-        it can be an exact match
-
-        Parameters
-        ----------
-        model : Hugging Face model
-            The model to get the target modules from
-        filter_ : str | Iterable[str], optional
-            Filter the names that are returned, by default "attention"
-
-        Returns
-        -------
-        list[str]
-            List of the target module names
-        """
-        if isinstance(filter_, str):
-            filter_ = [filter_] # if it is a string, convert it to a list
-        module_names = []
-        for name, module in self.model.named_modules():
-            n = name.split(".")
-            if filter_ and set(n).intersection(filter_):
-                module_names.append(name)
-            elif not filter_:
-                module_names.append(name)
-        return module_names
-    
-    def get_lora_model(self, rank: int, target_modules: str | list[str], 
-                       lora_alpha: int | None=None):
-        
-        if lora_alpha is None:
-            lora_alpha = rank * 2
-        else:
-            print("Warning lora_alpha is set to a value. For optimal performance, it is recommended to set it double the rank")
-        
-        # get the lora models
-        peft_config = LoraConfig(inference_mode=False, r=rank, lora_alpha=lora_alpha, lora_dropout=0.1, 
-                                 target_modules=target_modules)
-        
-        model = get_peft_model(self.model, peft_config)
-        model.print_trainable_parameters()
-        return model
 
 
 class DataModule(LightningDataModule):
