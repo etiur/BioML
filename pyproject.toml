@@ -20,10 +20,10 @@ dependencies = [
   "optuna",
   "transformers",
   "werkzeug<=2.3.0",
-  optuna-integration,
-  lightning,
-  peft
-]
+  "optuna-integration",
+  "lightning",
+  "peft",
+  "dataset"]
 
 authors = [
   {name = "Ruite Xiang", email = "ruite.xiang@gmail.com"},
