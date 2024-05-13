@@ -3,7 +3,7 @@ import torch
 from datasets import Dataset
 from torch.utils.data import DataLoader
 import argparse
-from typing import Iterable
+from typing import Iterable, Any
 from sklearn.model_selection import train_test_split
 from BioML.utilities import split_methods as split
 from lightning import LightningModule, LightningDataModule
@@ -183,10 +183,11 @@ class TransformerModule(LightningModule):
 
         model = AutoModelForSequenceClassification.from_pretrained(model_params.model_name, 
                                                                    num_labels=model_params.num_classes, 
-                                                                   low_cpu_mem_usage=True)
+                                                                   low_cpu_mem_usage=True,
+                                                                   torch_dtype= model_params.dtype)
         self.model = get_peft_model(model, peft_config)
         self.model.print_trainable_parameters()
-        self.objective = "classification" if model_params.num_classes >= 2 else "regression"
+        self.objective = model_params.objective
         self.metrics = {"classifcation": calculate_classification_metrics, 
                         "regression": calculate_regression_metrics}[self.objective]
         self.lr = lr

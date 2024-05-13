@@ -22,7 +22,7 @@ class LLMConfig:
     _device: str = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float32
     num_classes: int = 2 # classification default
-    
+    objective: str = "classification" if num_classes >= 2 else "regression"
     # training params
     batch_size: int = 8
     max_epochs: int = 10
