@@ -1,4 +1,4 @@
-from transformers import AutoModelForSequenceClassification, PreTrainedModel
+from transformers import AutoModelForSequenceClassification, PreTrainedModel, BitsAndBytesConfig
 import torch
 from datasets import Dataset
 from torch.utils.data import DataLoader
@@ -10,7 +10,7 @@ from lightning import LightningModule, LightningDataModule
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import OneCycleLR
 from dataclasses import dataclass
-from peft import get_peft_model, LoraConfig
+from peft import get_peft_model, LoraConfig, prepare_model_for_kbit_training
 from typing import Iterable
 from torchmetrics.functional.classification import (
     accuracy, f1_score, precision, recall, auroc, average_precision, cohen_kappa, confusion_matrix, 
@@ -75,49 +75,75 @@ def calculate_regression_metrics(split: str, loss: torch.tensor, preds: torch.te
                 f"{split}_MSLE": mean_squared_log_error(preds, target)}
     return metrics
 
-    
-def get_target_module_names_for_peft(model: PreTrainedModel, filter_: str | Iterable[str] ="attention"):
-    """
-    Get the target module names for the LoraConfigs target module option. 
-    It will look if the names in target modules matches the end of the layers names or 
-    it can be an exact match
 
-    Parameters
-    ----------
-    model : Hugging Face model
-        The model to get the target modules from
-    filter_ : str | Iterable[str], optional
-        Filter the names that are returned, by default "attention"
+@dataclass(slots=True)
+class PreparePEFT:
+    qlora: bool = False
+    gradient_cheeckpointing: bool = False
+    
+    @staticmethod    
+    def get_target_module_names_for_peft(model: PreTrainedModel, filter_: str | Iterable[str] ="attention"):
+        """
+        Get the target module names for the LoraConfigs target module option. 
+        It will look if the names in target modules matches the end of the layers names or 
+        it can be an exact match
 
-    Returns
-    -------
-    list[str]
-        List of the target module names
-    """
-    if isinstance(filter_, str):
-        filter_ = [filter_] # if it is a string, convert it to a list
-    module_names = []
-    for name, module in model.named_modules():
-        n = name.split(".")
-        if filter_ and set(n).intersection(filter_):
-            module_names.append(name)
-        elif not filter_:
-            module_names.append(name)
-    return module_names
-    
-def get_lora_config(rank: int, target_modules: str | list[str], lora_alpha: int | None=None):
-    
-    if lora_alpha is None:
-        lora_alpha = rank * 2
-    else:
-        print("Warning lora_alpha is set to a value. For optimal performance, it is recommended to set it double the rank")
-    
-    # get the lora models
-    peft_config = LoraConfig(inference_mode=False, r=rank, lora_alpha=lora_alpha, lora_dropout=0.1, 
-                            target_modules=target_modules)
-    
-    return peft_config
+        Parameters
+        ----------
+        model : Hugging Face model
+            The model to get the target modules from
+        filter_ : str | Iterable[str], optional
+            Filter the names that are returned, by default "attention"
 
+        Returns
+        -------
+        list[str]
+            List of the target module names
+        """
+        if isinstance(filter_, str):
+            filter_ = [filter_] # if it is a string, convert it to a list
+        module_names = []
+        for name, module in model.named_modules():
+            n = name.split(".")
+            if filter_ and set(n).intersection(filter_):
+                module_names.append(name)
+            elif not filter_:
+                module_names.append(name)
+        return module_names
+    
+    @staticmethod
+    def get_lora_config(rank: int, target_modules: str | list[str], lora_alpha: int | None=None, 
+                        lora_dropout: float=0.1):
+        
+        if lora_alpha is None:
+            lora_alpha = rank * 2
+        else:
+            print("Warning lora_alpha is set to a value. For optimal performance, it is recommended to set it double the rank")
+        
+        # get the lora models
+        peft_config = LoraConfig(inference_mode=False, r=rank, lora_alpha=lora_alpha, 
+                                 lora_dropout=lora_dropout, 
+                                 target_modules=target_modules)
+        
+        return peft_config
+
+    def get_model(self, model_params: LLMConfig):
+        if self.qlora:
+            bnb_config = BitsAndBytesConfig(
+                        load_in_4bit=True,
+                        bnb_4bit_use_double_quant=True,
+                        bnb_4bit_quant_type="nf4",
+                        bnb_4bit_compute_dtype=torch.bfloat16)
+        else:
+            bnb_config = None
+        
+        device = "auto" if model_params.device == "cuda" or self.qlora else model_params.device
+        model = AutoModelForSequenceClassification.from_pretrained(model_params.model_name, 
+                                                                num_labels=model_params.num_classes, 
+                                                                low_cpu_mem_usage=True,
+                                                                torch_dtype= model_params.dtype, 
+                                                                quantization_config=bnb_config,
+                                                                device_map="auto")
 
 @dataclass(slots=True)
 class PrepareSplit:
@@ -175,19 +201,16 @@ class DataModule(LightningDataModule):
 class TransformerModule(LightningModule):
     def __init__(
         self,
-        model_params: LLMConfig,
-        lr: float,
+        model: PreTrainedModel,
         peft_config: LoraConfig,
+        objective: str,
+        lr: float
     ):
         super().__init__()
 
-        model = AutoModelForSequenceClassification.from_pretrained(model_params.model_name, 
-                                                                   num_labels=model_params.num_classes, 
-                                                                   low_cpu_mem_usage=True,
-                                                                   torch_dtype= model_params.dtype)
         self.model = get_peft_model(model, peft_config)
         self.model.print_trainable_parameters()
-        self.objective = model_params.objective
+        self.objective = objective
         self.metrics = {"classifcation": calculate_classification_metrics, 
                         "regression": calculate_regression_metrics}[self.objective]
         self.lr = lr
