@@ -8,7 +8,7 @@ from pathlib import Path
 from Bio import SeqIO
 from torch.utils.data import DataLoader
 import argparse
-from train_config import LLMConfig
+from .train_config import LLMConfig
 from ..utilities.utils import set_seed, convert_to_parquet
 
 
@@ -241,18 +241,19 @@ class ExtractEmbeddings:
             convert_to_parquet(save_path, save_path.with_suffix(".parquet"))
 
 
-def generate_embeddings(model_name: str, fasta_file: str, disable_gpu: bool=False, 
-                        batch_size: int=8, save_path: str = "embeddings.csv", 
-                        option: str = "mean", format_: str = "csv", dtype=torch.float32):
+def generate_embeddings(fasta_file: str, model_name: str="facebook/esm2_t6_8M_UR50D",
+                        disable_gpu: bool=False, batch_size: int=8, 
+                        save_path: str = "embeddings.csv", option: str = "mean", 
+                        format_: str = "csv", dtype=torch.float32):
     """
     Generate embeddings from a FASTA file.
 
     Parameters
     ----------
-    model_name : str
-        The protein language model to use from Huggingface
     fasta_file : str
         The fasta file to tokenize
+    model_name : str
+        The protein language model to use from Huggingface, by default "facebook/esm2_t6_8M_UR50D"
     disable_gpu : bool, optional
         Whether to disable the GPU, by default False
     batch_size : int, optional

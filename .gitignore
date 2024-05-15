@@ -22,5 +22,6 @@ examples/*output*
 examples/classification*
 examples/regression*
 examples/*results*
-
+data/whole_sequence
+examples/*
 examples/.db

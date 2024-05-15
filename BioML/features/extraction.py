@@ -109,7 +109,7 @@ class ExtractFeatures:
             record = list(SeqIO.parse(inp, "fasta"))
             if len(record) > 5_000:
                 for i, batch in enumerate(self._batch_iterable(record, 5_000)):
-                    filename = f"group_{i+1}.fasta"
+                    filename = f"group_{i}.fasta"
                     with open(self.fasta_file.with_name(filename), "w") as split:
                         print(self.fasta_file.with_name(filename))
                         fasta_out = FastaIO.FastaWriter(split, wrap=None)
@@ -219,7 +219,7 @@ class PossumFeatures:
         command = self.generate_commands(fasta_file, self.features["long"])
 
         if not long:
-            command_2 = self.generate_commands(fasta_file, self.features["possum"]["short"])
+            command_2 = self.generate_commands(fasta_file, self.features["short"])
             command.extend(command_2)
         
         # using shlex.split to parse the strings into lists for Popen class
@@ -276,6 +276,8 @@ class IfeatureFeatures:
             list of the commands to run
         """
         num = Path(fasta_file).stem.split("_")[1]
+        if not num.isdigit():
+            num = 0
         command = [f"python3 {self.program} --file {fasta_file} --type {prog} --out {self.output}/{prog}_{num}.tsv" for
                    prog in programs]
 
@@ -293,9 +295,9 @@ class IfeatureFeatures:
             To only extract long features or not, by default False
         """
         # ifeature features
-        command = self.generate_commands(fasta_file, self.features["ifeature"]["long"])
+        command = self.generate_commands(fasta_file, self.features["long"])
         if not long:
-            command_2 = self.generate_commands(fasta_file, self.features["ifeature"]["short"])
+            command_2 = self.generate_commands(fasta_file, self.features["short"])
             command.extend(command_2)
 
         run_program_subprocess(command, "Ifeature programs")
@@ -365,7 +367,7 @@ def read_ifeature(features: dict[str, list[str]], length: int,
     extract = features["long"]
     extract.extend(features["short"])
     for x in extract:
-        feat[x] = [pd.read_csv(f"{ifeature_out}/{x}_{i+1}.tsv", sep="\t", index_col=0) for i in range(length)]
+        feat[x] = [pd.read_csv(f"{ifeature_out}/{x}_{i}.tsv", sep="\t", index_col=0) for i in range(length)]
     # concat features if length > 1 else return the dataframe
     for x, v in feat.items():
         val: pd.DataFrame = pd.concat(v)
@@ -398,7 +400,7 @@ def read_possum(features: dict[str, list[str]], length: int, index: Iterable[str
     extract = features["long"]
     extract.extend(features["short"])
     for x in extract:
-        feat[x] = [pd.read_csv(f"{possum_out}/{x}_{i+1}.csv") for i in range(length)]
+        feat[x] = [pd.read_csv(f"{possum_out}/{x}_{i}.csv") for i in range(length)]
         if ":" in x:
             name = x.split(':')
             feat[x] = [pd.read_csv(f"{possum_out}/{name[0]}_{name[1]}_{i+1}.csv") for i in range(length)]
@@ -420,16 +422,16 @@ def read_possum(features: dict[str, list[str]], length: int, index: Iterable[str
     return everything
 
 
-def read_features(file: list[str|Path], program: str, drop_file: str | Path, drop: Iterable[str], 
+def read_features(program: str, drop_file: str | Path=None, drop: Iterable[str]=(), 
                   ifeature_out:str|Path="ifeature_features",  
-                  possum_out: str | Path="possum_features") -> Callable[[dict[str, list[str]]], pd.DataFrame]:
+                  possum_out: str | Path="possum_features", file_splits: int=1) -> Callable[[dict[str, list[str]]], pd.DataFrame]:
     """
     A function to read the features from the possum and ifeature programmes.
 
     Parameters
     ----------
-    file : list[str|Path]
-        A list of the files to be processed.
+    file_splits : int
+        How many times the fasta file was split to extract the features separately.
     program : str
         The program to use for feature extraction, either 'possum' or 'ifeature'.
     drop_file : str | Path
@@ -447,8 +449,8 @@ def read_features(file: list[str|Path], program: str, drop_file: str | Path, dro
         A function that takes a dictionary of features and returns a DataFrame with the extracted features.
     """
     
-    call = {"ifeature": partial(read_ifeature, ifeature_out=ifeature_out, length=len(file)), 
-             "possum": partial(read_possum, possum_out=possum_out, length=len(file))}
+    call = {"ifeature": partial(read_ifeature, ifeature_out=ifeature_out, length=file_splits), 
+             "possum": partial(read_possum, possum_out=possum_out, length=file_splits)}
     feature_dict = return_features(program, drop_file, drop)
 
     return call[program](feature_dict)

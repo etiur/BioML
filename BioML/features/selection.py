@@ -175,7 +175,7 @@ class DataReader:
                 return pd.read_excel(f"{features}", index_col=0, sheet_name=sheet) # the first column should contain the sample names
             case pd.DataFrame() as feat:
                 return feat
-            case list() | np.ndarray() as feat:
+            case list() | np.ndarray() | dict() as feat:
                 return pd.DataFrame(feat)
             case _:
                 raise ValueError("features should be a csv file, an array or a pandas DataFrame")
@@ -199,7 +199,7 @@ class DataReader:
         pd.Series
             The feature data.
         """
-        match labels:
+        match labels: 
             case pd.Series() | pd.DataFrame() as label:
                 return label
             case str(label) if label.endswith(".csv"): 

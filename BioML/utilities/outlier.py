@@ -10,6 +10,7 @@ from pyod.models.ocsvm import OCSVM
 from pyod.models.ecod import ECOD
 from openpyxl import load_workbook
 import pandas as pd
+import numpy as np
 from pathlib import Path
 import random
 import argparse
@@ -23,7 +24,7 @@ def arg_parse():
     parser.add_argument("-e", "--excel", required=False,
                         help="The file to where the selected features are saved in excel format",
                         default="training_features/selected_features.xlsx")
-    parser.add_argument("-o", "--outlier", required=False,
+    parser.add_argument("-o", "--output", required=False,
                         help="The path to the output for the outliers",
                         default="training_results/outliers.csv")
     parser.add_argument("-n", "--num_thread", required=False, default=10, type=int,
@@ -37,7 +38,7 @@ def arg_parse():
 
     args = parser.parse_args()
 
-    return [args.excel, args.outlier, args.scaler, args.contamination, args.num_thread, args.num_features]
+    return [args.excel, args.output, args.scaler, args.contamination, args.num_thread, args.num_features]
 
 
 class OutlierDetection:
@@ -65,7 +66,6 @@ class OutlierDetection:
         self.contamination = contamination
         self.feature_file = feature_file
         self.num_threads = num_thread
-        self.book = load_workbook(feature_file, read_only=True)
         self.output = Path(output)
         self.output.parent.mkdir(parents=True, exist_ok=True)
         self.num_feature = num_feature
@@ -73,7 +73,20 @@ class OutlierDetection:
             self.output.with_suffix(".csv")
         self.with_split = True
 
-    
+    def validate(self, file):
+        match file:
+            case str(x) if x.endswith(".xlsx"):
+                book = load_workbook(file, read_only=True)
+                excel_data = self._read_features(file, book.sheetnames)
+                return excel_data
+            case str(x) if x.endswith(".csv"):
+                excel_data = pd.read_csv(file, index_col=0)
+                return {"csv_data":excel_data}
+            case pd.Dataframe() as feat:
+                return {"dataframe":feat}
+            case list() | np.ndarray() | dict() as feat:
+                return {"arrays": pd.DataFrame(feat)}
+
     def initalize_models(self):
         iforest = IForest(n_estimators=200, random_state=0, max_features=0.8, contamination=self.contamination,
                           n_jobs=self.num_threads)
@@ -129,7 +142,8 @@ class OutlierDetection:
         summed.sort_values(ascending=False, inplace=True)
         return summed
 
-    def _read_features(self, book):
+    @staticmethod
+    def _read_features(feature_file, book):
         """
         Read the features from the excel file
 
@@ -143,7 +157,7 @@ class OutlierDetection:
         dict
             The features from each sheet
         """
-        excel_data = pd.read_excel(self.feature_file, index_col=0, sheet_name=book, header=0)
+        excel_data = pd.read_excel(feature_file, index_col=0, sheet_name=book, header=0)
         excel_data = {key: x.sample(frac=1, random_state=0) for key, x in excel_data.items()}
         return excel_data
 
@@ -157,8 +171,7 @@ class OutlierDetection:
             The number of times each feature was an outlier
         """
         results = {}
-        book = self.book.sheetnames
-        excel_data = self._read_features(book)
+        excel_data = self.validate(self.feature_file)
         scaled_data = []
         for key, x in excel_data.items():
             transformed_x, scaler_dict = scale(self.scaler, x)
@@ -177,8 +190,8 @@ class OutlierDetection:
 
 
 def main():
-    excel, outlier, scaler, contamination, num_thread, num_features = arg_parse()
-    detection = OutlierDetection(excel, outlier, scaler, contamination, num_thread, num_features)
+    excel, output, scaler, contamination, num_thread, num_features = arg_parse()
+    detection = OutlierDetection(excel, output, scaler, contamination, num_thread, num_features)
     detection.run()
 
 
