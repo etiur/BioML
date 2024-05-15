@@ -359,7 +359,7 @@ class MmseqsClustering:
         run_program_subprocess(pssm, "convert profile to pssm")
     
     @classmethod
-    def easy_cluster(cls, input_file: str | Path, cluster_tsv: str | Path, 
+    def easy_cluster(cls, input_file: str | Path, cluster_tsv: str | Path="cluster.tsv", 
                     cluster_at_sequence_identity: float = 0.3, sensitivity: float = 6.5, 
                     **cluster_kwargs: dict):
         """

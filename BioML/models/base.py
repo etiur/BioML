@@ -234,18 +234,23 @@ class PycaretInterface:
     model: ClassificationExperiment | RegressionExperiment = field(init=False)
     
     def __post_init__(self):
-        if self.objective == "classification":
-            self.pycaret = ClassificationExperiment()
-            self._plots = ["confusion_matrix", "learning", "class_report", "auc", "pr"]
-            self._final_models = ['lr', 'knn', 'nb', 'dt', 'svm', 'rbfsvm', 'gpc', 
-                                'mlp', 'ridge', 'rf', 'qda', 'ada', 'gbc', 'lda', 'et', 'xgboost', 
-                                'lightgbm', 'catboost', 'dummy']
-        elif self.objective == "regression":    
-            self.pycaret = RegressionExperiment()
-            self._plots = ["residuals", "error", "learning"]
-            self._final_models = ['lr', 'lasso', 'ridge', 'en', 'lar', 'llar', 'omp', 'br', 'ard', 'par', 'ransac', 
-                                 'tr', 'huber', 'kr', 'svm', 'knn', 'dt', 'rf', 'et', 'ada', 'gbr', 'mlp', 'xgboost', 
-                                 'lightgbm', 'catboost', 'dummy']
+        configuration = {"classification": 
+                            {"plots": ["confusion_matrix", "learning", "class_report", "auc", "pr"],
+                             "models": ['lr', 'knn', 'nb', 'dt', 'svm', 'rbfsvm', 'gpc', 
+                                                    'mlp', 'ridge', 'rf', 'qda', 'ada', 'gbc', 'lda', 'et', 'xgboost', 
+                                                     'lightgbm', 'catboost', 'dummy'],
+                            "pycaret": ClassificationExperiment},
+                        "regression": 
+                            {"plots": ["residuals", "error", "learning"],
+                            "models": ['lr', 'lasso', 'ridge', 'en', 'lar', 'llar', 'omp', 'br', 'ard', 'par', 'ransac', 
+                                   'tr', 'huber', 'kr', 'svm', 'knn', 'dt', 'rf', 'et', 'ada', 'gbr', 'mlp', 'xgboost', 
+                                   'lightgbm', 'catboost', 'dummy'],
+                            "pycaret": RegressionExperiment}}
+
+        self.pycaret = configuration[self.objective]["pycaret"]()
+        self._plots = configuration[self.objective]["plots"]
+        self._final_models = configuration[self.objective]["models"]
+
         self.experiment_name = self.objective.capitalize() if self.experiment_name is None else self.experiment_name
         self.original_plots = self._plots.copy()
         self.original_models = self._final_models.copy()
@@ -433,6 +438,7 @@ class PycaretInterface:
         self.log.info("--------------------------------------------------------")
         self.log.info(f"Training {self.objective} models")
         self.log.info(f"The models used {self.final_models}")
+        self.log.info(f"The number of models used {len(self.final_models)}")
         results = {}
         returned_models = {}
         np.random.seed(self.seed)
@@ -742,7 +748,6 @@ class PycaretInterface:
             The logs from the training, if logs=True.
         """
         return self.pycaret.get_logs()
-
 
 class Trainer:
     def __init__(self, caret_interface: PycaretInterface, training_arguments: ModelArguments, 
