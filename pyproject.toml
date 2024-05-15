@@ -16,6 +16,7 @@ dependencies = [
   "pycaret[analysis, models]",
   "openpyxl",
   "pyod",
+  "combo"
   "mlflow",
   "optuna",
   "transformers",
@@ -23,7 +24,7 @@ dependencies = [
   "optuna-integration",
   "lightning",
   "peft",
-  "dataset"]
+  "datasets"]
 
 authors = [
   {name = "Ruite Xiang", email = "ruite.xiang@gmail.com"},
