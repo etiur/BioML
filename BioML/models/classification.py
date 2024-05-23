@@ -93,7 +93,7 @@ def arg_parse():
 
 
 class Classifier:
-    def __init__(self, ranking_params: dict[str, float] | None=None, drop: Iterable[str] = ("ada", "gpc"), 
+    def __init__(self, ranking_params: dict[str, float] | None=None, drop: Iterable[str] = ("ada", "gpc", "lightgbm"), 
                  selected: Iterable[str] =(), test_size: float=0.2, optimize: str="MCC", 
                  plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report")):
         """

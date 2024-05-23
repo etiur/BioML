@@ -24,7 +24,8 @@ dependencies = [
   "optuna-integration",
   "lightning",
   "peft",
-  "datasets"]
+  "datasets",
+  "torch"]
 
 authors = [
   {name = "Ruite Xiang", email = "ruite.xiang@gmail.com"},
