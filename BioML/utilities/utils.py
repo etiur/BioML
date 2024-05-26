@@ -309,7 +309,7 @@ class MmseqsClustering:
     
     @classmethod
     def generate_pssm(cls, query_db: str | Path, search_db: str | Path, 
-                      evalue: float=0.01, num_iterations: int=3, pssm_filename: str="result.pssm", 
+                      evalue: float=0.01, num_iterations: int=3, pssm_filename: str | Path="result.pssm", 
                       max_seqs: int=600, sensitivity: float=6.5, **search_kwags: dict):
         """
         Generate a Position-Specific Scoring Matrix (PSSM) using MMseqs2.
@@ -349,13 +349,14 @@ class MmseqsClustering:
         the 'result2profile' command generates a profile from the search results,
         and the 'profile2pssm' command converts the profile to a PSSM.
         """
+        pssm_filename = Path(pssm_filename)
         search = f"mmseqs search {query_db} {search_db} result.out tmp -e {evalue} --num-iterations {num_iterations} --max-seqs {max_seqs} -s {sensitivity} -a"
         for key, value in search_kwags.items():
             search += f" --{key} {value}"
         run_program_subprocess(search, "search")
-        profile = f"mmseqs result2profile {query_db} {search_db} result.out result.profile"
+        profile = f"mmseqs result2profile {query_db} {search_db} {pssm_filename.stem}.out {pssm_filename.stem}.profile"
         run_program_subprocess(profile, "generate_profile")
-        pssm = f"mmseqs profile2pssm result.profile {pssm_filename}"
+        pssm = f"mmseqs profile2pssm {pssm_filename.stem}.profile {pssm_filename}"
         run_program_subprocess(pssm, "convert profile to pssm")
     
     @classmethod
@@ -423,7 +424,7 @@ class MmseqsClustering:
     @classmethod
     def easy_generate_pssm(cls, input_file: str | Path, output_database: str | Path, 
                            database_input: str | Path | None= None, evalue: float = 0.01, num_iterations: int = 3, 
-                            sensitivity: float = 6.5, pssm_filename: str = "result.pssm", generate_searchdb: bool = False, 
+                            sensitivity: float = 6.5, pssm_filename: str | Path = "result.pssm", generate_searchdb: bool = False, 
                             max_seqs: int = 600, **search_kwags: dict):
         """
         Easily generate a Position-Specific Scoring Matrix (PSSM) using MMseqs2.
