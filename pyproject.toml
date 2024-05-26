@@ -16,7 +16,7 @@ dependencies = [
   "pycaret[analysis, models]",
   "openpyxl",
   "pyod",
-  "combo"
+  "combo",
   "mlflow",
   "optuna",
   "transformers",
