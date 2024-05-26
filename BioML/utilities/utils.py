@@ -350,7 +350,7 @@ class MmseqsClustering:
         and the 'profile2pssm' command converts the profile to a PSSM.
         """
         pssm_filename = Path(pssm_filename)
-        search = f"mmseqs search {query_db} {search_db} result.out tmp -e {evalue} --num-iterations {num_iterations} --max-seqs {max_seqs} -s {sensitivity} -a"
+        search = f"mmseqs search {query_db} {search_db} {pssm_filename.stem}.out tmp -e {evalue} --num-iterations {num_iterations} --max-seqs {max_seqs} -s {sensitivity} -a"
         for key, value in search_kwags.items():
             search += f" --{key} {value}"
         run_program_subprocess(search, "search")
