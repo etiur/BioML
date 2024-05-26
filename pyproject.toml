@@ -47,7 +47,9 @@ classifiers=["Programming Language :: Python :: 3.11",
              "Topic :: Scientific/Engineering :: Bio-Informatics"]
 
 [project.optional-dependencies]
-cluster = ["mmseqs2"] # cannot be installed with pip, you need to use conda
+cluster = ["mmseqs2", "perl-bio-featureio] # Installed with conda in the bioconda channel
+# it seems that perl-bio-feaureio may download a wrong version of scikit-learn which makes it incompatible with
+# pycaret so install everything with conda then pycaret 
 
 [project.urls]
 Repository = "https://github.com/etiur/BioML"

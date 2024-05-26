@@ -16,6 +16,7 @@ import yaml
 from typing import Any, Callable
 from transformers import PreTrainedModel
 from dataclasses import dataclass
+from subprocess import call
 
 
 @dataclass(slots=True)
@@ -899,3 +900,15 @@ def print_trainable_parameters(model: PreTrainedModel):
         f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param}"
     )
 
+
+def clean_fasta(possum_program: str, fasta_file:str, out_fasta:str, min_aa:int=100):
+    """
+    Clean the fasta file
+    """
+    fasta_file = Path(fasta_file)
+    out_fasta = Path(out_fasta)
+    out_fasta.parent.mkdir(exist_ok=True, parents=True)
+    illegal = f"perl {possum_program}/utils/removeIllegalSequences.pl -i {fasta_file} -o {fasta_file.parent}/no_illegal.fasta"
+    short = f"perl {possum_program}/utils/removeShortSequences.pl -i {fasta_file.parent}/no_illegal.fasta -o {out_fasta} -n {min_aa}"
+    call(shlex.split(illegal), close_fds=False)
+    call(shlex.split(short), close_fds=False)

@@ -9,7 +9,7 @@ from functools import partial
 from dataclasses import dataclass, field
 import pandas as pd
 from ..models.base import DataParser
-from ..utilities.utils import rewrite_possum, run_program_subprocess
+from ..utilities.utils import rewrite_possum, run_program_subprocess, clean_fasta
 
 
 def arg_parse():
@@ -52,12 +52,13 @@ def arg_parse():
     parser.add_argument("-s", "--sheets", required=False, nargs="+", help="Names or index of the selected sheets from the training features")
     parser.add_argument("-t", "--new_features", required=False, help="The path to the features from the new samples so "
                                                 "it can be filtered according to the training features")
+    parser.add_argument("-cl", "--cleaned_fasta", required=False, help="Name of the cleaned fasta file")
 
     args = parser.parse_args()
 
     return [args.fasta_file, args.pssm_dir, args.ifeature_dir, args.possum_dir, args.ifeature_out,
             args.possum_out, args.extracted_out, args.purpose, args.long, args.run, args.num_thread, args.drop,
-            args.drop_file, args.sheets, args.training_features, args.new_features]
+            args.drop_file, args.sheets, args.training_features, args.new_features, args.cleaned_fasta]
 
 
 class ExtractFeatures:
@@ -192,6 +193,8 @@ class PossumFeatures:
         """
 
         num = Path(fasta_file).stem.split("_")[1]
+        if not num.isdigit():
+            num = 0
         command = []
         for prog in programs:
             if ":" in prog:
@@ -479,11 +482,14 @@ def filter_features(new_features: pd.DataFrame, training_features: pd.DataFrame,
 
 def main():
     fasta_file, pssm_dir, ifeature_dir, possum_dir, ifeature_out, possum_out, extracted_out, purpose, \
-    long, run, num_thread, drop, drop_file, sheets, training_features, new_features = arg_parse()
+    long, run, num_thread, drop, drop_file, sheets, training_features, new_features, clean = arg_parse()
 
     if "extract" in purpose:
         # feature extraction
         func = {}
+        if clean:
+            clean_fasta(possum_dir, fasta_file, clean)
+            fasta_file = clean
         extract = ExtractFeatures(fasta_file)
         extract.separate_bunch()
         file = list(extract.fasta_file.parent.glob("group_*.fasta"))
