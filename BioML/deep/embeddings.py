@@ -192,7 +192,7 @@ class ExtractEmbeddings:
         return results
 
     @staticmethod
-    def save(results: dict[str, np.array], path: str | Path):
+    def save(results: dict[str, np.array], path: str | Path, mode="a"):
         """
         Save the embeddings to a CSV file.
 
@@ -203,13 +203,16 @@ class ExtractEmbeddings:
         path : str
             Path to the CSV file.
         """
-        embeddings = pd.DataFrame(results).T 
-        embeddings.to_csv(path, mode='a', header=not Path(path).exists())
+        if mode == "a":
+            embeddings = pd.DataFrame(results).T
+        else:
+            embeddings = pd.concat([pd.DataFrame(res).T for res in results])
+        embeddings.to_csv(path, mode=mode, header=not Path(path).exists())
     
     
     def batch_extract_save(self, seq_keys: list[str], dataset: Dataset, batch_size: int=8, 
                            save_path: str | Path = "embeddings.csv", option: str = "mean",
-                           format_: str = "csv"):
+                           format_: str = "csv", mode="append"):
         """
         Extract and save embeddings from a batch of sequences.
 
@@ -233,10 +236,17 @@ class ExtractEmbeddings:
         that doesn't fit in-memory.
         """
         save_path = Path(save_path)
+        res = []
         for num, batch in enumerate(DataLoader(dataset, batch_size=batch_size)):
             batch_seq_keys = seq_keys[num*batch_size:(num+1)*batch_size]
             results = self.extract(batch_seq_keys, batch, option)
-            self.save(results, save_path)
+            if mode == "append":
+                self.save(results, save_path, mode="a")
+            else:
+                res.append(results)
+        if mode == "write":
+            self.save(res, save_path, mode="w")
+
         if format_ == "parquet":
             convert_to_parquet(save_path, save_path.with_suffix(".parquet"))
 
@@ -244,7 +254,7 @@ class ExtractEmbeddings:
 def generate_embeddings(fasta_file: str, model_name: str="facebook/esm2_t6_8M_UR50D",
                         disable_gpu: bool=False, batch_size: int=8, 
                         save_path: str = "embeddings.csv", option: str = "mean", 
-                        format_: str = "csv", dtype=torch.float32):
+                        format_: str = "csv", mode="append"):
     """
     Generate embeddings from a FASTA file.
 
@@ -274,7 +284,7 @@ def generate_embeddings(fasta_file: str, model_name: str="facebook/esm2_t6_8M_UR
     tok = tokenizer.tokenize(fasta_file)
 
     # even if I have more columns in tok, it will only get the input_ids and the attention_mask
-    embeddings.batch_extract_save(tok["id"], tok, batch_size, save_path, option, format_)
+    embeddings.batch_extract_save(tok["id"], tok, batch_size, save_path, option, format_, mode=mode)
 
 
 def main():

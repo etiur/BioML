@@ -109,13 +109,14 @@ class DataReader:
         Analyses the composition of the feature data.
     """
     label: pd.Series | pd.DataFrame | str | Iterable[int|float]
-    features: pd.DataFrame | str | list | np.ndarray
+    features: pd.DataFrame | str | list | Iterable[int|float]
     variance_thres: float | None = 0
     checked_label_path: str = "labels_corrected.csv"
     sheet: str | int | None = None
 
     def __post_init__(self):
-        self.features = self.read_feature(self.features)
+
+        self.features = self.read_multiple_features(self.features)
         self.label = self.read_label(self.label)
         self._check_label(self.checked_label_path)
         self.label = self.label.to_numpy().flatten()
@@ -147,7 +148,39 @@ class DataReader:
                     self.label.to_csv(label_path)
             except KeyError as e:
                 raise DifferentLabelFeatureIndexError("feature dataframe and labels have different index names") from e
-        
+
+    def read_multiple_features(self, features) -> pd.DataFrame:
+        """
+        Read multiple feature files and concatenate them into a single dataframe.
+
+        Parameters
+        ----------
+        features : list[str]
+            A list of file paths to the feature data or any other formats.
+
+        Returns
+        -------
+        pd.DataFrame
+            _description_
+        """
+        match features:
+            case [*feat] if isinstance(feat[0], (int, float)):
+                featu = self.read_feature(feat)
+                return featu
+            case list(feat):
+                data = [self.read_feature(x) for x in feat]
+                index = data[0].index
+                for num, d in enumerate(data[1:], 1):
+                    if not d.index.equals(index):
+                        print("features don't have the same index, trying to make them equal")
+                        d.index = index
+                        data[num] = d
+                featu = pd.concat(data, axis=1)
+                return featu
+            case _:
+                featu = self.read_feature(self.features)
+                return featu
+
     def read_feature(self, features: str | pd.DataFrame | list | np.ndarray) -> pd.DataFrame:
         """
         Read the feature data and return a dataframe.
@@ -224,7 +257,7 @@ class DataReader:
                                          columns=variance.get_feature_names_out())
     
     def __repr__(self):
-        string = f"""Data with:\n    num. samples: {len(self.features)}\n    num. columns: {len(self.features.columns)}\n   scaler: {self.scaler}\n    variance threshold: {self.variance_thres}\n    sheet: {self.sheet}"""
+        string = f"""Data with:\n    num. samples: {len(self.features)}\n    num. columns: {len(self.features.columns)}\n    variance threshold: {self.variance_thres}\n    sheet: {self.sheet}"""
         return string
 
 
@@ -524,7 +557,6 @@ class FeatureClassification:
                                                   feature_range, features, rfe_step, plot,
                                                   plot_num_features)
         selector._write_dict(feature_dict)
-        return feature_dict
 
 
 class FeatureRegression:
