@@ -245,9 +245,9 @@ def generate_pssm(fasta: str | Path, num_threads: int=100, fasta_dir: str | Path
 def generate_with_mmseqs(fasta: str | Path, dbinp: str | Path | None=None, dbout: str | Path="uniref50", evalue: float =0.01, num_iterations: int=3, 
                          sensitivity: float = 6.5, num_threads: int=100,  pssm_file: str = "result.pssm", pssm_dir: str | Path="pssm"):
     generate_searchdb = False
-    if dbinp is None:
+    if dbinp is not None and dbout is not None:
         generate_searchdb = True
-    MmseqsClustering.easy_generate_pssm(fasta, dbout, evalue, num_iterations, sensitivity, pssm_file, 
+    MmseqsClustering.easy_generate_pssm(fasta, dbout, dbinp , evalue, num_iterations, sensitivity, pssm_file, 
                                         generate_searchdb, threads=num_threads)
     MmseqsClustering.split_pssm(pssm_file, pssm_dir)
 
