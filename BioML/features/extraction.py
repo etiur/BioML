@@ -403,15 +403,15 @@ def read_possum(features: dict[str, list[str]], length: int, index: Iterable[str
     extract = features["long"]
     extract.extend(features["short"])
     for x in extract:
-        feat[x] = [pd.read_csv(f"{possum_out}/{x}_{i}.csv") for i in range(length)]
         if ":" in x:
             name = x.split(':')
-            feat[x] = [pd.read_csv(f"{possum_out}/{name[0]}_{name[1]}_{i+1}.csv") for i in range(length)]
-
+            feat[x] = [pd.read_csv(f"{possum_out}/{name[0]}_{name[1]}_{i}.csv") for i in range(length)]
+        else:
+            feat[x] = [pd.read_csv(f"{possum_out}/{x}_{i}.csv") for i in range(length)]
     # concat if length > 1 else return the dataframe
     for key, value in feat.items():
         val: pd.DataFrame = pd.concat(value)
-        if index:
+        if index is not None:
             val.index = index
         else:
             val.reset_index(drop=True, inplace=True)
@@ -427,7 +427,8 @@ def read_possum(features: dict[str, list[str]], length: int, index: Iterable[str
 
 def read_features(program: str, drop_file: str | Path=None, drop: Iterable[str]=(), 
                   ifeature_out:str|Path="ifeature_features",  
-                  possum_out: str | Path="possum_features", file_splits: int=1) -> Callable[[dict[str, list[str]]], pd.DataFrame]:
+                  possum_out: str | Path="possum_features", file_splits: int=1, 
+                  index: Iterable[str|int] | None=None) -> Callable[[dict[str, list[str]]], pd.DataFrame]:
     """
     A function to read the features from the possum and ifeature programmes.
 
@@ -453,7 +454,7 @@ def read_features(program: str, drop_file: str | Path=None, drop: Iterable[str]=
     """
     
     call = {"ifeature": partial(read_ifeature, ifeature_out=ifeature_out, length=file_splits), 
-             "possum": partial(read_possum, possum_out=possum_out, length=file_splits)}
+             "possum": partial(read_possum, possum_out=possum_out, length=file_splits, index=index)}
     feature_dict = return_features(program, drop_file, drop)
 
     return call[program](feature_dict)

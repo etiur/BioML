@@ -3,7 +3,7 @@ A module that performs regression analysis on a dataset.
 """
 from pathlib import Path
 import argparse
-from typing import Iterable
+from typing import Iterable, Any
 import pandas as pd
 from .base import PycaretInterface, Trainer, DataParser
 from ..utilities.utils import evaluate_all_models, write_results
@@ -90,7 +90,9 @@ class Regressor:
         A tuple of strings containing the names of the models to drop during feature selection. Default is 
         ("tr", "kr", "ransac", "ard", "ada", "lightgbm").
     selected : list, optional
-        A list of strings containing the names of the selected features. Default is None.
+        A list of strings containing the names of the selected models. Default is None.
+    add : list, optional
+        A list of Models to add. Default is None.
     test_size : float, optional
         The proportion of the dataset to use for testing. Default is 0.2.
     optimize : str, optional
@@ -103,8 +105,9 @@ class Regressor:
 
     """
     def __init__(self, ranking_params: dict[str, float] | None=None, 
-                 drop: Iterable[str]=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), selected: Iterable[str]=(), 
-                 test_size: float = 0.2, optimize: str="RMSE", plot: Iterable[str]=("residuals", "error", "learning")):
+                 drop: Iterable[str]=("tr", "kr", "ransac", "lightgbm"), selected: Iterable[str]=(), 
+                 add: Iterable[Any|str]=(), optimize: str="RMSE", 
+                 plot: Iterable[str]=("residuals", "error", "learning")):
         
         ranking_dict = dict(difference_weight=1.2)
         if isinstance(ranking_params, dict):
@@ -112,13 +115,12 @@ class Regressor:
                 if key not in ranking_dict:
                     raise KeyError(f"The key {key} is not  found in the ranking params use theses keys: {', '.join(ranking_dict.keys())}")
                 ranking_dict[key] = value
-        self.test_size = test_size
         self.drop = drop
         self.difference_weight = ranking_dict["difference_weight"]
         self.selected = selected
         self.optimize = optimize
         self.plot = plot if plot else ()
-        
+        self.add = [add] if add and not isinstance(add, list) else add
 
     def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> float | int: # type: ignore
         """
@@ -194,10 +196,10 @@ def main():
     experiment = PycaretInterface("regression", seed, scaler=scaler, budget_time=trial_time, # type: ignore
                                   best_model=best_model, output_path=training_output, optimize=optimize) 
     # this class has the arguments for the trainer for regression 
-    regressor = Regressor(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize, plot=plot) 
+    regressor = Regressor(ranking_dict, drop, selected=selected, optimize=optimize, plot=plot) 
 
     # It uses the PycaretInterface' models to perform the training but you could use other models as long as it implements the same methods
-    training = Trainer(experiment, regressor, num_split, num_iter, cross_validation) # this can be used for classification or regression -> so it is generic
+    training = Trainer(experiment, regressor, num_split, test_size, num_iter, cross_validation) # this can be used for classification or regression -> so it is generic
     
     spliting = {"cluster": split.ClusterSpliter(cluster, num_split, random_state=experiment.seed, shuffle=shuffle),
                 "mutations": split.MutationSpliter(mutations, test_num_mutations, greater, 

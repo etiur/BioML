@@ -751,7 +751,7 @@ class PycaretInterface:
 
 class Trainer:
     def __init__(self, caret_interface: PycaretInterface, training_arguments: ModelArguments, 
-                 num_splits: int=5, num_iter: int=50, cross_validation: bool=True):
+                 num_splits: int=5, test_size: float = 0.2, num_iter: int=50, cross_validation: bool=True):
         
         """
         Initialize a Trainer object with the given parameters.
@@ -764,6 +764,8 @@ class Trainer:
             The arguments to use for training, classification or regression.
         num_splits : int, optional
             The number of splits to use in cross-validation. Defaults to 5.
+        test_size : float, optional
+            The proportion of the data to use as a test set. Defaults to 0.2.
         num_iter : int, optional
             The number of iterations to use for tuning. Defaults to 30.
         cross_validation : bool, optional
@@ -774,8 +776,10 @@ class Trainer:
         self.num_splits = num_splits
         self.experiment = caret_interface
         self.num_iter = num_iter
+        self.test_size = test_size
         self.log.info(f"Number of kfolds: {self.num_splits}")
         self.log.info(f"Number of retuning iterations: {self.num_iter}")
+        self.log.info(f"Test size: {self.test_size}")
         self.arguments = training_arguments
         self.experiment.plots = self.arguments.plot
         self.cross_validation = cross_validation
@@ -826,8 +830,8 @@ class Trainer:
 
         return pd.concat(sorted_results), sorted_models
     
-    def train(self, features: pd.DataFrame, label_name:str,  test_size: float=0.2, 
-              drop: Iterable[str]=(), selected_models: str | Iterable[str] =(), **kwargs: Any) -> tuple[dict, dict]:
+    def train(self, features: pd.DataFrame, label_name:str,
+              **kwargs: Any) -> tuple[dict, dict]:
         """
         Train the models on the specified feature data and return the results and models.
 
@@ -837,12 +841,6 @@ class Trainer:
             The training feature data.
         label_name : str
             The name of the label column.
-        test_size : float, 
-            The proportion of the data to use as a test set. Defaults to 0.2.
-        drop : tuple[str, ...] or None, optional
-            The features to drop from the feature data. Defaults to None.
-        selected_models : str or tuple[str, ...] or None, optional
-            The models to use for training. Defaults to None.
         **kwargs :
             Additional parameters to pass to the setup_training function which calls the pycaret.setup function.
 
@@ -852,50 +850,17 @@ class Trainer:
             A tuple containing the results and models.
         """
         # To access the transformed data
-        self.experiment.setup_training(features, label_name, self.num_splits, test_size, **kwargs) # type: ignore
-        if drop:
-            self.experiment.final_models = [x for x in self.experiment.final_models if x not in drop]   
-        if selected_models:
+        self.experiment.setup_training(features, label_name, self.num_splits, self.test_size, **kwargs) # type: ignore
+        if self.arguments.drop:
+            self.experiment.final_models = [x for x in self.experiment.final_models if x not in self.arguments.drop]   
+        if self.arguments.selected:
             self.experiment.final_models = selected_models
+        if self.arguments.add:
+            self.experiment.final_models += self.arguments.add
+
         results, returned_models = self.experiment.train(self.cross_validation)
         
         return results, returned_models
-    
-    def analyse_models(self, features: pd.DataFrame | np.ndarray, label_name:str, 
-                       scoring_fn: Callable, test_size: float=0.2,
-                       drop: Iterable[str] | None=None, selected: Iterable[str] | None=None,
-                       **kwargs: Any) -> tuple[pd.DataFrame, dict, pd.Series]: 
-  
-        """
-        Analyze the trained models and rank them based on the specified scoring function.
-
-        Parameters
-        ----------
-        features : pd.DataFrame or np.ndarray
-            The training feature data.
-        label_name : str
-            The name of the label column.
-        scoring_fn : Callable
-            The scoring function to use for evaluating the models.
-        test_size : float, optional
-            The proportion of the data to use as a test set. Defaults to 0.2.
-        drop : tuple or None, optional
-            The features to drop from the feature data. Defaults to None.
-        selected : tuple or None, optional
-            The features to select from the feature data. Defaults to None.
-        **kwargs : dict
-            Additional parameters to pass to the setup_training function which calls the pycaret.setup function.
-
-        Returns
-        -------
-        tuple[pd.DataFrame, dict, pd.Series]
-            A tuple containing the sorted results and sorted models.
-        """
-        results, returned_models = self.train(features, label_name, test_size, drop, selected, **kwargs) # type: ignore
-        sorted_results, sorted_models = self.rank_results(results, returned_models, scoring_fn)
-        top_params = self.experiment.get_best_params_multiple(sorted_models)
-
-        return sorted_results, sorted_models, top_params
     
     def retune_best_models(self, sorted_models:dict[str, Any]):
         """
@@ -1035,9 +1000,9 @@ class Trainer:
             pd.DataFrame
             
             """
-            sorted_results, sorted_models, top_params = self.analyse_models(feature, label_name, self.arguments._calculate_score_dataframe, 
-                                                                            self.arguments.test_size, self.arguments.drop, self.arguments.selected, 
-                                                                            **kwargs) # type: ignore
+            results, returned_models = self.train(feature, label_name, self.test_size, drop, selected, **kwargs) # type: ignore
+            sorted_results, sorted_models = self.rank_results(results, returned_models, self.arguments._calculate_score_dataframe)
+            top_params = self.experiment.get_best_params_multiple(sorted_models)
 
             return sorted_results, sorted_models, top_params
     

@@ -190,11 +190,11 @@ def main():
                                   output_path=model_output)
     
     if problem == "classification":
-        model = Classifier(drop=(), selected=selected_models, test_size=test_size, optimize=optimize, plot=())
+        model = Classifier(drop=(), selected=selected_models, optimize=optimize, plot=())
     elif problem == "regression":
-        model = Regressor(drop=(), selected=selected_models, test_size=test_size, optimize=optimize, plot=())
+        model = Regressor(drop=(), selected=selected_models, optimize=optimize, plot=())
 
-    training = Trainer(experiment, model, num_split, num_iter, cross_validation)
+    training = Trainer(experiment, model, num_split, test_size, num_iter, cross_validation)
 
     spliting = {"cluster": split.ClusterSpliter(cluster, num_split, random_state=experiment.seed),
                 "mutations": split.MutationSpliter(mutations, test_num_mutations, greater, 

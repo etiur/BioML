@@ -1,7 +1,7 @@
 """
 This module contains the functions to train classification models using pycaret
 """
-from typing import Iterable
+from typing import Iterable, Any
 import pandas as pd
 import argparse
 import numpy as np
@@ -94,7 +94,7 @@ def arg_parse():
 
 class Classifier:
     def __init__(self, ranking_params: dict[str, float] | None=None, drop: Iterable[str] = ("ada", "gpc", "lightgbm"), 
-                 selected: Iterable[str] =(), test_size: float=0.2, optimize: str="MCC", 
+                 selected: Iterable[str] =(), add: Any | Iterable[Any]=(), optimize: str="MCC", 
                  plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report")):
         """
         A class to rank the performance of classification models based on the optimization metric, precision, recall,
@@ -108,8 +108,8 @@ class Classifier:
             The models to drop, by default ("ada", "gpc", "lightgbm")
         selected : Iterable[str], optional  
             The models to train, by default ()
-        test_size : float, optional
-            The size of the test set, by default 0.2
+        add : Any or Iterable[Any], optional
+            The models to add, by default ()
         optimize : str, optional
             The metric to optimize for retuning the best models, by default "MCC"
         plot : tuple[str, ...], optional
@@ -125,7 +125,6 @@ class Classifier:
                     raise KeyError(f"The key {key} is not found in the ranking params use theses keys: {', '.join(ranking_dict.keys())}")
                 ranking_dict[key] = value
 
-        self.test_size = test_size
         self.drop = drop
         self.pre_weight = ranking_dict["precision_weight"]
         self.rec_weight = ranking_dict["recall_weight"]
@@ -134,6 +133,7 @@ class Classifier:
         self.selected = selected
         self.optimize = optimize
         self.plot = plot if plot else ()
+        self.add = [add] if add and not isinstance(add, list) else add
     
     def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> int | float:
         """
@@ -212,10 +212,10 @@ def main():
                                   best_model=best_model, output_path=training_output, optimize=optimize)
     
     # this class has the arguments for the trainer to do classification
-    classifier = Classifier(ranking_dict, drop, selected=selected, test_size=test_size, optimize=optimize, plot=plot)
+    classifier = Classifier(ranking_dict, drop, selected=selected, optimize=optimize, plot=plot)
 
     # It uses the PycaretInterface' models to perform the training but you could use other models as long as it implements the same methods
-    training = Trainer(experiment, classifier, num_split, num_iter, cross_validation) # this can be used for classification or regression -> so it is generic
+    training = Trainer(experiment, classifier, num_split, test_size, num_iter, cross_validation) # this can be used for classification or regression -> so it is generic
     
     spliting = {"cluster": split.ClusterSpliter(cluster, num_split, shuffle=shuffle, random_state=experiment.seed),
                 "mutations": split.MutationSpliter(mutations, test_num_mutations, greater, shuffle=shuffle,
