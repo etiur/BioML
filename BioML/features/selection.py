@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from sklearn.linear_model import RidgeClassifier, Ridge
 import numpy as np
+from typing import Protocol, Type
 from multiprocessing import get_context  # https://pythonspeed.com/articles/python-multiprocessing/
 import time
 from sklearn.model_selection import train_test_split
@@ -57,6 +58,14 @@ def arg_parse():
             args.excel_file, args.test_size, args.rfe_steps, args.plot, args.plot_num_features,
             args.seed, args.problem]
 
+
+
+class SelectionArguments(Protocol):
+
+    def filter_args(self) -> dict[str, Iterable[str]]:
+        ...
+
+    
 @dataclass(slots=True)
 class DataReader:
     """
@@ -262,7 +271,9 @@ class DataReader:
 
 
 class FeatureSelection:
-    def __init__(self, excel_file: str | Path, num_thread: int =10, seed: int | None=None):
+    def __init__(self, excel_file: str | Path, filter_args: SelectionArguments, 
+                 num_thread: int =10, seed: int | None=None, 
+                 scaler: str="robust", test_size: float=0.2):
         """
         A class for performing feature selection on a dataset.
 
@@ -270,15 +281,22 @@ class FeatureSelection:
         ----------
         excel_file : str or Path
             The path to the Excel file to save the selected features.
+        filter_args : SelectionArguments
+            A dictionary containing the arguments for the filter methods.
         num_thread : int, optional
             The number of threads to use for feature selection. Defaults to 10.
         seed : int or None, optional
             The random seed to use for reproducibility. Defaults to None.
+        scaler : str, optional
+            The type of scaler to use for preprocessing the features. Can be "standard",
+            "minmax", or "robust". Default is "robust".
         """
         # method body
         
         self.log = Log("feature_selection")
         self.log.info("Reading the features")
+        self.filter_arguments = filter_args
+        self.scaler = scaler
         self.num_thread = num_thread
         self.excel_file = Path(excel_file)
         if not str(self.excel_file).endswith(".xlsx"):
@@ -286,6 +304,7 @@ class FeatureSelection:
         self.excel_file.parent.mkdir(parents=True, exist_ok=True)
         if seed: self.seed = seed
         else: self.seed = int(time.time())
+        self.test_size = test_size
         # log parameters
         self.log.info("Starting feature selection and using the following parameters")    
         self.log.info(f"seed: {self.seed}")
@@ -438,52 +457,61 @@ class FeatureSelection:
             feature_dict[f"rfe_{num_features}"] = features[rfe_results]
 
         return feature_dict
+    
+    def construct_features(self, features: pd.DataFrame | np.ndarray, X_train: pd.DataFrame | np.ndarray, 
+                           Y_train: Iterable[int|float], feature_range: list[int], plot: bool=True, 
+                           plot_num_features:int=20, rfe_step:int=30) -> None:
+        """
+        Perform feature selection using a holdout strategy.
+
+        Parameters
+        ----------
+        features : pd.DataFrame or np.ndarray
+            The feature data.
+        X_train : pd.DataFrame or np.ndarray
+            The training feature data.
+        Y_train : Iterable[int|float]
+            The regression label data.
+        feature_range : list[int]
+            A list of the number of features to select at each iteration.
+        plot : bool, optional
+            Whether to plot the feature importances. Defaults to True.
+        plot_num_features : int, optional
+            The number of features to include in the plot. Defaults to 20.
+        rfe_step : int, optional
+            The number of features to remove at each iteration in recursive feature elimination. Defaults to 30.
+
+        Returns
+        -------
+        None
+        """
+        
+        transformed_x, scaler_dict = scale(self.scaler, X_train)
+        feature_dict = self.generate_features(self.filter_arguments.filter_args, transformed_x, Y_train, 
+                                                  feature_range, features, rfe_step, 
+                                                  plot, plot_num_features)
+        self._write_dict(feature_dict)
 
 
 class FeatureClassification:
     """
     A class for performing feature selection for classification problems.
 
-    Parameters
-    ----------
-    seed : int
-        The random seed to use for reproducibility.
-    scaler : str, optional
-        The type of scaler to use for preprocessing the features. Can be "standard",
-        "minmax", or "robust". Default is "robust".
-    test_size : float, optional
-        The proportion of data to use for testing. Defaults to 0.2.
-
-    Attributes
-    ----------
-    log : Log
-        The logger for the ActiveSelection class.
-    seed : int
-        The random seed to use for reproducibility.
-    num_filters : int
-        The number of filter algorithms to use for feature selection.
-    test_size : float
-        The proportion of data to use for testing.
-
     Methods
     -------
     construct_features(features, selector, feature_range, plot=True, plot_num_features=20, rfe_step=30)
         Perform feature selection using a holdout strategy.
     """
-    def __init__(self, seed: int, scaler: str = "robust", test_size: float = 0.2):
+    def __init__(self):
         
         """
         Class to perform feature selection on classification problems with a set of predefined filter methods
         """
 
-        self.seed = seed
-        self.scaler = scaler
-
         filter_names = ("mutual_info", "Fscore", "chi2", "FechnerCorr", "KendallCorr")
         self._filter_args = {"filter_names": filter_names, "xgboost": xgb.XGBClassifier, 
                              "RFE": RidgeClassifier, "random_forest": rfc,
                              "regression_filters":()}
-        self.test_size = test_size
 
     @property
     def filter_args(self):
@@ -521,83 +549,22 @@ class FeatureClassification:
             case tuple(filter_args):
                 self._filter_args[filter_args[0]] = tuple(filter_args[1])
 
-    def construct_features(self, features: pd.DataFrame | np.ndarray, label: Iterable[int], 
-                           selector: FeatureSelection, feature_range: list[int], 
-                           plot: bool=True, plot_num_features: int=20, rfe_step: int=30):
-        """
-        Perform feature selection using a holdout strategy.
-
-        Parameters
-        ----------
-        features : pd.DataFrame or np.ndarray
-            The training features
-        label : Iterable[int]
-            The training labels
-        selector : FeatureSelection
-            The feature selection object to use.
-        feature_range : list[int]
-            A list of the number of features to select at each iteration.
-        plot : bool, optional
-            Whether to plot the feature importances. Defaults to True.
-        plot_num_features : int, optional
-            The number of features to include in the plot. Defaults to 20.
-        rfe_step : int, optional
-            The number of features to remove at each iteration in recursive feature elimination. Defaults to 30.
-
-        Returns
-        -------
-        None
-        """
-        
-        X_train, X_test, Y_train, Y_test = train_test_split(features, label, test_size=self.test_size, 
-                                                            random_state=self.seed, stratify=label)
-        
-        transformed_x, scaler_dict = scale(self.scaler, X_train)
-        feature_dict = selector.generate_features(self.filter_args, transformed_x, Y_train, 
-                                                  feature_range, features, rfe_step, plot,
-                                                  plot_num_features)
-        selector._write_dict(feature_dict)
-
 
 class FeatureRegression:
     """
     A Class to perform feature selection on regression problems with a set of predefined filter methods.
-
-    Parameters
-    ----------
-    seed : int
-        The random seed to use for reproducibility.
-    scaler : str, optional
-        The type of scaler to use for preprocessing the features. Can be "standard",
-        "minmax", or "robust". Default is "robust".
-    test_size : float, optional
-        The proportion of data to use for testing. Defaults to 0.2.
-
-    Attributes
-    ----------
-    log : Log
-        The logger for the ActiveSelection class.
-    seed : int
-        The random seed to use for reproducibility.
-    num_filters : int
-        The number of filter algorithms to use for feature selection.
-    test_size : float
-        The proportion of data to use for testing.
 
     Methods
     -------
     construct_features(features, selector, feature_range, plot=True, plot_num_features=20, rfe_step=30)
         Perform feature selection using a holdout strategy.
     """
-    def __init__(self, seed: int, scaler: str="robust", test_size=0.2):
-        self.seed = seed
-        self.scaler = scaler
+    def __init__(self):
+
         regression_filters = ("mutual_info", "Fscore", "PCC")
         self._filter_args = {"filter_names": (), "xgboost": xgb.XGBRegressor, 
                              "RFE": Ridge, "random_forest": rfr,
                              "regression_filters": regression_filters}
-        
-        self.test_size = test_size
 
     @property
     def filter_args(self):
@@ -614,43 +581,8 @@ class FeatureRegression:
             case tuple(filter_args):
                 self._filter_args[filter_args[0]] = tuple(filter_args[1])
 
-    def construct_features(self, features: pd.DataFrame | np.ndarray, label: Iterable[int|float],  selector: FeatureSelection, 
-                           feature_range: list[int], plot: bool=True, plot_num_features:int=20, 
-                           rfe_step:int=30) -> None:
-        """
-        Perform feature selection using a holdout strategy.
 
-        Parameters
-        ----------
-        features : pd.DataFrame or np.ndarray
-            The feature data.
-        label : Iterable[int|float]
-            The regression label data.
-        selector : FeatureSelection
-            The feature selection object to use.
-        feature_range : list[int]
-            A list of the number of features to select at each iteration.
-        plot : bool, optional
-            Whether to plot the feature importances. Defaults to True.
-        plot_num_features : int, optional
-            The number of features to include in the plot. Defaults to 20.
-        rfe_step : int, optional
-            The number of features to remove at each iteration in recursive feature elimination. Defaults to 30.
 
-        Returns
-        -------
-        None
-        """
-
-        X_train, X_test, Y_train, Y_test = train_test_split(features, label, test_size=self.test_size, 
-                                                            random_state=self.seed)
-        transformed_x, scaler_dict = scale(self.scaler, X_train)
-        feature_dict = selector.generate_features(self.filter_args, transformed_x, Y_train, 
-                                                  feature_range, features, rfe_step, 
-                                                  plot, plot_num_features)
-        selector._write_dict(feature_dict)
-
-   
 def get_range_features(features: pd.DataFrame, num_features_min: int | None=None, 
                         num_features_max: int | None=None, step_range: int | None=None) -> list[int]:
     """
@@ -732,15 +664,18 @@ def main():
     # generate the dataset
     training_data = DataReader(label, features, variance_threshold)
     feature_range = get_range_features(training_data.features, num_features_min, num_features_max, step)
-    filters = FeatureSelection(excel_file, num_thread, seed)
+    
     # select features
     if problem == "classification":
-        selection = FeatureClassification(filters.seed, scaler, test_size)
+        filters = FeatureClassification()
     elif problem == "regression":
-        selection = FeatureRegression(filters.seed, scaler, test_size)
+        filters = FeatureRegression()
+    
+    selection = FeatureSelection(excel_file, filters, num_thread, seed, scaler, test_size)
 
-    selection.construct_features(training_data.features, training_data.label, filters, feature_range, 
-                                 rfe_steps, plot, plot_num_features)
+
+    selection.construct_features(training_data.features, training_data.features, training_data.label, feature_range, 
+                                 plot, plot_num_features, rfe_steps)
 
    
 

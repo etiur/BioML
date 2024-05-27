@@ -299,8 +299,7 @@ class ClusterSpliter:
         return group
 
     def train_test_split(self, X: Sequence[str | int] | pd.DataFrame, y: Sequence[int] | None=None,
-                         groups: Sequence[str|int] | None=None, test_size:int | float = 0.2, 
-                         index: Sequence[str | int] | None=None):
+                         groups: Sequence[str|int] | None=None, test_size:int | float = 0.2):
         """
         Split the data into train and test sets.
 
@@ -325,22 +324,19 @@ class ClusterSpliter:
             The train and test sets or indices
         """
         if not groups:
-            if not index:
-                groups = self.get_group_index(X.index) 
-            else:
-                groups = self.get_group_index(index)
+            groups = self.get_group_index(X.index) 
+        else:
+            groups = self.get_group_index(groups)
 
         return self.group_kfold.train_test_split(X, y, test_size=test_size, groups=groups)
 
     def split(self, X: Sequence[int | str] | pd.DataFrame, y: Sequence[int] | None=None, 
-              groups: None | Sequence[str | int] =None, 
-              index: Sequence[str | int] | None=None) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
+              groups: None | Sequence[str | int] =None) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
         
         if not groups:
-            if not index:
-                groups = self.get_group_index(X.index) 
-            else:
-                groups = self.get_group_index(index)
+            groups = self.get_group_index(X.index) 
+        else:
+            groups = self.get_group_index(groups)
 
         for train_index, test_index in self.group_kfold.split(X, y, groups=groups):
             yield train_index, test_index
