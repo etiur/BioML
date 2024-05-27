@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 import pandas as pd
-from typing import Callable, Any
+from typing import Callable, Any, Iterator
 import numpy as np
 from pathlib import Path
 import time
@@ -11,7 +11,7 @@ from typing import Iterable
 import warnings
 from collections import defaultdict
 from typing import Protocol
-from ..utilities.utils import Log
+from ..utilities.utils import Log, write_results
 from ..utilities.custom_errors import DifferentLabelFeatureIndexError
 
 
@@ -784,7 +784,6 @@ class Trainer:
         self.experiment.plots = self.arguments.plot
         self.cross_validation = cross_validation
 
-
     def rank_results(self, results: dict[str, pd.DataFrame], returned_models:dict[str, Any], 
                      scoring_function: Callable):
         """
@@ -1000,7 +999,7 @@ class Trainer:
             pd.DataFrame
             
             """
-            results, returned_models = self.train(feature, label_name, self.test_size, drop, selected, **kwargs) # type: ignore
+            results, returned_models = self.train(feature, label_name, **kwargs) # type: ignore
             sorted_results, sorted_models = self.rank_results(results, returned_models, self.arguments._calculate_score_dataframe)
             top_params = self.experiment.get_best_params_multiple(sorted_models)
 
@@ -1105,4 +1104,31 @@ class Trainer:
             prediction_results[tune_status] = self.arguments.sort_holdout_prediction(pd.concat(predictions))
         return prediction_results
 
-           
+    def iterate_multiple_features(self, iterator: Iterator, training_output: Path, **kwargs: Any) -> None:
+    
+        """
+        Iterates over multiple input features and generates training results for each feature.
+
+        Parameters
+        ----------
+        iterator : Iterator
+            An iterator that yields a tuple of input features and sheet names.
+        training_output : Path
+            The path to the directory where the training results will be saved.
+
+        Returns
+        -------
+        None
+        """
+
+        performance_list = []
+        for input_feature, label_name, sheet in iterator:
+            sorted_results, sorted_models, top_params = self.run_training(input_feature, label_name, **kwargs)
+            index = sorted_results.index.unique(0)[:self.experiment.best_model]
+            score = 0
+            for i in index:
+                score += self.arguments._calculate_score_dataframe(sorted_results.loc[i])
+            performance_list.append((sheet, sorted_results.loc[index], score))
+        performance_list.sort(key=lambda x: x[2], reverse=True)
+        for sheet, performance, score in performance_list:
+            write_results(training_output, performance, sheet_name=sheet)

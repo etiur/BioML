@@ -672,18 +672,22 @@ def get_range_features(features: pd.DataFrame, num_features_min: int | None=None
         A list of integers representing the range of numbers for the number of features to select.
     """
     if not num_features_min:
-        num_features_min = max(2, len(features.columns) // 10)
         if not num_features_max:
+            num_features_min = max(2, len(features.columns) // 10)
             num_features_max = max(4, int(len(features.columns) // 1.6) + 1)
+        else:
+            num_features_min = max(2, num_features_max // 5)
+            num_features_max = max(4, num_features_max)
         if not step_range:
             step_range = max(1, (num_features_max - num_features_min) // 4)
         feature_range = list(range(num_features_min, num_features_max, step_range))
+        return feature_range + [num_features_max]
     elif num_features_min and step_range and num_features_max:
         feature_range = list(range(num_features_min, num_features_max, step_range))
+        return feature_range
     else:
         feature_range = [num_features_min]
-
-    return feature_range
+        return feature_range
 
 
 def translate_range_str_to_list(feature_range: str) -> tuple[int | None, int | None, int | None]:

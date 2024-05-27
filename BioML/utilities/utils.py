@@ -800,50 +800,9 @@ def write_results(training_output: Path | str, sorted_results: pd.DataFrame, top
     write_excel(training_output / "training_results.xlsx", sorted_results, sheet_name) # type: ignore
     if top_params is not None:
         write_excel(training_output / "top_hyperparameters.xlsx", top_params, sheet_name) # type: ignore
-
-
-def iterate_multiple_features(iterator: Iterator, parser, label: str | list[int | float], 
-                              training, outliers: Iterable[str],
-                              training_output: Path, **kwargs: Any) -> None:
-    
-    """
-    Iterates over multiple input features and generates training results for each feature.
-
-    Parameters
-    ----------
-    iterator : Iterator
-        An iterator that yields a tuple of input features and sheet names.
-    parser : DataParser
-        The data parser to use for parsing the input features.
-    label : str or list[int or float]
-        The label or list of labels to use for training.
-    training : Trainer
-        The training object to use for training the model.
-    outliers : Iterable[str]
-        An iterable containing the names of the outlier detection methods to use for each sheet.
-    training_output : Path
-        The path to the directory where the training results will be saved.
-
-    Returns
-    -------
-    None
-    """
-
-    performance_list = []
-    for input_feature, sheet in iterator:
-        feature = parser(input_feature, label=label, sheets=sheet, outliers=outliers)
-        sorted_results, sorted_models, top_params = training.run_training(feature.feature, feature.label_name, **kwargs)
-        index = sorted_results.index.unique(0)[:training.experiment.best_model]
-        score = 0
-        for i in index:
-            score += training.arguments._calculate_score_dataframe(sorted_results.loc[i])
-        performance_list.append((sheet, sorted_results.loc[index], score))
-    performance_list.sort(key=lambda x: x[2], reverse=True)
-    for sheet, performance, score in performance_list:
-        write_results(training_output, performance, sheet_name=sheet)
     
 
-def iterate_excel(excel_file: str | Path, sheet_names: Iterable[str] = ()):
+def iterate_excel(excel_file: str | Path, parser: Any, label, outliers: Iterable[str]=(), sheet_names: Iterable[str] = ()):
     """
     Iterates over the sheets of an Excel file and yields a tuple of the sheet data and sheet name.
 
@@ -861,8 +820,8 @@ def iterate_excel(excel_file: str | Path, sheet_names: Iterable[str] = ()):
     with pd.ExcelFile(excel_file) as file:
         for sheet in file.sheet_names:
             if sheet_names and sheet not in sheet_names: continue
-            df = pd.read_excel(excel_file, index_col=0, sheet_name=sheet)
-            yield df, sheet
+            feature = parser(excel_file, label=label, sheets=sheet, outliers=outliers)
+            yield feature.features, feature.label, sheet
 
 
 def estimate_deepmodel_size(model: PreTrainedModel, precision: torch.dtype):
