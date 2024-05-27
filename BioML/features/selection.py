@@ -381,6 +381,7 @@ class FeatureSelection:
         results = {}
         shap_importance, shap_values = methods.xgbtree(X_train, Y_train, filter_args["xgboost"], feature_names,
                                                        self.seed, self.num_thread)
+        shap_importance.to_csv(output_path / "shap_importance.csv")
         if plot:
             methods.plot_shap_importance(shap_values, feature_names, output_path, X_train, plot_num_features)
         results["xgbtree"] = shap_importance
@@ -613,10 +614,10 @@ def get_range_features(features: pd.DataFrame, num_features_min: int | None=None
         if not step_range:
             step_range = max(1, (num_features_max - num_features_min) // 4)
         feature_range = list(range(num_features_min, num_features_max, step_range))
-        return feature_range + [num_features_max]
+        return sorted(list(set(feature_range + [num_features_max])))
     elif num_features_min and step_range and num_features_max:
         feature_range = list(range(num_features_min, num_features_max, step_range))
-        return feature_range
+        return sorted(list(set(feature_range + [num_features_max])))
     else:
         feature_range = [num_features_min]
         return feature_range

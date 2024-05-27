@@ -179,7 +179,7 @@ class ShuffleGroupKFold:
         if self.shuffle:
             train_data, train_group = shuffle(X, groups, random_state=self.random_state)
         # generate the train_test_split
-        if self.stratified:
+        if self.stratified and y is not None:
             group_kfold = StratifiedGroupKFold(n_splits=len(X)//num_test)
         else:
             group_kfold = GroupKFold(n_splits=len(X)//num_test)

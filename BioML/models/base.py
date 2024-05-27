@@ -1104,7 +1104,8 @@ class Trainer:
             prediction_results[tune_status] = self.arguments.sort_holdout_prediction(pd.concat(predictions))
         return prediction_results
 
-    def iterate_multiple_features(self, iterator: Iterator, training_output: Path, **kwargs: Any) -> None:
+    def iterate_multiple_features(self, iterator: Iterator, training_output: Path, split_strategy: Any=None,
+                                  **kwargs: Any) -> None:
     
         """
         Iterates over multiple input features and generates training results for each feature.
@@ -1115,6 +1116,9 @@ class Trainer:
             An iterator that yields a tuple of input features and sheet names.
         training_output : Path
             The path to the directory where the training results will be saved.
+        split_strategy : Any, optional
+            The split strategy to use for training. It has to be a custom split function compatible
+            with scikit-learn. Defaults to None which will use the default split strategy from pycaret (stratifiedkfold or kfold)
 
         Returns
         -------
@@ -1123,7 +1127,13 @@ class Trainer:
 
         performance_list = []
         for input_feature, label_name, sheet in iterator:
-            sorted_results, sorted_models, top_params = self.run_training(input_feature, label_name, **kwargs)
+            if split_strategy is not None:
+                X_train, X_test = split_strategy.train_test_split(input_feature)
+                sorted_results, sorted_models, top_params = self.run_training(X_train, label_name, test_data=X_test, 
+                                                            fold_strategy=split_strategy, **kwargs)
+            else:
+                sorted_results, sorted_models, top_params = self.run_training(input_feature, label_name,
+                                                                              **kwargs)
             index = sorted_results.index.unique(0)[:self.experiment.best_model]
             score = 0
             for i in index:
