@@ -881,10 +881,13 @@ class Trainer:
         self.log.info("--------Retuning the best models--------")
         for key, model in list(sorted_models.items())[:self.experiment.best_model]:
             self.log.info(f"Retuning {key}")
-            tuned_model, results, params =  self.experiment.retune_model(key, model, self.num_iter, fold=self.num_splits)
-            new_models[key] = tuned_model
-            new_results[key] = results
-            new_params[key] = params
+            if key != "nb":
+                tuned_model, results, params =  self.experiment.retune_model(key, model, self.num_iter, fold=self.num_splits)
+                new_models[key] = tuned_model
+                new_results[key] = results
+                new_params[key] = params
+            else:
+                new_models[key] = model
 
         return pd.concat(new_results), new_models, pd.concat(new_params)
     
@@ -1128,7 +1131,7 @@ class Trainer:
         performance_list = []
         for input_feature, label_name, sheet in iterator:
             if split_strategy is not None:
-                X_train, X_test = split_strategy.train_test_split(input_feature)
+                X_train, X_test, _, _ = split_strategy.train_test_split(input_feature, input_feature[label_name])
                 sorted_results, sorted_models, top_params = self.run_training(X_train, label_name, test_data=X_test, 
                                                             fold_strategy=split_strategy, **kwargs)
             else:
