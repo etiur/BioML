@@ -300,8 +300,9 @@ class PycaretInterface:
         if isinstance(value, (list, np.ndarray, tuple, set)):
             if isinstance(value[0], str):
                 test = list(set(value).difference(element_list))
-                if test:
-                    raise ValueError(f"the {element_name} should be one of the following: {element_list} and not {test}")
+                for x in test:
+                    if isinstance(x, str):
+                        raise ValueError(f"the {element_name} should be one of the following: {element_list} and not {test}")
         elif isinstance(value, str):
             if value not in element_list:
                 raise ValueError(f"the {element_name} should be one of the following: {element_list} and not {value}")
@@ -453,8 +454,11 @@ class PycaretInterface:
             model_results = self.pycaret.pull(pop=True)
             model_results = model_results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
             if not isinstance(m, str):
-                m = f"custom_model_{count}"
-                count += 1
+                try:
+                    m = m.__class__.__name__
+                except AttributeError:
+                    m = f"custom_model_{count}"
+                    count += 1
             returned_models[m] = model
             results[m] = model_results
             runtime_train = time.time()
@@ -563,7 +567,7 @@ class PycaretInterface:
         return pd.concat(model_params) # type: ignore
     
     def retune_model(self, name: str, model: Any, num_iter: int=50, 
-                     fold: int=5) -> tuple[Any, pd.DataFrame, pd.Series]:
+                     fold: int=5, custom_grid=None) -> tuple[Any, pd.DataFrame, pd.Series]:
         """
         Retune the specified model using Optuna.
 
@@ -588,7 +592,7 @@ class PycaretInterface:
         self.log.info(f"fold: {fold}")
         tuned_model = self.pycaret.tune_model(model, optimize=self.optimize, search_library="optuna", search_algorithm="tpe", 
                                             early_stopping="asha", return_train_score=True, n_iter=num_iter, fold=fold,
-                                            verbose=False, choose_better=False)
+                                            verbose=False, choose_better=False, custom_grid=custom_grid)
         results = self.pycaret.pull(pop=True)
         tuned_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
         params = self.get_params(name, tuned_model)
@@ -853,7 +857,7 @@ class Trainer:
         if self.arguments.drop:
             self.experiment.final_models = [x for x in self.experiment.final_models if x not in self.arguments.drop]   
         if self.arguments.selected:
-            self.experiment.final_models = selected_models
+            self.experiment.final_models = self.arguments.selected
         if self.arguments.add:
             self.experiment.final_models += self.arguments.add
 
@@ -861,7 +865,7 @@ class Trainer:
         
         return results, returned_models
     
-    def retune_best_models(self, sorted_models:dict[str, Any]):
+    def retune_best_models(self, sorted_models:dict[str, Any], custom_grid=None):
         """
         Retune the best models using the specified optimization metric and number of iterations.
 
@@ -881,14 +885,14 @@ class Trainer:
         self.log.info("--------Retuning the best models--------")
         for key, model in list(sorted_models.items())[:self.experiment.best_model]:
             self.log.info(f"Retuning {key}")
-            if key != "nb":
-                tuned_model, results, params =  self.experiment.retune_model(key, model, self.num_iter, fold=self.num_splits)
+            if key in ["nb", "svm"] or (key not in self.experiment.final_models and not custom_grid):
+                new_models[key] = model
+            else:
+                tuned_model, results, params =  self.experiment.retune_model(key, model, self.num_iter, fold=self.num_splits, custom_grid=custom_grid)
                 new_models[key] = tuned_model
                 new_results[key] = results
                 new_params[key] = params
-            else:
-                new_models[key] = model
-
+                
         return pd.concat(new_results), new_models, pd.concat(new_params)
     
     def stack_models(self, sorted_models: dict[str, Any], meta_model: Any=None):
@@ -1031,7 +1035,10 @@ class Trainer:
         """    
         sorted_results, sorted_models, top_params = self.run_training(feature, label_name, **kwargs)
         if 'dummy' in sorted_results.index.unique(0)[:3]:
-            warnings.warn(f"Dummy model is in the top {list(sorted_results.index.unique(0)).index('dummy')} models, turning off tuning")
+            warnings.warn(f"Dummy model is in the top {list(sorted_results.index.unique(0)).index('dummy')} models")
+            tune = False
+        if len(sorted_models) == 1 and tune:
+            warnings.warn("Only one model was trained, turning off tuning")
             tune = False
 
         self.experiment.plot_best_models(sorted_models, "not_tuned")
@@ -1070,8 +1077,8 @@ class Trainer:
         results = defaultdict(dict)
         models_dict = defaultdict(dict)
 
-        results[key]["holdout"] = sorted_results, top_params
-        models_dict[key]["holdout"] = sorted_models
+        results[key]["train"] = sorted_results, top_params
+        models_dict[key]["train"] = sorted_models
 
         if self.cross_validation:
             stacked_results, stacked_models, stacked_params = self.stack_models(sorted_models)
