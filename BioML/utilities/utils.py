@@ -357,7 +357,7 @@ class MmseqsClustering:
         run_program_subprocess(search, "search")
         profile = f"mmseqs result2profile {query_db} {search_db} {pssm_filename.stem}.out {pssm_filename.stem}.profile"
         run_program_subprocess(profile, "generate_profile")
-        pssm = f"mmseqs profile2pssm {pssm_filename.stem}.profile {pssm_filename}"
+        pssm = f"mmseqs profile2pssm --db-output 0 {pssm_filename.stem}.profile {pssm_filename}"
         run_program_subprocess(pssm, "convert profile to pssm")
     
     @classmethod
@@ -423,8 +423,8 @@ class MmseqsClustering:
         return cluster_info
 
     @classmethod
-    def easy_generate_pssm(cls, input_file: str | Path, output_database: str | Path, 
-                           database_input: str | Path | None= None, evalue: float = 0.01, num_iterations: int = 3, 
+    def easy_generate_pssm(cls, input_file: str | Path, database_input: str | Path, 
+                            evalue: float = 0.01, num_iterations: int = 3, 
                             sensitivity: float = 6.5, pssm_filename: str | Path = "result.pssm", generate_searchdb: bool = False, 
                             max_seqs: int = 600, **search_kwags: dict):
         """
@@ -434,8 +434,6 @@ class MmseqsClustering:
         ----------
         input_file : str or Path
             Path to the input sequence file.
-        output_database : str or Path
-            Path to the output database file.
         database_input : str or Path
             Path to the database input file to create a new database.
         evalue : float, optional
@@ -465,14 +463,15 @@ class MmseqsClustering:
         """
 
         query_db = Path(input_file).with_suffix("")/"querydb"
-        input_database = Path(database_input) if database_input else Path("None")
-        search_db = Path(output_database)
+        input_database = Path(database_input)
         # generate the databases using the fasta files from input and the search databse like uniref
         if not query_db.exists():
             cls.create_database(input_file, query_db)
-        if generate_searchdb and input_database.exists():
-            search_db = search_db.with_suffix("")/"searchdb"
-            cls.create_database(database_input, search_db)
+        if generate_searchdb and not input_database.with_suffix("").exists():
+            search_db = input_database.with_suffix("")/"searchdb"
+            cls.create_database(input_database, search_db)
+        else:
+            search_db = input_database.with_suffix("")/"searchdb"
 
         # generate the pssm files
         cls.generate_pssm(query_db, search_db, evalue, num_iterations, pssm_filename, 

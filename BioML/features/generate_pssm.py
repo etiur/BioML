@@ -257,7 +257,7 @@ def main():
     use_mmseqs, evalue, sensitivity = arg_parse()
     
     if use_mmseqs:
-        generate_with_mmseqs(fasta_file, dbinp, dbout, evalue, iterations, sensitivity, num_thread, pssm_dir=pssm_dir)
+        generate_with_mmseqs(fasta_file, dbinp, evalue, iterations, sensitivity, num_thread, pssm_dir=pssm_dir)
     else:
         generate_pssm(num_thread, fasta_dir, pssm_dir, dbinp, dbout, num, fasta_file, iterations, possum_dir)
 
