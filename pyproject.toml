@@ -2,7 +2,6 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-
 [project]
 name = "BioML"
 version = "1.0.0"
@@ -28,16 +27,15 @@ dependencies = [
   "torch"]
 
 authors = [
-  {name = "Ruite Xiang", email = "ruite.xiang@gmail.com"},
-  {name = "Albert Cañellas Sole", email = "albertcaso22@gmail.com"},
-
+  {name = "Ruite Xiang", email = "ruite.xiang@gmail.com"}
 ]
 
 description = "BioML is a Python package to generate predictive models for protein data"
 
 license = {text = "MIT License"}
 readme = "README.md"
-keywords = ["bioprospecting", "bioinformatics", "machine learning", "proteins", "protein engineering"]
+keywords = ["bioprospecting", "bioinformatics", "machine learning", "proteins", 
+            "protein engineering"]
 
 classifiers=["Programming Language :: Python :: 3.11",
              "License :: OSI Approved :: MIT License",
@@ -46,9 +44,11 @@ classifiers=["Programming Language :: Python :: 3.11",
              "Natural Language :: English",
              "Topic :: Scientific/Engineering :: Bio-Informatics"]
 
+
 [project.optional-dependencies]
-cluster = ["mmseqs2", "perl-bio-featureio]
-# Installed with conda in the bioconda channel it seems that perl-bio-feaureio may download a wrong version of scikit-learn which makes it incompatible with pycaret so install everything with conda then pycaret 
+cluster = ["mmseqs2", 
+           "perl-bio-featureio"] # Installed with conda in the bioconda channel it seems that perl-bio-feaureio may download a wrong version of scikit-learn which makes it incompatible with pycaret so install everything with conda then pycaret
+
 
 [project.urls]
 Repository = "https://github.com/etiur/BioML"
