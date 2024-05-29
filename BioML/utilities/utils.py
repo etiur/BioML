@@ -351,13 +351,14 @@ class MmseqsClustering:
         and the 'profile2pssm' command converts the profile to a PSSM.
         """
         pssm_filename = Path(pssm_filename)
-        search = f"mmseqs search {query_db} {search_db} {pssm_filename.stem}.out tmp -e {evalue} --num-iterations {num_iterations} --max-seqs {max_seqs} -s {sensitivity} -a"
+        pssm_filename.with_suffix("").mkdir(exist_ok=True, parents=True)
+        search = f"mmseqs search {query_db} {search_db} {pssm_filename.with_suffix('')/pssm_filename.stem}.out tmp -e {evalue} --num-iterations {num_iterations} --max-seqs {max_seqs} -s {sensitivity} -a"
         for key, value in search_kwags.items():
             search += f" --{key} {value}"
         run_program_subprocess(search, "search")
-        profile = f"mmseqs result2profile {query_db} {search_db} {pssm_filename.stem}.out {pssm_filename.stem}.profile"
+        profile = f"mmseqs result2profile {query_db} {search_db} {pssm_filename.with_suffix('')/pssm_filename.stem}.out {pssm_filename.with_suffix('')/pssm_filename.stem}.profile"
         run_program_subprocess(profile, "generate_profile")
-        pssm = f"mmseqs profile2pssm --db-output 0 {pssm_filename.stem}.profile {pssm_filename}"
+        pssm = f"mmseqs profile2pssm --db-output 0 {pssm_filename.with_suffix('')/pssm_filename.stem}.profile {pssm_filename}"
         run_program_subprocess(pssm, "convert profile to pssm")
     
     @classmethod
