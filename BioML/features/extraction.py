@@ -370,7 +370,15 @@ def read_ifeature(features: dict[str, list[str]], length: int,
     extract = features["long"]
     extract.extend(features["short"])
     for x in extract:
-        feat[x] = [pd.read_csv(f"{ifeature_out}/{x}_{i}.tsv", sep="\t", index_col=0) for i in range(length)]
+        l = []
+        for i in range(length):
+            tsv = Path(f"{ifeature_out}/{x}_{i}.tsv")
+            if tsv.exists():
+                l.append(pd.read_csv(tsv, sep="\t", index_col=0))
+            else:
+                print(f"Warning {tsv} does not exist")
+        if not l: continue
+        feat[x] = l
     # concat features if length > 1 else return the dataframe
     for x, v in feat.items():
         val: pd.DataFrame = pd.concat(v)
@@ -403,11 +411,19 @@ def read_possum(features: dict[str, list[str]], length: int, index: Iterable[str
     extract = features["long"]
     extract.extend(features["short"])
     for x in extract:
-        if ":" in x:
-            name = x.split(':')
-            feat[x] = [pd.read_csv(f"{possum_out}/{name[0]}_{name[1]}_{i}.csv") for i in range(length)]
-        else:
-            feat[x] = [pd.read_csv(f"{possum_out}/{x}_{i}.csv") for i in range(length)]
+        l = []
+        for i in range(length):
+            if ":" in x:
+                name = x.split(':')
+                tsv = Path(f"{possum_out}/{name[0]}_{name[1]}_{i}.csv")
+            else:
+                tsv = Path(f"{possum_out}/{x}_{i}.csv")
+            if tsv.exists():
+                l.append(pd.read_csv(tsv))
+            else:
+                print(f"Warning {tsv} does not exist")
+        if not l: continue
+        feat[x] = l
     # concat if length > 1 else return the dataframe
     for key, value in feat.items():
         val: pd.DataFrame = pd.concat(value)
