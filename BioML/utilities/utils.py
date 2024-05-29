@@ -229,7 +229,7 @@ class Threshold:
 
 class MmseqsClustering:
     @classmethod
-    def create_database(cls, input_file: str | Path, output_database: str):
+    def create_database(cls, input_file: str | Path, output_database: str | Path):
         """
         Create a database from a fasta file.
 
@@ -556,7 +556,7 @@ class MmseqsClustering:
         pssm = [x.split() for x in mmseq_pssm[1:]]
         pssm_data = pd.DataFrame(pssm[1:], columns=pssm[0])
         pssm_data.set_index("Pos", inplace=True)
-        pssm_data.index = [int(x) +1 for x in pssm_data.index]
+        pssm_data.index = [int(x) + 1 for x in pssm_data.index]
         pssm_data["Cns"] = list(fasta_seq)
         correct_pssm = pssm_data.set_index("Cns", append=True).loc[:,aa].reset_index("Cns").T.to_dict()
         line = '\t'.join(['Pos','Cns'] + aa)
@@ -864,8 +864,8 @@ def write_results(training_output: Path | str, sorted_results: pd.DataFrame, top
         write_excel(training_output / "top_hyperparameters.xlsx", top_params, sheet_name) # type: ignore
     
 
-def iterate_excel(excel_file: str | Path, parser: Any, label, outliers: Iterable[str]=(), 
-                 sheet_names: Iterable[str] = ()) -> Generator[tuple[pd.DataFrame, str], None, None]:
+def iterate_excel(excel_file: str | Path, parser: Any, label: Any, outliers: Iterable[str]=(), 
+                 sheet_names: Iterable[str|int] = ()) -> Generator[tuple[pd.DataFrame, pd.DataFrame, str | int], None, None]:
     """
     Iterates over the sheets of an Excel file and yields a tuple of the sheet data and sheet name.
 
