@@ -565,7 +565,8 @@ class MmseqsClustering:
             line = [str(key), value["Cns"]]
             for a in aa:
                 line.append(value[a])
-            reordered_pssm.append(f"{'\t'.join(line)}\n")
+            line = '\t'.join(line)
+            reordered_pssm.append(f"{line}\n")
         return reordered_pssm
     
     
