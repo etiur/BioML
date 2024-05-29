@@ -556,16 +556,16 @@ class MmseqsClustering:
         pssm = [x.split() for x in mmseq_pssm[1:]]
         pssm_data = pd.DataFrame(pssm[1:], columns=pssm[0])
         pssm_data.set_index("Pos", inplace=True)
-        pssm_data.index = [int(x) + 1 for x in pssm_data.index]
+        pssm_data.index = [int(x) +1 for x in pssm_data.index]
         pssm_data["Cns"] = list(fasta_seq)
         correct_pssm = pssm_data.set_index("Cns", append=True).loc[:,aa].reset_index("Cns").T.to_dict()
-        line = '\t'.join(['Pos','Cns'] + aa)
-        reordered_pssm = [line]
+        line = '\t'.join(['Pos','Cns'] + aa + ["\n"])
+        reordered_pssm = [mmseq_pssm[0], line]
         for key, value in correct_pssm.items():
             line = [str(key), value["Cns"]]
             for a in aa:
                 line.append(value[a])
-            reordered_pssm.append('\t'.join(line))
+            reordered_pssm.append(f"{'\t'.join(line)}\n")
         return reordered_pssm
     
     
