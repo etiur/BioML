@@ -149,8 +149,12 @@ class ShuffleGroupKFold:
             group_kfold = GroupKFold(n_splits=self.n_splits)
         
         if self.shuffle:
-            train_data, train_group = shuffle(X, groups, random_state=self.random_state)
-        for i, (train_index, test_index) in enumerate(group_kfold.split(train_data, y, groups=train_group)):
+            if y is not None:
+                train_data, train_group, train_target = shuffle(X, groups, y, random_state=self.random_state)
+            else:
+                train_data, train_group = shuffle(X, groups, random_state=self.random_state)
+                train_target = y
+        for i, (train_index, test_index) in enumerate(group_kfold.split(train_data, train_target, groups=train_group)):
             yield train_index, test_index
     
     def train_test_split(self, X: Sequence[int | str] | pd.DataFrame, y: Sequence[int] | None=None, 
@@ -177,16 +181,20 @@ class ShuffleGroupKFold:
         """
         num_test = self.get_sample_size(test_size, X)
         if self.shuffle:
-            train_data, train_group = shuffle(X, groups, random_state=self.random_state)
+            if y is not None:
+                train_data, train_group, train_target = shuffle(X, groups, y, random_state=self.random_state)
+            else:
+                train_data, train_group = shuffle(X, groups, random_state=self.random_state)
+                train_target = y
         # generate the train_test_split
         if self.stratified and y is not None:
             group_kfold = StratifiedGroupKFold(n_splits=len(X)//num_test)
         else:
             group_kfold = GroupKFold(n_splits=len(X)//num_test)
-        for i, (train_index, test_index) in enumerate(group_kfold.split(train_data, y, groups=train_group)):
+        for i, (train_index, test_index) in enumerate(group_kfold.split(train_data, train_target, groups=train_group)):
             X_train, X_test = match_type(train_data, train_index, test_index)
             if y is not None:
-                y_train, y_test = match_type(y, train_index, test_index)
+                y_train, y_test = match_type(train_target, train_index, test_index)
                 return X_train, X_test, y_train, y_test
             return X_train, X_test
     
