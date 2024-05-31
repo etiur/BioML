@@ -75,11 +75,11 @@ class OutlierDetection:
 
     def validate(self, file):
         match file:
-            case str(x) if x.endswith(".xlsx"):
-                book = load_workbook(file, read_only=True)
-                excel_data = self._read_features(file, book.sheetnames)
+            case str() | Path() as  x if str(x).endswith(".xlsx"):
+                book = load_workbook(x, read_only=True)
+                excel_data = _read_features(x, book.sheetnames)
                 return excel_data
-            case str(x) if x.endswith(".csv"):
+            case str() | Path() as x if str(x).endswith(".csv"):
                 excel_data = pd.read_csv(file, index_col=0)
                 return {"csv_data":excel_data}
             case pd.DataFrame() as feat:

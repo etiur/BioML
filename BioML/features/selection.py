@@ -455,7 +455,7 @@ class FeatureSelection:
                 feature_dict[f"{filters}_{num_features}"]= features[feat.index[:num_features]]
             rfe_results = methods.rfe_linear(transformed, Y_train, num_features, self.seed, features.columns, rfe_step, 
                                              filter_args["RFE"])
-            n_components = num_features//8
+            n_components = num_features//6
             pca_data = methods.unsupervised(n_components, transformed)
             feature_dict[f"rfe_{num_features}"] = features[rfe_results]
             feature_dict[f"pca_{n_components}"] = pca_data
