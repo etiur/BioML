@@ -12,6 +12,7 @@ from sklearn.linear_model import RidgeClassifier, Ridge
 import matplotlib.pyplot as plt
 import shap
 import xgboost as xgb
+from sklearn.decomposition import PCA
 import pandas as pd
 
 
@@ -74,9 +75,11 @@ def plot_shap_importance(shap_values: np.ndarray, feature_names: Iterable[str], 
     shap.summary_plot(shap_values, X_train, feature_names=feature_names, plot_type='bar', show=False,
                         max_display=plot_num_features)
     plt.savefig(shap_dir / f"shap_top_{plot_num_features}_features.png", dpi=dpi)
+    plt.clf()
     shap.summary_plot(shap_values, X_train, feature_names=feature_names, show=False,
                         max_display=plot_num_features)
     plt.savefig(shap_dir / f"feature_influence_on_model_prediction.png", dpi=dpi)
+    plt.clf()
 
 
 def fechner_corr(x, y):
@@ -369,3 +372,32 @@ def regression_filters(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | 
     scores = dict(zip(feature_names, scores)) 
     scores = pd.Series(dict(sorted(scores.items(), key=lambda items: items[1], reverse=True)))
     return scores
+
+
+def unsupervised(n_components: int, X_train: pd.DataFrame | np.ndarray,
+                 return_variance: bool=False):
+    """
+    Perform unsupervised feature selection using PCA.
+
+    Parameters
+    ----------
+    n_components : int
+        The number of components to select.
+    X_train : pd.DataFrame | np.ndarray
+        The training feature data.
+    index_name : Iterable[str|int]
+        The index names of the rows.
+    return_variance : bool, optional
+        if to return the explained variance threshold, by default False
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
+    pca = PCA(n_components=n_components)
+    PC = pca.fit_transform(X_train)
+    p_Df = pd.DataFrame(data = PC, columns = [f"PC{x+1}" for x in range(PC.shape[1])], index=X_train.index)
+    if return_variance:
+        return p_Df, pca.explained_variance_ratio_
+    return p_Df
