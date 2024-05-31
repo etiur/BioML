@@ -109,7 +109,7 @@ class TokenizeFasta:
         for x in add_columns:
             tok = tok.add_column(x[0], x[1])
         if removes_column:
-            tok = tok.remove_columns(x)
+            tok = tok.remove_columns(removes_column)
         return tok
 
 
@@ -159,8 +159,10 @@ class ExtractEmbeddings:
             return torch.sum(embedings, dim=0)
         if option == "max":
             return torch.max(embedings, dim=0)[0]
+        if option == "flatten":
+            return torch.flatten(embedings)
         else:
-            raise ValueError("Option not available yet. Choose between 'mean', 'sum' or max")
+            raise ValueError("Option not available yet. Choose between 'mean', 'sum', 'max' or 'flatten'")
     
     def extract(self, batch_seq_keys: list[str], tok: dict[str, torch.Tensor], 
                 option: str = "mean"):
