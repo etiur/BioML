@@ -30,6 +30,7 @@ class ModelArguments(Protocol):
     test_size: float
     plot: tuple[str, ...]
     ranking_params: dict[str, float]
+    add: Iterable[Any]
 
     def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> int | float:
         ...
@@ -130,7 +131,7 @@ class DataParser:
             case pd.DataFrame() as labels:
                 return labels.squeeze()
             
-            case  str() | Path() as labels if Path(labels).exists() and Path(labels).suffix == ".csv":
+            case str() | Path() as labels if Path(labels).exists() and Path(labels).suffix == ".csv":
                 labels = pd.read_csv(labels, index_col=0)
                 return labels.squeeze()
             

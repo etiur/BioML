@@ -209,9 +209,9 @@ class DataReader:
             The feature data.
         """
         match features:
-            case str(feat) if feat.endswith(".csv"):
+            case str() | Path() as feat if str(feat).endswith(".csv"):
                 return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
-            case str(feat) if feat.endswith(".xlsx"):
+            case str() | Path() as feat if str(feat).endswith(".xlsx"):
                 sheet = self.sheet if self.sheet else 0
                 return pd.read_excel(f"{features}", index_col=0, sheet_name=sheet) # the first column should contain the sample names
             case pd.DataFrame() as feat:
@@ -243,7 +243,7 @@ class DataReader:
         match labels: 
             case pd.Series() | pd.DataFrame() as label:
                 return label
-            case str(label) if label.endswith(".csv"): 
+            case str() | Path() as label if str(label).endswith(".csv"): 
                 return pd.read_csv(f"{label}", index_col=0) # the first column should contain the sample names
             case str(label) if label in self.features.columns:            
                 lab = self.features[label]
