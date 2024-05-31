@@ -148,19 +148,13 @@ class ShuffleGroupKFold:
         else:
             group_kfold = GroupKFold(n_splits=self.n_splits)
         
-        if self.shuffle:
-            if y is not None:
-                train_data, train_group, train_target = shuffle(X, groups, y, random_state=self.random_state)
-            else:
-                train_data, train_group = shuffle(X, groups, random_state=self.random_state)
-                train_target = y
-        for i, (train_index, test_index) in enumerate(group_kfold.split(train_data, train_target, groups=train_group)):
+        for i, (train_index, test_index) in enumerate(group_kfold.split(X, y, groups=groups)):
             yield train_index, test_index
     
     def train_test_split(self, X: Sequence[int | str] | pd.DataFrame, y: Sequence[int] | None=None, 
-                         test_size:int | float = 0.2, groups: Sequence[str|int] | None =None):
+                         test_size:int | float = 0.2, groups: Sequence[str|int] | None =None, split_index:int=0):
         """
-        Split the data into train and test sets.
+        Split the data into train and test sets using the split method but just getting one of the splits
 
         Parameters
         ----------
@@ -172,7 +166,8 @@ class ShuffleGroupKFold:
             The test size in int or float, by default 0.2
         groups : Iterable[int, str], optional
             The group  for each sample, by default None
-
+        split_index : int, optional
+            The index of the split to get the train test, by default 0
         Returns
         -------
         pd.DataFrame | pd.Series | np.ndarray
@@ -192,11 +187,12 @@ class ShuffleGroupKFold:
         else:
             group_kfold = GroupKFold(n_splits=len(X)//num_test)
         for i, (train_index, test_index) in enumerate(group_kfold.split(train_data, train_target, groups=train_group)):
-            X_train, X_test = match_type(train_data, train_index, test_index)
-            if y is not None:
-                y_train, y_test = match_type(train_target, train_index, test_index)
-                return X_train, X_test, y_train, y_test
-            return X_train, X_test
+            if i == split_index:
+                X_train, X_test = match_type(train_data, train_index, test_index)
+                if y is not None:
+                    y_train, y_test = match_type(train_target, train_index, test_index)
+                    return X_train, X_test, y_train, y_test
+                return X_train, X_test
     
     def get_n_splits(self, X: Sequence[int | str] | None= None, y: Sequence[int] | None=None, 
                      groups=None) -> int:
@@ -307,7 +303,7 @@ class ClusterSpliter:
         return group
 
     def train_test_split(self, X: Sequence[str | int] | pd.DataFrame, y: Sequence[int] | None=None,
-                         groups: Sequence[str|int] | None=None, test_size:int | float = 0.2):
+                         groups: Sequence[str|int] | None=None, test_size:int | float = 0.2, split_index: int=0):
         """
         Split the data into train and test sets.
 
@@ -336,7 +332,7 @@ class ClusterSpliter:
         else:
             groups = self.get_group_index(groups)
 
-        return self.group_kfold.train_test_split(X, y, test_size=test_size, groups=groups)
+        return self.group_kfold.train_test_split(X, y, test_size=test_size, groups=groups, split_index=split_index)
 
     def split(self, X: Sequence[int | str] | pd.DataFrame, y: Sequence[int] | None=None, 
               groups: None | Sequence[str | int] =None) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:

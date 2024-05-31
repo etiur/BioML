@@ -5,10 +5,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from sklearn.linear_model import RidgeClassifier, Ridge
 import numpy as np
-from typing import Protocol, Type
+from typing import Protocol
 from multiprocessing import get_context  # https://pythonspeed.com/articles/python-multiprocessing/
 import time
-from sklearn.model_selection import train_test_split
 from typing import Iterable, Any
 from sklearn.ensemble import RandomForestClassifier as rfc
 from sklearn.ensemble import RandomForestRegressor as rfr
@@ -447,6 +446,7 @@ class FeatureSelection:
         supervised_features = self.supervised_filters(filter_args, transformed, Y_train, features.columns, 
                                                         self.excel_file.parent, plot, plot_num_features)
         
+        
         concatenated_features = pd.concat([univariate_features, supervised_features])
         for num_features in feature_range:
             print(f"generating a feature set of {num_features} dimensions")
@@ -455,7 +455,10 @@ class FeatureSelection:
                 feature_dict[f"{filters}_{num_features}"]= features[feat.index[:num_features]]
             rfe_results = methods.rfe_linear(transformed, Y_train, num_features, self.seed, features.columns, rfe_step, 
                                              filter_args["RFE"])
+            n_components = num_features//8
+            pca_data = methods.unsupervised(n_components, transformed)
             feature_dict[f"rfe_{num_features}"] = features[rfe_results]
+            feature_dict[f"pca_{n_components}"] = pca_data
 
         return feature_dict
     
@@ -487,7 +490,7 @@ class FeatureSelection:
         None
         """
         
-        transformed_x, scaler_dict = scale(self.scaler, X_train)
+        transformed_x, scaler_dict = scale(self.scaler, X_train, to_dataframe=True)
         feature_dict = self.generate_features(self.filter_arguments.filter_args, transformed_x, Y_train, 
                                                   feature_range, features, rfe_step, 
                                                   plot, plot_num_features)

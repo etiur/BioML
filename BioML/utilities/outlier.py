@@ -82,7 +82,7 @@ class OutlierDetection:
             case str(x) if x.endswith(".csv"):
                 excel_data = pd.read_csv(file, index_col=0)
                 return {"csv_data":excel_data}
-            case pd.Dataframe() as feat:
+            case pd.DataFrame() as feat:
                 return {"dataframe":feat}
             case list() | np.ndarray() | dict() as feat:
                 return {"arrays": pd.DataFrame(feat)}
@@ -170,6 +170,9 @@ class OutlierDetection:
         _ : pd.DataFrame
             The number of times each feature was an outlier
         """
+        if self.output.exists():
+            return pd.read_csv(self.output, index_col=0)
+        
         results = {}
         excel_data = self.validate(self.feature_file)
         scaled_data = []
