@@ -143,7 +143,8 @@ class PreparePEFT:
                                                                 low_cpu_mem_usage=True,
                                                                 torch_dtype= model_params.dtype, 
                                                                 quantization_config=bnb_config,
-                                                                device_map="auto")
+                                                                device_map=device)
+        return model
 
 @dataclass(slots=True)
 class PrepareSplit:
@@ -159,7 +160,7 @@ class PrepareSplit:
         if self.splitting_strategy == "cluster":
             cluster = split.ClusterSpliter(self.cluster_file, self.num_split, 
                                            shuffle=self.shuffle, random_state=self.random_seed)
-            train, test = cluster.train_test_split(range(len(dataset)), index=dataset["id"])
+            train, test = cluster.train_test_split(range(len(dataset)), groups=dataset["id"])
         elif self.splitting_strategy == "random":
             stratify = dataset["labels"] if self.stratify else None
             train, test = train_test_split(range(len(dataset)), stratify=stratify, 

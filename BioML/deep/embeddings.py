@@ -254,7 +254,7 @@ class ExtractEmbeddings:
 def generate_embeddings(fasta_file: str, model_name: str="facebook/esm2_t6_8M_UR50D",
                         disable_gpu: bool=False, batch_size: int=8, 
                         save_path: str = "embeddings.csv", option: str = "mean", 
-                        format_: str = "csv", mode="append"):
+                        format_: str = "csv", mode: str="append", dtype: torch.dtype=torch.float32):
     """
     Generate embeddings from a FASTA file.
 
@@ -278,7 +278,7 @@ def generate_embeddings(fasta_file: str, model_name: str="facebook/esm2_t6_8M_UR
         Data type for the embeddings, by default torch.float32
     """
 
-    config = LLMConfig(model_name, disable_gpu=disable_gpu)
+    config = LLMConfig(model_name, disable_gpu=disable_gpu, dtype=dtype)
     tokenizer = TokenizeFasta(config)
     embeddings = ExtractEmbeddings(config)
     tok = tokenizer.tokenize(fasta_file)

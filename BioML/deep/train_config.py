@@ -20,7 +20,7 @@ class LLMConfig:
     model_name: str = "facebook/esm2_t6_8M_UR50D"
     disable_gpu: bool = False
     _device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.float32
+    dtype: torch.dtype = torch.float32
     num_classes: int = 2 # classification default
     objective: str = "classification" if num_classes >= 2 else "regression"
     # training params
@@ -52,3 +52,15 @@ class LLMConfig:
         if self.disable_gpu:
             return "cpu"
         return self._device
+    
+    @device.setter
+    def device(self, value: str):
+        """
+        Set the device to use for the language model.
+
+        Parameters
+        ----------
+        value : str
+            Device to use for the language model.
+        """
+        self._device = value
