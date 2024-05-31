@@ -374,7 +374,8 @@ def regression_filters(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | 
     return scores
 
 
-def unsupervised(n_components: int, X_train: pd.DataFrame | np.ndarray,
+def unsupervised(n_components: int, X_train: pd.DataFrame | np.ndarray, 
+                 X_test: pd.DataFrame | np.ndarray, 
                  return_variance: bool=False):
     """
     Perform unsupervised feature selection using PCA.
@@ -398,6 +399,9 @@ def unsupervised(n_components: int, X_train: pd.DataFrame | np.ndarray,
     pca = PCA(n_components=n_components)
     PC = pca.fit_transform(X_train)
     p_Df = pd.DataFrame(data = PC, columns = [f"PC{x+1}" for x in range(PC.shape[1])], index=X_train.index)
+    PC_test = pca.transform(X_test)
+    p_Df_test = pd.DataFrame(data = PC_test, columns = [f"PC{x+1}" for x in range(PC_test.shape[1])], index=X_test.index)
+    pca_data = pd.concat([p_Df, p_Df_test])
     if return_variance:
-        return p_Df, pca.explained_variance_ratio_
-    return p_Df
+        return pca_data, pca.explained_variance_ratio_
+    return pca_data

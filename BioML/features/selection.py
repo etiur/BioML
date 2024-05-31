@@ -409,6 +409,7 @@ class FeatureSelection:
                 write_excel(writer, value, key)
 
     def generate_features(self, filter_args: dict[str, Any], transformed: np.ndarray, Y_train: pd.Series | np.ndarray, 
+                          test_x: pd.DataFrame | np.ndarray,
                           feature_range: list[int], features: pd.DataFrame, rfe_step: int=30, plot: bool=True,
                           plot_num_features: int=20) -> dict[str, pd.DataFrame]:
         """
@@ -424,6 +425,8 @@ class FeatureSelection:
             The training label data.
         feature_range : Iterable[int]
             A range of the number of features to include in each feature set.
+        test_x : pd.DataFrame or np.ndarray
+            The test feature data.
         features : pd.DataFrame
             The original feature data.
         rfe_step : int, optional
@@ -456,13 +459,14 @@ class FeatureSelection:
             rfe_results = methods.rfe_linear(transformed, Y_train, num_features, self.seed, features.columns, rfe_step, 
                                              filter_args["RFE"])
             n_components = num_features//6
-            pca_data = methods.unsupervised(n_components, transformed)
+            pca_data = methods.unsupervised(n_components, transformed, test_x)
             feature_dict[f"rfe_{num_features}"] = features[rfe_results]
-            feature_dict[f"pca_{n_components}"] = pca_data
+            feature_dict[f"pca_{n_components}"] = pca_data.loc[features.index]
 
         return feature_dict
     
     def construct_features(self, features: pd.DataFrame | np.ndarray, X_train: pd.DataFrame | np.ndarray, 
+                           X_test: pd.DataFrame | np.ndarray,
                            Y_train: Iterable[int|float], feature_range: list[int], plot: bool=True, 
                            plot_num_features:int=20, rfe_step:int=30) -> None:
         """
@@ -490,8 +494,8 @@ class FeatureSelection:
         None
         """
         
-        transformed_x, scaler_dict = scale(self.scaler, X_train, to_dataframe=True)
-        feature_dict = self.generate_features(self.filter_arguments.filter_args, transformed_x, Y_train, 
+        transformed_x, scaler_dict, test_x = scale(self.scaler, X_train, X_test, to_dataframe=True)
+        feature_dict = self.generate_features(self.filter_arguments.filter_args, transformed_x, Y_train, test_x,
                                                   feature_range, features, rfe_step, 
                                                   plot, plot_num_features)
         self._write_dict(feature_dict)
