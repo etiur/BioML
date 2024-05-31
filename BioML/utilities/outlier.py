@@ -77,7 +77,7 @@ class OutlierDetection:
         match file:
             case str() | Path() as  x if str(x).endswith(".xlsx"):
                 book = load_workbook(x, read_only=True)
-                excel_data = _read_features(x, book.sheetnames)
+                excel_data = self._read_features(x, book.sheetnames)
                 return excel_data
             case str() | Path() as x if str(x).endswith(".csv"):
                 excel_data = pd.read_csv(file, index_col=0)
