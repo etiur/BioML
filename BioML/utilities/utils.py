@@ -18,6 +18,7 @@ from typing import Any, Callable
 from transformers import PreTrainedModel
 from dataclasses import dataclass
 from subprocess import call
+import tempfile
 
 
 @dataclass(slots=True)
@@ -298,16 +299,16 @@ class MmseqsClustering:
         and the 'createtsv' command creates a TSV file with the clustering results.
         """
         database = Path(database)
-        intermediate_output = Path("cluster_output/clusterdb")
-        intermediate_output.parent.mkdir(exist_ok=True, parents=True)
         output_cluster = Path(cluster_tsv)
         output_cluster.parent.mkdir(exist_ok=True, parents=True)
-        cluster = f"mmseqs cluster {database} {intermediate_output} tmp --min-seq-id {cluster_at_sequence_identity} --cluster-reassign --alignment-mode 3 -s {sensitivity}"
-        for key, value in cluster_kwargs.items():
-            cluster += f" --{key} {value}"
-        createtsv = f"mmseqs createtsv {database} {database} {intermediate_output} {output_cluster}"
-        run_program_subprocess(cluster, "cluster")
-        run_program_subprocess(createtsv, "create tsv")
+        with tempfile.TemporaryDirectory(dir=".") as temp:
+            intermediate_output = Path(temp)/"clusterdb"
+            cluster = f"mmseqs cluster {database} {intermediate_output} tmp --min-seq-id {cluster_at_sequence_identity} --cluster-reassign --alignment-mode 3 -s {sensitivity}"
+            for key, value in cluster_kwargs.items():
+                cluster += f" --{key} {value}"
+            createtsv = f"mmseqs createtsv {database} {database} {intermediate_output} {output_cluster}"
+            run_program_subprocess(cluster, "cluster")
+            run_program_subprocess(createtsv, "create tsv")
     
     @classmethod
     def generate_pssm(cls, query_db: str | Path, search_db: str | Path, 
