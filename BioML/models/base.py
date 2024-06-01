@@ -73,7 +73,8 @@ class DataParser:
         if self.outliers:
             self.features = self.remove_outliers(self.features, self.outliers)
 
-    def read_features(self, features: str | pd.DataFrame | list | np.ndarray, sheets: str | int | None=None) -> pd.DataFrame:
+    @classmethod
+    def read_features(cls, features: str | pd.DataFrame | list | np.ndarray, sheets: str | int | None=None) -> pd.DataFrame:
         """
         Reads the feature data from a file or returns the input data.
 
@@ -144,7 +145,8 @@ class DataParser:
             case _:
                 raise ValueError(f"label should be a csv file, an array, a pandas Series, DataFrame or inside features: you provided {label}")
     
-    def remove_outliers(self, training_features: pd.DataFrame, outliers: Iterable[str]):
+    @classmethod
+    def remove_outliers(cls, training_features: pd.DataFrame, outliers: Iterable[str]):
         """
         Remove outliers from the train data
 
