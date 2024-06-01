@@ -128,13 +128,17 @@ class ExtractEmbeddings:
     """
     config: LLMConfig = field(default_factory=LLMConfig)
     model: None = field(default=None, init=False)
+    pretrained_args: dict = field(default_factory=dict)
 
     def __post_init__(self):
 
         device = "auto" if self.config.device == "cuda" else self.config.device
-        self.model = AutoModel.from_pretrained(self.config.model_name, add_pooling_layer=False, 
-                                               output_hidden_states=True, device_map=device, torch_dtype=self.config.dtype,
-                                               low_cpu_mem_usage=True)
+        if "esm2" in self.config.model_name:
+            self.pretrained_args["add_pooling_layer"] = False
+        self.model = AutoModel.from_pretrained(self.config.model_name, output_hidden_states=True, device_map=device, 
+                                               torch_dtype=self.config.dtype,
+                                               low_cpu_mem_usage=True, offload_folder="offload", **self.pretrained_args)
+       
         
     @staticmethod
     def concatenate_options(embedings: torch.Tensor, option: str = "mean"):
@@ -209,6 +213,7 @@ class ExtractEmbeddings:
             embeddings = pd.DataFrame(results).T
         else:
             embeddings = pd.concat([pd.DataFrame(res).T for res in results])
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
         embeddings.to_csv(path, mode=mode, header=not Path(path).exists())
     
     
@@ -256,7 +261,7 @@ class ExtractEmbeddings:
 def generate_embeddings(fasta_file: str, model_name: str="facebook/esm2_t6_8M_UR50D",
                         disable_gpu: bool=False, batch_size: int=8, 
                         save_path: str = "embeddings.csv", option: str = "mean", 
-                        format_: str = "csv", mode: str="append", dtype: torch.dtype=torch.float32):
+                        format_: str = "csv", mode: str="append", dtype: torch.dtype=torch.float32, **pretrained_args):
     """
     Generate embeddings from a FASTA file.
 
@@ -282,7 +287,7 @@ def generate_embeddings(fasta_file: str, model_name: str="facebook/esm2_t6_8M_UR
 
     config = LLMConfig(model_name, disable_gpu=disable_gpu, dtype=dtype)
     tokenizer = TokenizeFasta(config)
-    embeddings = ExtractEmbeddings(config)
+    embeddings = ExtractEmbeddings(config, pretrained_args=pretrained_args)
     tok = tokenizer.tokenize(fasta_file)
 
     # even if I have more columns in tok, it will only get the input_ids and the attention_mask
