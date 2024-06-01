@@ -200,6 +200,7 @@ class ApplicabilityDomain:
  
         return pred
 
+
 @dataclass(slots=True)
 class FastaExtractor:
     """
@@ -262,7 +263,7 @@ class FastaExtractor:
         return positive, negative
     
     @staticmethod    
-    def _sorting_function(sequence: Bio.SeqRecord.SeqRecord):
+    def _sorting_function(sequence: Bio.SeqRecord):
         scores = []
         id_ = sequence.id.split("-###")
         for x in id_:
@@ -274,7 +275,7 @@ class FastaExtractor:
                 scores.append(float(x.split(":")[1]))
         return tuple(scores)
 
-    def extract(self, positive_list: list[Bio.SeqRecord.SeqRecord], negative_list: list[Bio.SeqRecord.SeqRecord], 
+    def extract(self, positive_list: list[Bio.SeqRecord], negative_list: list[Bio.SeqRecord], 
                 positive_fasta: str="positive.fasta", negative_fasta: str="negative.fasta"):
         """
         A function to extract those test fasta sequences that passed the filter
@@ -401,10 +402,11 @@ def domain_filter(predictions: pd.DataFrame, scaled_training_features: pd.DataFr
 
     return pred
 
-def predict_filter_by_domain(training_features: pd.DataFrame | str | Path | np.ndarray, label: Iterable[str | int] | srtr | Path, model_path: str | Path,
+
+def predict_filter_by_domain(training_features: pd.DataFrame | str | Path | np.ndarray, label: Iterable[str | int] | str | Path, model_path: str | Path,
                              test_features: pd.DataFrame | str | Path | np.ndarray, outlier_train: Iterable[str | int] | Path = (), 
                              outlier_test: Iterable[str | int] | Path = (), applicability_domain: bool = False,
-                             sheet_name: str | None = None, scaler: str = "zscore", res_dir: str = "prediction_result", 
+                             sheet_name: str | None = None, scaler: str = "zscore", res_dir: str = "prediction_result/predictions.csv", 
                              number_similar_samples: int =1, problem: str="classification"):
     """
     Make predictions on new samples and filter them using the applicability domain.
@@ -454,8 +456,8 @@ def predict_filter_by_domain(training_features: pd.DataFrame | str | Path | np.n
     # save the predictions
     col_name = ["prediction_score", "prediction_label", "AD_number"]
     predictions = predictions.loc[:, predictions.columns.str.contains("|".join(col_name))]
-    Path(res_dir).mkdir(exist_ok=True, parents=True)
-    predictions.to_csv(f"{res_dir}/predictions.csv")
+    Path(res_dir).parent.mkdir(exist_ok=True, parents=True)
+    predictions.to_csv(f"{res_dir}")
     return predictions
 
 
@@ -475,6 +477,7 @@ def main():
         extractor = FastaExtractor(fasta, res_dir)
         positive, negative = extractor.separate_negative_positive(predictions)
         extractor.extract(positive, negative, positive_fasta="positive.fasta", negative_fasta="negative.fasta")   
+
 
 if __name__ == "__main__":
     # Run this if this file is executed from command line but not if is imported as API
