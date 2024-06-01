@@ -19,6 +19,7 @@ from transformers import PreTrainedModel
 from dataclasses import dataclass
 from subprocess import call
 import tempfile
+from functools import wraps
 
 
 @dataclass(slots=True)
@@ -933,7 +934,7 @@ def print_trainable_parameters(model: PreTrainedModel):
     )
 
 
-def clean_fasta(possum_program: str, fasta_file:str, out_fasta:str, min_aa:int=100):
+def clean_fasta(possum_program: str, fasta_file:str | Path, out_fasta: Path | str, min_aa:int=100):
     """
     Clean the fasta file
     """

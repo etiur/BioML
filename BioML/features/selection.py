@@ -121,13 +121,15 @@ class DataReader:
     variance_thres: float | None = 0
     checked_label_path: str = "labels_corrected.csv"
     sheet: str | int | None = None
+    outliers: Iterable[str | int] = ()
 
     def __post_init__(self):
 
         self.features = self.read_multiple_features(self.features)
         self.label = self.read_label(self.label)
         self._check_label(self.checked_label_path)
-        self.label = self.label.to_numpy().flatten()
+        label = self.label.loc[[x for x in self.label.index if x not in self.outliers]]
+        self.label = label.to_numpy().flatten()
         self.preprocess()
     
     def _check_label(self, label_path: str | Path) -> None:
@@ -261,8 +263,9 @@ class DataReader:
         if self.variance_thres is not None:
             variance = VarianceThreshold(self.variance_thres)
             fit = variance.fit_transform(self.features)
-            self.features = pd.DataFrame(fit, index=self.features.index, 
-                                         columns=variance.get_feature_names_out())
+            features = pd.DataFrame(fit, index=self.features.index, columns=variance.get_feature_names_out())
+            
+            self.features = features.loc[[x for x in features.index if x not in self.outliers]]
     
     def __repr__(self):
         string = f"""Data with:\n    num. samples: {len(self.features)}\n    num. columns: {len(self.features.columns)}\n    variance threshold: {self.variance_thres}\n    sheet: {self.sheet}"""
@@ -458,7 +461,7 @@ class FeatureSelection:
                 feature_dict[f"{filters}_{num_features}"]= features[feat.index[:num_features]]
             rfe_results = methods.rfe_linear(transformed, Y_train, num_features, self.seed, features.columns, rfe_step, 
                                              filter_args["RFE"])
-            n_components = num_features//6
+            n_components = num_features//2
             pca_data = methods.unsupervised(n_components, transformed, test_x)
             feature_dict[f"rfe_{num_features}"] = features[rfe_results]
             feature_dict[f"pca_{n_components}"] = pca_data.loc[features.index]

@@ -6,13 +6,14 @@ from pathlib import Path
 import time
 from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
-from sklearn.metrics import average_precision_score   
+from sklearn.metrics import average_precision_score, ndcg_score
 from typing import Iterable
 import warnings
 from collections import defaultdict
 from typing import Protocol
 from ..utilities.utils import Log, write_results
 from ..utilities.custom_errors import DifferentLabelFeatureIndexError
+from .metrics import ndcg_at_k
 
 
 class ModelArguments(Protocol):
@@ -192,32 +193,6 @@ class PycaretInterface:
     https://pycaret.gitbook.io/docs/
     https://medium.com/analytics-vidhya/pycaret-101-for-beginners-27d9aefd34c5
     https://towardsdatascience.com/5-things-you-are-doing-wrong-in-pycaret-e01981575d2a
-
-    Attributes
-    ----------
-    objective : str
-        The objective of the machine learning model, either "classification" or "regression".
-    seed : None or int, optional
-        The random seed to use for reproducibility. Defaults to None.
-    optimize : str, optional
-        The metric to optimize for. Defaults to "MCC".
-    scaler : str
-        The scaler to use.
-    budget_time : None or int, optional
-        The time budget for training the models in minutes. Defaults to None.
-    log : Log
-        The logger for the PycaretInterface class.
-    best_model : int, optional
-        The number of best models to select. Defaults to 3.
-    output_path : Path or str or None, optional
-        The path to save the output files. Defaults to None.
-    experiment_name : str or None, optional
-        The name of the experiment which is used by mlruns to log the results. Defaults to None.
-    _plots : list of str
-        The list of plots to generate for the models.
-    model : ClassificationExperiment or RegressionExperiment
-        The PyCaret experiment object for the machine learning model.
-
     """
     objective: str
     seed: None | int = None
@@ -388,7 +363,8 @@ class PycaretInterface:
     def final_models(self, value: str |Iterable[str]) -> None:
         self._final_models = self._check_value(value, self.original_models, "models")
 
-    def setup_training(self, feature: pd.DataFrame, label_name: str, fold: int=5, test_size:float=0.2,
+    def setup_training(self, feature: pd.DataFrame, label_name: str, fold: int=5, 
+                       test_size:float=0.2, k=15, penalty=50, 
                        **kwargs: Any):
         """
         Call pycaret set_up for the training.
@@ -418,6 +394,8 @@ class PycaretInterface:
         if self.objective == "classification":
             self.pycaret.add_metric("averagePre", "Average Precision Score", average_precision_score,  # type: ignore
                                    average="weighted", target="pred_proba", multiclass=False)
+        elif self.objective == "regression":
+            self.pycaret.add_metric("ndcg", "NDCG", ndcg_at_k, greater_is_better=True, k=k, penalty=penalty) # type: ignore
 
         config: pd.DataFrame = self.pycaret.pull(pop=True)
         if not (self.output_path / "config_setup_pycaret.csv").exists():
