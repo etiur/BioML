@@ -24,8 +24,7 @@ dependencies = [
   "lightning",
   "peft",
   "datasets",
-  "torch",
-  "cuml"]
+  "torch"]
 
 authors = [
   {name = "Ruite Xiang", email = "ruite.xiang@gmail.com"}
