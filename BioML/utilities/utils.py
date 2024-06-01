@@ -610,7 +610,7 @@ def convert_to_parquet(csv_file: str | Path, parquet_file: str | Path):
 
 
 def scale(scaler: str, X_train: pd.DataFrame, 
-          X_test: pd.DataFrame | None=None) -> tuple[pd.DataFrame, ...]:
+          X_test: pd.DataFrame | None=None, to_dataframe: bool = False) -> tuple[pd.DataFrame, ...]:
     """
     Scale the features using RobustScaler, StandardScaler or MinMaxScaler.
 
@@ -622,7 +622,8 @@ def scale(scaler: str, X_train: pd.DataFrame,
         The training data.
     X_test : pandas DataFrame object, default=None
         The test data.
-
+    to_dataframe : bool, default=False
+        Whether to return the transformed data as a pandas DataFrame object.
     Returns
     -------
     tuple
@@ -646,13 +647,15 @@ def scale(scaler: str, X_train: pd.DataFrame,
     scaler_dict = {"robust": RobustScaler(), "zscore": StandardScaler(), "minmax": MinMaxScaler()}
     X_train.columns = X_train.columns.astype(str)
     transformed = scaler_dict[scaler].fit_transform(X_train)
-    #transformed = pd.DataFrame(transformed, index=X_train.index, columns=X_train.columns)
+    if to_dataframe:
+        transformed = pd.DataFrame(transformed, index=X_train.index, columns=X_train.columns)
     if X_test is None:
         return transformed, scaler_dict
         
     X_test.columns = X_test.columns.astype(str)
     test_x = scaler_dict[scaler].transform(X_test)
-    #test_x = pd.DataFrame(test_x, index=X_test.index, columns=X_test.columns)
+    if to_dataframe:
+        test_x = pd.DataFrame(test_x, index=X_test.index, columns=X_test.columns)
     return transformed, scaler_dict, test_x
 
 

@@ -3,6 +3,7 @@ from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
 from functools import cached_property
 import argparse
+from typing import Iterable
 from scipy.spatial import distance
 from Bio import SeqIO
 import Bio
@@ -199,6 +200,7 @@ class ApplicabilityDomain:
  
         return pred
 
+
 @dataclass(slots=True)
 class FastaExtractor:
     """
@@ -261,7 +263,7 @@ class FastaExtractor:
         return positive, negative
     
     @staticmethod    
-    def _sorting_function(sequence: Bio.SeqRecord.SeqRecord):
+    def _sorting_function(sequence: Bio.SeqRecord):
         scores = []
         id_ = sequence.id.split("-###")
         for x in id_:
@@ -273,7 +275,7 @@ class FastaExtractor:
                 scores.append(float(x.split(":")[1]))
         return tuple(scores)
 
-    def extract(self, positive_list: list[Bio.SeqRecord.SeqRecord], negative_list: list[Bio.SeqRecord.SeqRecord], 
+    def extract(self, positive_list: list[Bio.SeqRecord], negative_list: list[Bio.SeqRecord], 
                 positive_fasta: str="positive.fasta", negative_fasta: str="negative.fasta"):
         """
         A function to extract those test fasta sequences that passed the filter
@@ -301,7 +303,8 @@ class FastaExtractor:
             fasta_neg.write_file(negative)
 
 
-def predict(test_features: pd.DataFrame, model_path: str | Path, problem: str="classification") -> pd.DataFrame:
+def predict(test_features: pd.DataFrame, model_path: str | Path, 
+            problem: str="classification") -> pd.DataFrame:
     """
     Make predictions on new samples.
 
@@ -400,17 +403,48 @@ def domain_filter(predictions: pd.DataFrame, scaled_training_features: pd.DataFr
     return pred
 
 
-def main():
-    fasta, training_features, scaler, model_path, test_features, res_dir, number_similar_samples, \
-    outlier_train, outlier_test, problem, label, applicability_domain, sheet_name = arg_parse()
+def predict_filter_by_domain(training_features: pd.DataFrame | str | Path | np.ndarray, label: Iterable[str | int] | str | Path, model_path: str | Path,
+                             test_features: pd.DataFrame | str | Path | np.ndarray, outlier_train: Iterable[str | int] | Path = (), 
+                             outlier_test: Iterable[str | int] | Path = (), applicability_domain: bool = False,
+                             sheet_name: str | None = None, scaler: str = "zscore", res_dir: str = "prediction_result/predictions.csv", 
+                             number_similar_samples: int =1, problem: str="classification"):
+    """
+    Make predictions on new samples and filter them using the applicability domain.
 
-    # read outliers
-    outlier_test = read_outlier_file(outlier_test)
-    outlier_train = read_outlier_file(outlier_train)
+    Parameters
+    ----------
+    training_features : pd.DataFrame | str | Path | np.ndarray
+        The training features.
+    label : Iterable[str  |  int] | srtr | Path
+        The labels.
+    model_path : str | Path
+        The path to the trained model.
+    test_features : pd.DataFrame | str | Path | np.ndarray
+        The test features.
+    outlier_train : Iterable[str  |  int] | Path, optional
+        outliers in the train set, by default ()
+    outlier_test : Iterable[str  |  int] | Path, optional
+        outliers in the test set, by default ()
+    applicability_domain : bool, optional
+        Whether to use the applicability domain to filter the predictions, by default False
+    sheet_name : str | None, optional
+        The sheet name for the excel file if the training features is in excel format, by default None
+    scaler : str, optional
+        The scaler to use, by default "zscore"
+    res_dir : str, optional
+        The directory where to save the predictions, by default "prediction_result"
+    number_similar_samples : int, optional
+        The number of similar samples to filter the predictions, by default 1
+    problem : str, optional
+        The problem type, by default "classification"
 
-    # preparing the prediction
+    Returns
+    -------
+    pd.DataFrame
+        The filtered predictions.
+    """
     feature = DataParser(training_features, label, outliers=outlier_train, sheets=sheet_name)
-    test_features = feature.remove_outliers(feature.read_features(test_features), outlier_test)
+    test_features = DataParser.remove_outliers(DataParser.read_features(test_features), outlier_test)
     predictions = predict(test_features, model_path, problem)
     if applicability_domain:
         transformed, _, test_x = scale(scaler, feature.drop(), test_features)
@@ -422,13 +456,28 @@ def main():
     # save the predictions
     col_name = ["prediction_score", "prediction_label", "AD_number"]
     predictions = predictions.loc[:, predictions.columns.str.contains("|".join(col_name))]
-    Path(res_dir).mkdir(exist_ok=True, parents=True)
-    predictions.to_csv(f"{res_dir}/predictions.csv")
+    Path(res_dir).parent.mkdir(exist_ok=True, parents=True)
+    predictions.to_csv(f"{res_dir}")
+    return predictions
+
+
+def main():
+    fasta, training_features, scaler, model_path, test_features, res_dir, number_similar_samples, \
+    outlier_train, outlier_test, problem, label, applicability_domain, sheet_name = arg_parse()
+
+    # read outliers
+    outlier_test = read_outlier_file(outlier_test)
+    outlier_train = read_outlier_file(outlier_train)
+
+    # preparing the prediction
+    predictions = predict_filter_by_domain(training_features, label, model_path, test_features, outlier_train, outlier_test,
+                                           applicability_domain, sheet_name, scaler, res_dir, number_similar_samples, problem)
 
     if problem == "classification":
         extractor = FastaExtractor(fasta, res_dir)
         positive, negative = extractor.separate_negative_positive(predictions)
         extractor.extract(positive, negative, positive_fasta="positive.fasta", negative_fasta="negative.fasta")   
+
 
 if __name__ == "__main__":
     # Run this if this file is executed from command line but not if is imported as API

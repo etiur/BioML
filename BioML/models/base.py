@@ -30,6 +30,7 @@ class ModelArguments(Protocol):
     test_size: float
     plot: tuple[str, ...]
     ranking_params: dict[str, float]
+    add: Iterable[Any]
 
     def _calculate_score_dataframe(self, dataframe: pd.DataFrame) -> int | float:
         ...
@@ -72,7 +73,8 @@ class DataParser:
         if self.outliers:
             self.features = self.remove_outliers(self.features, self.outliers)
 
-    def read_features(self, features: str | pd.DataFrame | list | np.ndarray, sheets: str | int | None=None) -> pd.DataFrame:
+    @classmethod
+    def read_features(cls, features: str | pd.DataFrame | list | np.ndarray, sheets: str | int | None=None) -> pd.DataFrame:
         """
         Reads the feature data from a file or returns the input data.
 
@@ -90,10 +92,10 @@ class DataParser:
         """
         # concatenate features and labels
         match features:
-            case str(feature) if feature.endswith(".csv"):
+            case str() | Path() as feature if str(feature).endswith(".csv"):
                 return pd.read_csv(f"{features}", index_col=0) # the first column should contain the sample names
             
-            case str(feature) if feature.endswith(".xlsx"):
+            case  str() | Path() as feature if str(feature).endswith(".xlsx"):
                 sheets = sheets if sheets else 0
                 with pd.ExcelFile(features) as file:
                     if len(file.sheet_names) > 1:
@@ -105,9 +107,9 @@ class DataParser:
             
             case list() | np.ndarray() as feature:
                 return pd.DataFrame(feature)
-            
+
             case _:
-                raise ValueError("features should be a csv or excel file, an array or a pandas DataFrame, you provided {features}")
+                raise ValueError(f"features should be a csv or excel file, an array or a pandas DataFrame, you provided {features}")
         
     def read_labels(self, label: str | pd.Series) -> str | pd.Series:
         """
@@ -130,7 +132,7 @@ class DataParser:
             case pd.DataFrame() as labels:
                 return labels.squeeze()
             
-            case str(labels) if Path(labels).exists() and Path(labels).suffix == ".csv":
+            case str() | Path() as labels if Path(labels).exists() and Path(labels).suffix == ".csv":
                 labels = pd.read_csv(labels, index_col=0)
                 return labels.squeeze()
             
@@ -143,7 +145,8 @@ class DataParser:
             case _:
                 raise ValueError(f"label should be a csv file, an array, a pandas Series, DataFrame or inside features: you provided {label}")
     
-    def remove_outliers(self, training_features: pd.DataFrame, outliers: Iterable[str]):
+    @classmethod
+    def remove_outliers(cls, training_features: pd.DataFrame, outliers: Iterable[str]):
         """
         Remove outliers from the train data
 
@@ -1114,7 +1117,7 @@ class Trainer:
             prediction_results[tune_status] = self.arguments.sort_holdout_prediction(pd.concat(predictions))
         return prediction_results
 
-    def iterate_multiple_features(self, iterator: Iterator, training_output: Path, split_strategy: Any=None,
+    def iterate_multiple_features(self, iterator: Iterator, training_output: Path, split_strategy: Any=None, split_index: int=0,
                                   **kwargs: Any) -> None:
     
         """
@@ -1138,7 +1141,7 @@ class Trainer:
         performance_list = []
         for input_feature, label_name, sheet in iterator:
             if split_strategy is not None:
-                X_train, X_test, _, _ = split_strategy.train_test_split(input_feature, input_feature[label_name])
+                X_train, X_test, _, _ = split_strategy.train_test_split(input_feature, input_feature[label_name], split_index=split_index)
                 sorted_results, sorted_models, top_params = self.run_training(X_train, label_name, test_data=X_test, 
                                                             fold_strategy=split_strategy, **kwargs)
             else:
