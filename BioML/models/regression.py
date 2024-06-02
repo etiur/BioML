@@ -178,10 +178,10 @@ class Regressor:
         pd.DataFrame
             The sorted DataFrame of predictions.
         """
-        if self.optimize == "R2":
+        if self.greater_is_better:
             return dataframe.sort_values(self.optimize, ascending=False)
-        if self.optimize != "R2":
-            return dataframe.sort_values(self.optimize,ascending=True)
+        
+        return dataframe.sort_values(self.optimize, ascending=True)
     
     
 def main():
