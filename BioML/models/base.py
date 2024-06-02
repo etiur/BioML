@@ -423,8 +423,6 @@ class PycaretInterface:
         self.log.info(f"The number of models used {len(self.final_models)}")
         results = {}
         returned_models = {}
-        np.random.seed(self.seed)
-        np.random.shuffle(self.final_models)
         if self.budget_time:
             self.log.info(f"Time budget is {self.budget_time} minutes")
         runtime_start = time.time()

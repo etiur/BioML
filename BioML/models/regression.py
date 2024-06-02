@@ -107,7 +107,7 @@ class Regressor:
 
     """
     def __init__(self, ranking_params: dict[str, float] | None=None, 
-                 drop: Iterable[str]=("tr", "kr", "ransac", "lightgbm"), selected: Iterable[str]=(), 
+                 drop: Iterable[str]=("tr", "kr", "ransac"), selected: Iterable[str]=(), 
                  add: Iterable[Any|str]=(), optimize: str="RMSE", 
                  plot: Iterable[str]=("residuals", "error", "learning"), greater_is_better: bool=False):
         
