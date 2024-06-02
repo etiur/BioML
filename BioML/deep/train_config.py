@@ -33,6 +33,7 @@ class LLMConfig:
     mlflow_description: str = (
         f"PEFT tune {model_name} in {mlflow_experiment_name}."
     )
+    hidden_state_to_extract: int = -1
     model_checkpoint_dir: str = "model_checkpoint"
     accumulate_grad_batches: int = 1
     debug_mode_sample: bool = False

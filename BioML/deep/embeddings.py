@@ -190,15 +190,23 @@ class ExtractEmbeddings:
         results = {}
         with torch.no_grad():
             output = self.model(**tok)
+        if self.config.hidden_state_to_extract == -1:
+            try:
+                hidden_states = output.last_hidden_state
+            except AttributeError:
+                hidden_states = output.hidden_states[-1]
+        else:
+            hidden_states = output.hidden_states[self.config.hidden_state_to_extract]
+            
         mask = tok["attention_mask"].bool()
-        for num, x in enumerate(output.last_hidden_state):
+        for num, x in enumerate(hidden_states):
             masked_x = x[mask[num]]
             results[batch_seq_keys[num]] = self.concatenate_options(masked_x, 
                                                                     option).detach().cpu().numpy()
         return results
 
     @staticmethod
-    def save(results: dict[str, np.array], path: str | Path, mode="a"):
+    def save(results: dict[str, np.array], path: str | Path, mode: str="a"):
         """
         Save the embeddings to a CSV file.
 
@@ -219,7 +227,7 @@ class ExtractEmbeddings:
     
     def batch_extract_save(self, seq_keys: list[str], dataset: Dataset, batch_size: int=8, 
                            save_path: str | Path = "embeddings.csv", option: str = "mean",
-                           format_: str = "csv", mode="append"):
+                           format_: str = "csv", mode: str="append"):
         """
         Extract and save embeddings from a batch of sequences.
 
@@ -259,9 +267,9 @@ class ExtractEmbeddings:
 
 
 def generate_embeddings(fasta_file: str, model_name: str="facebook/esm2_t6_8M_UR50D",
-                        disable_gpu: bool=False, batch_size: int=8, 
-                        save_path: str = "embeddings.csv", option: str = "mean", 
-                        format_: str = "csv", mode: str="append", dtype: torch.dtype=torch.float32, **pretrained_args):
+                        llm_args: dict = dict(),
+                        batch_size: int=8, save_path: str = "embeddings.csv", 
+                        option: str = "mean", format_: str = "csv", mode: str="append", **pretrained_args):
     """
     Generate embeddings from a FASTA file.
 
@@ -271,8 +279,8 @@ def generate_embeddings(fasta_file: str, model_name: str="facebook/esm2_t6_8M_UR
         The fasta file to tokenize
     model_name : str
         The protein language model to use from Huggingface, by default "facebook/esm2_t6_8M_UR50D"
-    disable_gpu : bool, optional
-        Whether to disable the GPU, by default False
+    llm_args : dict, optional
+        Arguments for the LLMConfig, by default None
     batch_size : int, optional
         The batch size, by default 8
     save_path : str, optional
@@ -281,11 +289,9 @@ def generate_embeddings(fasta_file: str, model_name: str="facebook/esm2_t6_8M_UR
         Option to concatenate the embeddings, by default "mean"
     format_ : str, optional
         Format to save the embeddings, by default "csv" but can also be parquet
-    dtype : torch.dtype, optional
-        Data type for the embeddings, by default torch.float32
     """
 
-    config = LLMConfig(model_name, disable_gpu=disable_gpu, dtype=dtype)
+    config = LLMConfig(model_name, **llm_args)
     tokenizer = TokenizeFasta(config)
     embeddings = ExtractEmbeddings(config, pretrained_args=pretrained_args)
     tok = tokenizer.tokenize(fasta_file)
