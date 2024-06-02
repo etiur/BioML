@@ -364,7 +364,7 @@ class PycaretInterface:
         self._final_models = self._check_value(value, self.original_models, "models")
 
     def setup_training(self, feature: pd.DataFrame, label_name: str, fold: int=5, 
-                       test_size:float=0.2, k=15, penalty=50, 
+                       test_size:float=0.2, k: int=6, penalty: int=2, 
                        **kwargs: Any):
         """
         Call pycaret set_up for the training.

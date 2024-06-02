@@ -4,7 +4,7 @@ from typing import Iterable
 
 
 def ndcg_at_k(true_relevance: pd.Series, predicted_ranking: Iterable[int | float], 
-              k: int=20, form: str="exp", pernalty: int=50, **kwargs):
+              k: int=6, form: str="exp", pernalty: int=2, **kwargs):
     """
     Compute the Normalized Discounted Cumulative Gain at k (NDCG@k) for a given ranking.
 
@@ -15,7 +15,7 @@ def ndcg_at_k(true_relevance: pd.Series, predicted_ranking: Iterable[int | float
     predicted_ranking : Iterable[int  |  float]
         The predicted relevance score of the items.
     k : int, optional
-        How many items to consider, by default 20
+        How many items to consider, by default 6
     form : str, optional
         What form to use, by default "exp"
 

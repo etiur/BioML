@@ -5,6 +5,8 @@ from pathlib import Path
 import argparse
 from typing import Iterable, Any
 import pandas as pd
+import operator as op
+import numpy as np
 from .base import PycaretInterface, Trainer, DataParser
 from ..utilities.utils import evaluate_all_models, write_results
 from ..utilities import split_methods as split
@@ -107,9 +109,9 @@ class Regressor:
     def __init__(self, ranking_params: dict[str, float] | None=None, 
                  drop: Iterable[str]=("tr", "kr", "ransac", "lightgbm"), selected: Iterable[str]=(), 
                  add: Iterable[Any|str]=(), optimize: str="RMSE", 
-                 plot: Iterable[str]=("residuals", "error", "learning")):
+                 plot: Iterable[str]=("residuals", "error", "learning"), greater_is_better: bool=False):
         
-        ranking_dict = dict(difference_weight=1.2)
+        ranking_dict = dict(difference_weight=1.2, train_weight=0.5) # give 0.3 weight to the train and 0.7 to the test
         if isinstance(ranking_params, dict):
             for key, value in ranking_params.items():
                 if key not in ranking_dict:
@@ -117,8 +119,10 @@ class Regressor:
                 ranking_dict[key] = value
         self.drop = drop
         self.difference_weight = ranking_dict["difference_weight"]
+        self.train_weight = ranking_dict["train_weight"]
         self.selected = selected
         self.optimize = optimize
+        self.greater_is_better = greater_is_better
         self.plot = plot if plot else ()
         self.add = [add] if add and not isinstance(add, list) else add
 
@@ -146,17 +150,19 @@ class Regressor:
         cv_train = dataframe.loc[("CV-Train", "Mean")]
         cv_val = dataframe.loc[("CV-Val", "Mean")]
 
-        if self.optimize != "R2":
-            rmse = ((cv_train[self.optimize] + cv_val[self.optimize]) # type: ignore
-                    + self.difference_weight * abs(cv_val[self.optimize] - cv_train[self.optimize])) # type: ignore
-            
-            return - rmse # negative because the sorting is from greater to smaller, in this case the smaller the error value the better
+        operation = op.add
+        penalize = np.inf if cv_train[self.optimize] == 1 else 0
+        if self.greater_is_better:
+            operation = op.sub
+            penalize = -np.inf if cv_train[self.optimize] == 1 else 0
 
-        if self.optimize == "R2":
-            r2 = ((cv_train["R2"] + cv_val["R2"]) # type: ignore
-                - self.difference_weight * abs(cv_val["R2"] - cv_train["R2"])) # type: ignore
-        
-            return r2
+        metric = cv_train[self.optimize] * self.train_weight + cv_val[self.optimize] # type: ignore
+        diff =  self.difference_weight * abs(cv_val[self.optimize] - cv_train[self.optimize]) # type: ignore
+        rmse = operation(metric, diff) + penalize
+        if self.greater_is_better:
+            return rmse
+        return - rmse # negative because the sorting is from greater to smaller, in this case the smaller the error value the better
+
         
     def sort_holdout_prediction(self, dataframe: pd.DataFrame) -> pd.DataFrame: # type: ignore
         """

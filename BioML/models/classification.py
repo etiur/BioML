@@ -117,7 +117,7 @@ class Classifier:
         """
         # change the ranking parameters
         ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
-                            difference_weight=1.2)
+                            difference_weight=1.2, train_weight=0.5)
         
         if isinstance(ranking_params, dict):
             for key, value in ranking_params.items():
@@ -130,6 +130,7 @@ class Classifier:
         self.rec_weight = ranking_dict["recall_weight"]
         self.report_weight = ranking_dict["report_weight"]
         self.difference_weight = ranking_dict["difference_weight"]
+        self.train_weight = ranking_dict["train_weight"]
         self.selected = selected
         self.optimize = optimize
         self.plot = plot if plot else ()
@@ -160,13 +161,13 @@ class Classifier:
         cv_val = dataframe.loc[("CV-Val", "Mean")]
         penalize = -np.inf if (cv_train[self.optimize] == 1 or cv_train["Prec."] == 1) else 0
 
-        mcc = ((cv_train[self.optimize] + cv_val[self.optimize]) # type: ignore
+        mcc = ((cv_train[self.optimize] * self.train_weight + cv_val[self.optimize]) # type: ignore
                 - self.difference_weight * abs(cv_val[self.optimize] - cv_train[self.optimize] )) # type: ignore
         
-        prec = ((cv_train["Prec."] + cv_val["Prec."]) # type: ignore
+        prec = ((cv_train["Prec."] * self.train_weight + cv_val["Prec."]) # type: ignore
                 - self.difference_weight * abs(cv_val["Prec."] - cv_train["Prec."])) # type: ignore
          
-        recall = ((cv_train["Recall"] + cv_val["Recall"]) # type: ignore
+        recall = ((cv_train["Recall"] * self.train_weight + cv_val["Recall"]) # type: ignore
                 - self.difference_weight * abs(cv_val["Recall"] - cv_train["Recall"])) # type: ignore
         
         return mcc + self.report_weight * (self.pre_weight * prec + self.rec_weight * recall) + penalize
