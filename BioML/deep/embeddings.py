@@ -44,9 +44,14 @@ class TokenizeFasta:
     """
     config: LLMConfig = field(default_factory=LLMConfig)
     tokenizer: None = field(default=None, init=False)
+    tokenizer_args: dict = field(default_factory=dict)
      
     def __post_init__(self):
         self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_name, low_cpu_mem_usage=True)
+        if "esm" in self.config.model_name:
+            self.tokenizer_args["add_special_tokens"] = False
+            self.tokenizer_args["padding"] = True
+            self.tokenizer_args["truncation"] = True
 
     def chunks(self, fasta_file: str):
         """
@@ -103,8 +108,8 @@ class TokenizeFasta:
             Tokenized sequences.
         """
         dataset = self.create_dataset(fasta_file)
-        tok = dataset.map(lambda examples: self.tokenizer(examples["seq"], return_tensors="np", 
-                          padding=True, truncation=True), batched=True)
+        tok = dataset.map(lambda examples: self.tokenizer(examples["seq"], return_tensors="np", **self.tokenizer_args),
+                          batched=True)
         tok.set_format(type="torch", columns=["input_ids", "attention_mask"], device=self.config.device)
         for x in add_columns:
             tok = tok.add_column(x[0], x[1])
@@ -133,7 +138,7 @@ class ExtractEmbeddings:
     def __post_init__(self):
 
         device = "auto" if self.config.device == "cuda" else self.config.device
-        if "esm2" in self.config.model_name:
+        if "esm" in self.config.model_name:
             self.pretrained_args["add_pooling_layer"] = False
         self.model = AutoModel.from_pretrained(self.config.model_name, output_hidden_states=True, device_map=device, 
                                                torch_dtype=self.config.dtype,
@@ -267,9 +272,9 @@ class ExtractEmbeddings:
 
 
 def generate_embeddings(fasta_file: str, model_name: str="facebook/esm2_t6_8M_UR50D",
-                        llm_args: dict = dict(),
+                        llm_args: dict = dict(), pretrained_args: dict=dict(), tokenizer_args: dict=dict(),
                         batch_size: int=8, save_path: str = "embeddings.csv", 
-                        option: str = "mean", format_: str = "csv", mode: str="append", **pretrained_args):
+                        option: str = "mean", format_: str = "csv", mode: str="append"):
     """
     Generate embeddings from a FASTA file.
 
@@ -280,7 +285,11 @@ def generate_embeddings(fasta_file: str, model_name: str="facebook/esm2_t6_8M_UR
     model_name : str
         The protein language model to use from Huggingface, by default "facebook/esm2_t6_8M_UR50D"
     llm_args : dict, optional
-        Arguments for the LLMConfig, by default None
+        Arguments for the LLMConfig, by default {}
+    pretrained_args : dict, optional
+        Arguments for the pretrained model, by default {}
+    tokenizer_args : dict, optional
+        Arguments for the tokenizer, by default {}
     batch_size : int, optional
         The batch size, by default 8
     save_path : str, optional
@@ -292,7 +301,7 @@ def generate_embeddings(fasta_file: str, model_name: str="facebook/esm2_t6_8M_UR
     """
 
     config = LLMConfig(model_name, **llm_args)
-    tokenizer = TokenizeFasta(config)
+    tokenizer = TokenizeFasta(config, tokenizer_args=tokenizer_args)
     embeddings = ExtractEmbeddings(config, pretrained_args=pretrained_args)
     tok = tokenizer.tokenize(fasta_file)
 
