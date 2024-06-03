@@ -204,6 +204,7 @@ class PycaretInterface:
     best_model: int = 3
     output_path: Path | str | None= None
     experiment_name: str | None = None
+    log_experiment: bool = True
     # No need to provide values
     _plots: list[str] = field(init=False)
     _final_models: list[str] = field(init=False)
@@ -387,7 +388,7 @@ class PycaretInterface:
             PycaretInterface object.
         """
         self.pycaret.setup(data=feature, target=label_name, normalize=True, preprocess=True, 
-                           log_experiment=True, experiment_name=self.experiment_name, normalize_method=self.scaler,
+                           log_experiment=self.log_experiment, experiment_name=self.experiment_name, normalize_method=self.scaler,
                            session_id = self.seed, fold_shuffle=True, fold=fold, verbose=False, train_size=1-test_size, 
                            **kwargs)
 
