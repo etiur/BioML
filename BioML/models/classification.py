@@ -117,7 +117,7 @@ class Classifier:
         """
         # change the ranking parameters
         ranking_dict = dict(precision_weight=1.2, recall_weight=0.8, report_weight=0.6, 
-                            difference_weight=1.2, train_weight=0.5)
+                            difference_weight=1.2, train_weight=0.7)
         
         if isinstance(ranking_params, dict):
             for key, value in ranking_params.items():

@@ -111,7 +111,7 @@ class Regressor:
                  add: Iterable[Any|str]=(), optimize: str="RMSE", 
                  plot: Iterable[str]=("residuals", "error", "learning"), greater_is_better: bool=False):
         
-        ranking_dict = dict(difference_weight=1.2, train_weight=0.5) # give 0.3 weight to the train and 0.7 to the test
+        ranking_dict = dict(difference_weight=1.2, train_weight=0.7) # give 0.3 weight to the train and 0.7 to the test
         if isinstance(ranking_params, dict):
             for key, value in ranking_params.items():
                 if key not in ranking_dict:
