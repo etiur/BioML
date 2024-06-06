@@ -4,7 +4,7 @@ from typing import Iterable
 
 
 def ndcg_at_k(true_relevance: pd.Series, predicted_ranking: Iterable[int | float], 
-              k: int=6, form: str="exp", pernalty: int=2, **kwargs):
+              k: int=10, form: str="exp", pernalty: int=20, **kwargs):
     """
     Compute the Normalized Discounted Cumulative Gain at k (NDCG@k) for a given ranking.
 
@@ -35,6 +35,8 @@ def ndcg_at_k(true_relevance: pd.Series, predicted_ranking: Iterable[int | float
     # sort the true relevance according to the predicted ranking
     if form == "exponential" or form == "exp":
         # Calculate DCG@k
+        # I don't use the predicted relevance score to calculate the score just the order
+        # With higher penalty we give more relevance to the relevance score not only order 
         dcg = sum((pernalty ** rel - 1) / np.log2(i + 2) for i, rel in enumerate(true_relevance_sorted[:k]))
         
         true_relevance_sorted = true_relevance_sorted.sort_values(ascending=False)

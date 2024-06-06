@@ -276,6 +276,8 @@ class PycaretInterface:
         ValueError
             If the value is not a string or an array of strings
         """
+        if not len(value):
+            return ()
         if isinstance(value, (list, np.ndarray, tuple, set)):
             if isinstance(value[0], str):
                 test = list(set(value).difference(element_list))
@@ -300,6 +302,7 @@ class PycaretInterface:
     
     @plots.setter
     def plots(self, value):
+        
         self._plots = self._check_value(value, self.original_plots, "plots")
 
     @property
