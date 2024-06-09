@@ -6,14 +6,14 @@ from pathlib import Path
 import time
 from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
-from sklearn.metrics import average_precision_score, ndcg_score
+from sklearn.metrics import average_precision_score
 from typing import Iterable
 import warnings
 from collections import defaultdict
 from typing import Protocol
 from ..utilities.utils import Log, write_results
 from ..utilities.custom_errors import DifferentLabelFeatureIndexError
-from .metrics import ndcg_at_k
+from .metrics import ndcg_at_k, pear_r
 
 
 class ModelArguments(Protocol):
@@ -396,8 +396,9 @@ class PycaretInterface:
             self.pycaret.add_metric("averagePre", "Average Precision Score", average_precision_score,  # type: ignore
                                    average="weighted", target="pred_proba", multiclass=False)
         elif self.objective == "regression":
-            self.pycaret.add_metric("ndcg", "NDCG", ndcg_at_k, greater_is_better=True, k=k, penalty=penalty) # type: ignore
-
+            self.pycaret.add_metric("ndcg", "NDCG", ndcg_at_k, k=k, penalty=penalty) # type: ignore
+            self.pycaret.add_metric("pearson", "Pearson", pear_r, **kwargs) # type: ignore
+            
         config: pd.DataFrame = self.pycaret.pull(pop=True)
         if not (self.output_path / "config_setup_pycaret.csv").exists():
             self.output_path.mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from typing import Iterable
+from scipy.stats import pearsonr
 
 
 def ndcg_at_k(true_relevance: pd.Series, predicted_ranking: Iterable[int | float], 
@@ -50,3 +51,31 @@ def ndcg_at_k(true_relevance: pd.Series, predicted_ranking: Iterable[int | float
     ndcg = dcg / idcg if idcg > 0 else 0.0
 
     return ndcg
+
+def pear_r(true_y: Iterable[int], y_pred: Iterable[int], alternative: str="greater", 
+           penalize: bool=True, **kwargs):
+    """
+    Compute the Pearson correlation coefficient between the true and predicted values.
+    It can be used to see if NDCG@k is a good metric for the model.
+
+    Parameters
+    ----------
+    true_y : Iterable[int]
+        The true values.
+    y_pred : Iterable[int]
+        The predicted values.
+    alternative : str, optional
+        The alternative hypothesis, by default "greater"
+    penalize : bool, optional
+        Whether to penalize the correlation coefficient by p-value, by default True
+        
+    Returns
+    -------
+    _ : float
+        The Pearson correlation coefficient.
+    """
+    correlate = pearsonr(true_y, y_pred, alternative=alternative)
+    if penalize:
+        p = 0.5 if correlate[1] > 0.05 else 1
+        return correlate[0] * p
+    return correlate[0]
