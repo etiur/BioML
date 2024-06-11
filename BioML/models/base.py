@@ -703,7 +703,7 @@ class PycaretInterface:
             return results
         return pred
     
-    def save(self, model: Any, filename: str):
+    def save(self, model: Any, filename: str, model_only: bool=False):
         """
         Save the model
 
@@ -714,7 +714,7 @@ class PycaretInterface:
         filename : str
             The name of the file to save the model.
         """
-        self.pycaret.save_model(model, filename)
+        self.pycaret.save_model(model, filename, model_only=model_only)
     
     def load_model(self, filename: str):
         """

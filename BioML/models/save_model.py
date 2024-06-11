@@ -113,7 +113,7 @@ class GenerateModel:
                 final = self.trainer.experiment.finalize_model(model)
                 return final
             
-    def save_model(self, model: Any, filename: str):
+    def save_model(self, model: Any, filename: str, model_only: bool =False):
         """
         Save the model
 
@@ -123,13 +123,15 @@ class GenerateModel:
             The trained model.
         filename : str, dict[str, str]
             The name of the file to save the model.
+        model_only: False, optional
+            If to save only the model or the whole transformation pipeline
         """
         model_output = Path(filename)
         model_output.parent.mkdir(exist_ok=True, parents=True)
         if model_output.suffix:
             model_output = model_output.with_suffix("")
 
-        self.trainer.experiment.save(model, str(model_output))
+        self.trainer.experiment.save(model, str(model_output), model_only)
     
     def train_by_strategy(self, sorted_models: dict, model_strategy: str):
         """
