@@ -162,7 +162,7 @@ class PossumFeatures:
     drop_file: str | Path | None = None
     drop: Iterable[str] = ()
     features: dict = field(default_factory=dict, init=False)
-    selected: dict = field(default_factory=dict, init=False)
+    selected: dict = field(default_factory=dict)
 
     def __post_init__(self):
         self.program = f"{self.program}/possum_standalone.pl"
@@ -251,7 +251,7 @@ class IfeatureFeatures:
     drop_file: str | Path | None = None
     drop: Iterable[str] = ()
     features: dict = field(default_factory=dict, init=False)
-    selected: dict = field(default_factory=dict, init=False)
+    selected: dict = field(default_factory=dict)
 
     def __post_init__(self):
         self.program = f"{self.program}/iFeature.py"
