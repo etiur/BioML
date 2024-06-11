@@ -646,15 +646,16 @@ def scale(scaler: str, X_train: pd.DataFrame,
 
     """
     scaler_dict = {"robust": RobustScaler(), "zscore": StandardScaler(), "minmax": MinMaxScaler()}
-    X_train.columns = X_train.columns.astype(str)
-    transformed = scaler_dict[scaler].fit_transform(X_train)
+    X_train_ = X_train.copy()
+    X_train_.columns = X_train_.columns.astype(str)
+    transformed = scaler_dict[scaler].fit_transform(X_train_)
     if to_dataframe:
         transformed = pd.DataFrame(transformed, index=X_train.index, columns=X_train.columns)
     if X_test is None:
         return transformed, scaler_dict
-        
-    X_test.columns = X_test.columns.astype(str)
-    test_x = scaler_dict[scaler].transform(X_test)
+    X_test_ = X_test.copy()    
+    X_test_.columns = X_test_.columns.astype(str)
+    test_x = scaler_dict[scaler].transform(X_test_)
     if to_dataframe:
         test_x = pd.DataFrame(test_x, index=X_test.index, columns=X_test.columns)
     return transformed, scaler_dict, test_x
