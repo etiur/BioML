@@ -470,7 +470,8 @@ class PycaretInterface:
         key : str, optional
             Something to separate even more. Defaults to None.
         """
-        
+        if not self.plots:
+            return
         self.log.info("Analyse the best models and plotting them")
         for ind, (name, model) in enumerate(sorted_models.items(), 1):
             if ind <= self.best_model:
