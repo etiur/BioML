@@ -448,11 +448,7 @@ def predict_filter_by_domain(training_features: pd.DataFrame | str | Path | np.n
     predictions = predict(test_features, model_path, problem)
     if applicability_domain:
         transformed, _, test_x = scale(scaler, feature.drop(), test_features)
-        predictions = domain_filter(predictions, transformed , test_x, number_similar_samples)
-    else:
-        test_index = [f"sample_{x}" for x, _ in enumerate(predictions.index)]
-        predictions.index = test_index
-    
+        predictions = domain_filter(predictions, transformed , test_x, number_similar_samples)    
     # save the predictions
     col_name = ["prediction_score", "prediction_label", "AD_number"]
     predictions = predictions.loc[:, predictions.columns.str.contains("|".join(col_name))]
@@ -474,6 +470,8 @@ def main():
                                            applicability_domain, sheet_name, scaler, res_dir, number_similar_samples, problem)
 
     if problem == "classification":
+        test_index = [f"sample_{x}" for x, _ in enumerate(predictions.index)]
+        predictions.index = test_index
         extractor = FastaExtractor(fasta, res_dir)
         positive, negative = extractor.separate_negative_positive(predictions)
         extractor.extract(positive, negative, positive_fasta="positive.fasta", negative_fasta="negative.fasta")   
