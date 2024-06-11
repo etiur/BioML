@@ -350,7 +350,7 @@ def return_features(program: str, drop_file: str | Path |None=None,
     for key, value in features[program].items():
         filtered_features[key] = list(set(value).difference(drop))
     if selected:
-        filtered_features = selected
+        filtered_features = selected[program]
     return filtered_features
 
     
