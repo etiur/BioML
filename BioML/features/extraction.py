@@ -162,11 +162,12 @@ class PossumFeatures:
     drop_file: str | Path | None = None
     drop: Iterable[str] = ()
     features: dict = field(default_factory=dict, init=False)
+    selected: dict = field(default_factory=dict, init=False)
 
     def __post_init__(self):
         self.program = f"{self.program}/possum_standalone.pl"
         rewrite_possum(self.program)
-        self.features = return_features("possum", self.drop_file, self.drop)
+        self.features = return_features("possum", self.drop_file, self.drop, self.selected)
 
         for key, feat in self.features.items():
             self.features[key] = list(set(feat).difference(self.drop))
@@ -250,10 +251,11 @@ class IfeatureFeatures:
     drop_file: str | Path | None = None
     drop: Iterable[str] = ()
     features: dict = field(default_factory=dict, init=False)
+    selected: dict = field(default_factory=dict, init=False)
 
     def __post_init__(self):
         self.program = f"{self.program}/iFeature.py"
-        self.features = return_features("ifeature", self.drop_file, self.drop)
+        self.features = return_features("ifeature", self.drop_file, self.drop, self.selected)
 
         for key, feat in self.features.items():
             self.features[key] = list(set(feat).difference(self.drop))
@@ -307,7 +309,7 @@ class IfeatureFeatures:
 
 
 def return_features(program: str, drop_file: str | Path |None=None, 
-                    drop: Iterable[str]=()) -> dict:
+                    drop: Iterable[str]=(), selected: dict =dict()) -> dict:
     """
     A function to return the features to be extracted
 
@@ -319,7 +321,7 @@ def return_features(program: str, drop_file: str | Path |None=None,
         file with the features to skip, by default None
     drop : Iterable[str], optional
         An array of features to skip, by default ()
-
+    selected: Iterable[str], optional
     Returns
     -------
     dict
@@ -347,7 +349,8 @@ def return_features(program: str, drop_file: str | Path |None=None,
     filtered_features = {}
     for key, value in features[program].items():
         filtered_features[key] = list(set(value).difference(drop))
-    
+    if selected:
+        filtered_features = selected
     return filtered_features
 
     
