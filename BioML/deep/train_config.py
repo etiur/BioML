@@ -59,17 +59,18 @@ class TrainConfig:
     num_classes: int = 2 # classification default
     qlora: bool = False
     objective: str = "classification" if num_classes >= 2 else "regression"
+    # lightning trainer params
     model_checkpoint_dir: str = "model_checkpoint"
     accumulate_grad_batches: int = 1
     debug_mode_sample: bool = False
-    max_time: int | None = None
-    ligthning_model_root_dir: str = "lightning_model"
+    max_time: dict[str, int] | None | str = None
     batch_size: int = 8
     max_epochs: int = 10
+    precision: str = "16-mixed" if torch.cuda.is_available() else "32-true"
     # callback params
     patience: int = 4
     min_delta: float = 0.005
-    optimize: str = "Val_MCC"
+    optimize: str = "Val_MCC" if num_classes >= 2 else "Val_R2"
     optimize_mode: str = "max"
     # mlflow params
     mlflow_experiment_name: str = "classification experiment" if num_classes >= 2 else "regression experiment"

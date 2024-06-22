@@ -298,25 +298,10 @@ class TransformerModule(LightningModule):
         return {"optimizer": optim, "lr_scheduler": scheduler}
 
 
-def finetune(cluster_file, shuffle, random_seed, splitting_strategy, num_split, stratify, test_size, fasta_file, config, 
-             batch_size, tokenizer_args, qlora, train_config, *args):
-    splitter = PrepareSplit(cluster_file, shuffle, random_seed, splitting_strategy, num_split, stratify, test_size)
-    data_module = DataModule(splitter, fasta_file, config, batch_size, tokenizer_args)
-
-    peft = PreparePEFT(qlora)
-    model = peft.get_model(config)
-    peft_config = peft.get_lora_config(rank=64, 
-                                       target_modules=["key", "query", "value", "attention.dense.output"], 
-                                       lora_dropout=0.05)
-    
-    model = TransformerModule(model, peft_config, train_config.objective, lr=1e-5)
-    trainer = Trainer(max_epochs=train_config.max_epochs)
-    trainer.fit(model, data_module)
-    trainer.test(model, data_module.test_dataloader())
 
 def training_loop(llm_config: dataclass, train_config: TrainConfig, split_config: SplitConfig, 
-                  tokenizer_args: dict=dict()) -> TransformerModule:
-    """Train and checkpoint the model with highest F1; log that model to MLflow and
+                  tokenizer_args: dict=dict(), lightning_trainer_args: dict = dict()) -> TransformerModule:
+    """Train and checkpoint the model with highest score; log that model to MLflow and
     return it."""
     splitter = PrepareSplit(split_config.cluster_file, split_config.shuffle, split_config.random_seed, 
                             split_config.splitting_strategy, 
@@ -333,7 +318,6 @@ def training_loop(llm_config: dataclass, train_config: TrainConfig, split_config
 
     # Wire up MLflow context manager to Azure ML.
     mlflow.set_experiment(train_config.mlflow_experiment_name)
-
     with mlflow.start_run(run_name=train_config.mlflow_run_name, description=train_config.mlflow_description) as run:
         # Connect Lightning's MLFlowLogger plugin to azureml-mlflow as defined in the
         # context manager. TODO: MLflow metrics should show epochs rather than steps on
@@ -345,18 +329,18 @@ def training_loop(llm_config: dataclass, train_config: TrainConfig, split_config
         mlflow.log_params({k: v for k, v in asdict(train_config).items() if not k.startswith("mlflow_")})
         mlflow.log_params({k: v for k, v in asdict(split_config).items() if not k.startswith("mlflow_")})
         mlflow.log_params({k: v for k, v in asdict(llm_config).items() if not k not in asdict(train_config)})
-        # Keep the model with the highest F1 score.
+        # Keep the model with the highest user defined score.
     
-        filename = f"{{epoch}}-{train_config.optimize}{{:.2f}}"
-        checkpoint_callback = ModelCheckpoint(filename=filename, monitor=train_config.optimize, mode=train_config.optimize_mode, 
-                                              verbose=True, save_top_k=1)
+        filename = f"{{epoch}}-{{{train_config.optimize}:.2f}}"
+        checkpoint_callback = ModelCheckpoint(filename=filename, monitor=train_config.optimize, 
+                                              mode=train_config.optimize_mode, verbose=True, save_top_k=1)
         early_callback = EarlyStopping(monitor=train_config.optimize, min_delta=train_config.min_delta, 
                                        patience=train_config.patience, verbose=True, mode=train_config.optimize_mode)
         # Run the training loop.
         trainer = Trainer(callbacks=[checkpoint_callback, early_callback], default_root_dir=train_config.model_checkpoint_dir,
                           fast_dev_run=bool(train_config.debug_mode_sample), max_epochs=train_config.max_epochs, 
-                          max_time=train_config.max_time, precision="bf16-mixed" if torch.cuda.is_available() else "32-true",
-                          logger=mlf_logger)
+                          max_time=train_config.max_time, precision=train_config.precision,
+                          logger=mlf_logger, accumulate_grad_batches=train_config.accumulate_grad_batches, **lightning_trainer_args)
         
         trainer.fit(model=model, datamodule=data_module)
         best_model_path = checkpoint_callback.best_model_path
