@@ -6,10 +6,11 @@ import argparse
 from typing import Iterable, Any
 from sklearn.model_selection import train_test_split
 from BioML.utilities import split_methods as split
-from lightning import LightningModule, LightningDataModule
+from lightning import LightningModule, LightningDataModule, Trainer
+import lightning as L
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import OneCycleLR
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from peft import get_peft_model, LoraConfig, prepare_model_for_kbit_training
 from typing import Iterable
 from torchmetrics.functional.classification import (
@@ -18,9 +19,13 @@ from torchmetrics.functional.classification import (
 from torchmetrics.functional.regression import (
     mean_absolute_error, mean_squared_error,  pearson_corrcoef, kendall_rank_corrcoef, r2_score,
     mean_absolute_percentage_error, mean_squared_log_error)
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from lightning.pytorch.loggers import MLFlowLogger
+import mlflow
 from ..utilities.utils import set_seed
-from embeddings import TokenizeFasta
-from train_config import LLMConfig
+from .embeddings import TokenizeFasta
+from .train_config import LLMConfig, SplitConfig, TrainConfig
+from ..models.metrics import ndcg_at_k
 
 
 def arg_parse():
@@ -37,7 +42,7 @@ def arg_parse():
     return [args.fasta_file, args.model_name, args.disable_gpu, args.batch_size, args.save_path, args.seed]
 
 
-def calculate_classification_metrics(split: str, loss: torch.tensor, preds: torch.tensor, 
+def classification_metrics(split: str, loss: torch.tensor, preds: torch.tensor, 
                                      target: torch.tensor, num_classes: int=2, threshold: float=0.5):
     task = "binary" if num_classes == 2 else "multiclass"
     metrics = {f"{split}_Loss": loss,
@@ -62,7 +67,7 @@ def calculate_classification_metrics(split: str, loss: torch.tensor, preds: torc
     return metrics
 
 
-def calculate_regression_metrics(split: str, loss: torch.tensor, preds: torch.tensor, 
+def regression_metrics(split: str, loss: torch.tensor, preds: torch.tensor, 
                                  target: torch.tensor):
     metrics = {f"{split}_Loss": loss,
                 f"{split}_MAE": mean_absolute_error(preds, target),
@@ -72,7 +77,8 @@ def calculate_regression_metrics(split: str, loss: torch.tensor, preds: torch.te
                 f"{split}_Pearson": pearson_corrcoef(preds, target),
                 f"{split}_Kendall": kendall_rank_corrcoef(preds, target),
                 f"{split}_MAPE": mean_absolute_percentage_error(preds, target),
-                f"{split}_MSLE": mean_squared_log_error(preds, target)}
+                f"{split}_MSLE": mean_squared_log_error(preds, target),
+                f"{split}_NDCG": ndcg_at_k(target, preds, k=10, penalty=15)}
     return metrics
 
 
@@ -113,7 +119,7 @@ class PreparePEFT:
     
     @staticmethod
     def get_lora_config(rank: int, target_modules: str | list[str], lora_alpha: int | None=None, 
-                        lora_dropout: float=0.1):
+                        lora_dropout: float=0.05):
         
         if lora_alpha is None:
             lora_alpha = rank * 2
@@ -144,9 +150,11 @@ class PreparePEFT:
                                                                 torch_dtype= model_params.dtype, 
                                                                 quantization_config=bnb_config,
                                                                 device_map=device)
+        if self.qlora:
+            model = prepare_model_for_kbit_training(model)
         return model
 
-@dataclass(slots=True)
+@dataclass
 class PrepareSplit:
     cluster_file: str | None = None
     shuffle = True
@@ -176,12 +184,19 @@ class PrepareSplit:
 
 
 class DataModule(LightningDataModule):
-    def __init__(self, splitter: PrepareSplit, dataset: Dataset,
-                 batch_size: int=1) -> None:
+    def __init__(self, splitter: PrepareSplit, fasta_file: str, config: LLMConfig,
+                 batch_size: int=1, tokenizer_args: dict=dict()) -> None:
         super().__init__()
         self.splitter = splitter
-        self.dataset = dataset
+        self.fasta_file = fasta_file
         self.batch_size = batch_size
+        self.config = config
+        self.tokenizer_args = tokenizer_args 
+    
+    def prepare_data(self) -> None:
+        """Tokenize the fasta file and store the dataset in the class instance."""
+        tokenizer = TokenizeFasta(self.config, tokenizer_args=self.tokenizer_args)
+        self.dataset = tokenizer.tokenize(self.fasta_file)
         
     def setup(self, stage: str):
         train, validation, test = self.splitter.get_data(self.dataset)
@@ -212,8 +227,8 @@ class TransformerModule(LightningModule):
         self.model = get_peft_model(model, peft_config)
         self.model.print_trainable_parameters()
         self.objective = objective
-        self.metrics = {"classifcation": calculate_classification_metrics, 
-                        "regression": calculate_regression_metrics}[self.objective]
+        self.metrics = {"classifcation": classification_metrics, 
+                        "regression": regression_metrics}[self.objective]
         self.lr = lr
 
         self.save_hyperparameters()
@@ -279,6 +294,75 @@ class TransformerModule(LightningModule):
         optim = AdamW(
             params=self.parameters(),
             lr=self.lr)
-        scheduler = OneCycleLR(optim, max_lr=self.lr, total_steps=self.trainer.estimated_stepping_batches,
-                               )
+        scheduler = OneCycleLR(optim, max_lr=self.lr, total_steps=self.trainer.estimated_stepping_batches)
         return {"optimizer": optim, "lr_scheduler": scheduler}
+
+
+def finetune(cluster_file, shuffle, random_seed, splitting_strategy, num_split, stratify, test_size, fasta_file, config, 
+             batch_size, tokenizer_args, qlora, train_config, *args):
+    splitter = PrepareSplit(cluster_file, shuffle, random_seed, splitting_strategy, num_split, stratify, test_size)
+    data_module = DataModule(splitter, fasta_file, config, batch_size, tokenizer_args)
+
+    peft = PreparePEFT(qlora)
+    model = peft.get_model(config)
+    peft_config = peft.get_lora_config(rank=64, 
+                                       target_modules=["key", "query", "value", "attention.dense.output"], 
+                                       lora_dropout=0.05)
+    
+    model = TransformerModule(model, peft_config, train_config.objective, lr=1e-5)
+    trainer = Trainer(max_epochs=train_config.max_epochs)
+    trainer.fit(model, data_module)
+    trainer.test(model, data_module.test_dataloader())
+
+def training_loop(llm_config: dataclass, train_config: TrainConfig, split_config: SplitConfig, 
+                  tokenizer_args: dict=dict()) -> TransformerModule:
+    """Train and checkpoint the model with highest F1; log that model to MLflow and
+    return it."""
+    splitter = PrepareSplit(split_config.cluster_file, split_config.shuffle, split_config.random_seed, 
+                            split_config.splitting_strategy, 
+                            split_config.num_split, split_config.stratify, split_config.test_size)
+    
+    data_module = DataModule(splitter, train_config.fasta_file, llm_config, train_config.batch_size, tokenizer_args)
+
+    peft = PreparePEFT(train_config.qlora)
+    model = peft.get_model(llm_config)
+    peft_config = peft.get_lora_config(rank=64, target_modules=["key", "query", "value", "attention.dense.output"], 
+                                       lora_dropout=0.05)
+    
+    model = TransformerModule(model, peft_config, train_config.objective, lr=1e-5)
+
+    # Wire up MLflow context manager to Azure ML.
+    mlflow.set_experiment(train_config.mlflow_experiment_name)
+
+    with mlflow.start_run(run_name=train_config.mlflow_run_name, description=train_config.mlflow_description) as run:
+        # Connect Lightning's MLFlowLogger plugin to azureml-mlflow as defined in the
+        # context manager. TODO: MLflow metrics should show epochs rather than steps on
+        #  the x-axis
+        mlf_logger = MLFlowLogger(experiment_name=mlflow.get_experiment(run.info.experiment_id).name, 
+                                  tracking_uri=mlflow.get_tracking_uri(), log_model=True)
+        
+        mlf_logger._run_id = run.info.run_id
+        mlflow.log_params({k: v for k, v in asdict(train_config).items() if not k.startswith("mlflow_")})
+        mlflow.log_params({k: v for k, v in asdict(split_config).items() if not k.startswith("mlflow_")})
+        mlflow.log_params({k: v for k, v in asdict(llm_config).items() if not k not in asdict(train_config)})
+        # Keep the model with the highest F1 score.
+    
+        filename = f"{{epoch}}-{train_config.optimize}{{:.2f}}"
+        checkpoint_callback = ModelCheckpoint(filename=filename, monitor=train_config.optimize, mode=train_config.optimize_mode, 
+                                              verbose=True, save_top_k=1)
+        early_callback = EarlyStopping(monitor=train_config.optimize, min_delta=train_config.min_delta, 
+                                       patience=train_config.patience, verbose=True, mode=train_config.optimize_mode)
+        # Run the training loop.
+        trainer = Trainer(callbacks=[checkpoint_callback, early_callback], default_root_dir=train_config.model_checkpoint_dir,
+                          fast_dev_run=bool(train_config.debug_mode_sample), max_epochs=train_config.max_epochs, 
+                          max_time=train_config.max_time, precision="bf16-mixed" if torch.cuda.is_available() else "32-true",
+                          logger=mlf_logger)
+        
+        trainer.fit(model=model, datamodule=data_module)
+        best_model_path = checkpoint_callback.best_model_path
+
+        # Evaluate the last and the best models on the test sample.
+        trainer.test(model=model, datamodule=data_module)
+        trainer.test(model=model, datamodule=data_module, ckpt_path=best_model_path)
+
+    return model, data_module
