@@ -210,7 +210,7 @@ class PycaretInterface:
     _final_models: list[str] = field(init=False)
     original_plots: list[str] = field(init=False)
     original_models: list[str] = field(init=False)
-    model: ClassificationExperiment | RegressionExperiment = field(init=False)
+    model: ClassificationExperiment | RegressionExperiment = field(init=False, repr=False, compare=False)
     
     def __post_init__(self):
         configuration = {"classification": 
