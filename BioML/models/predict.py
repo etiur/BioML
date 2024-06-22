@@ -196,7 +196,7 @@ class ApplicabilityDomain:
         filtered_pred = predictions.loc[filtered_names]
         filtered_n_insiders = pd.Series([d for _, d in enumerate(self.n_insiders) if d >= min_num], name="AD_number", index=filtered_names)
         pred = pd.concat([filtered_pred, filtered_n_insiders], axis=1)
-        pred.index = filtered_index
+        pred["Index"] = filtered_index
  
         return pred
 
@@ -245,7 +245,7 @@ class FastaExtractor:
             negative = []
             for ind, seq in enumerate(record):
                 try:
-                    if int(pred.index[p].split("_")[1]) == ind:
+                    if int(pred["Index"][p].split("_")[1]) == ind:
                         col = pred.iloc[p]
                         seq.id = f"{seq.id}-###label:{col['prediction_label']}"
                         if col.index.str.contains("prediction_score").any():
@@ -446,11 +446,12 @@ def predict_filter_by_domain(training_features: pd.DataFrame | str | Path | np.n
     feature = DataParser(training_features, label, outliers=outlier_train, sheets=sheet_name)
     test_features = DataParser.remove_outliers(DataParser.read_features(test_features), outlier_test)
     predictions = predict(test_features, model_path, problem)
+    col_name = ["prediction_score", "prediction_label", "AD_number"]
     if applicability_domain:
         transformed, _, test_x = scale(scaler, feature.drop(), test_features)
-        predictions = domain_filter(predictions, transformed , test_x, number_similar_samples)    
+        predictions = domain_filter(predictions, transformed , test_x, number_similar_samples)
+        col_name.append("Index")    
     # save the predictions
-    col_name = ["prediction_score", "prediction_label", "AD_number"]
     predictions = predictions.loc[:, predictions.columns.str.contains("|".join(col_name))]
     Path(res_dir).parent.mkdir(exist_ok=True, parents=True)
     predictions.to_csv(f"{res_dir}")
@@ -470,8 +471,9 @@ def main():
                                            applicability_domain, sheet_name, scaler, res_dir, number_similar_samples, problem)
 
     if problem == "classification":
-        test_index = [f"sample_{x}" for x, _ in enumerate(predictions.index)]
-        predictions.index = test_index
+        if not applicability_domain:
+            test_index = [f"sample_{x}" for x, _ in enumerate(predictions.index)]
+            predictions["Index"] = test_index
         extractor = FastaExtractor(fasta, res_dir)
         positive, negative = extractor.separate_negative_positive(predictions)
         extractor.extract(positive, negative, positive_fasta="positive.fasta", negative_fasta="negative.fasta")   
