@@ -53,12 +53,18 @@ class LLMConfig:
         self._device = value
 
 
-@dataclass
+@dataclass(slots=True)
 class TrainConfig:
     fasta_file: str
     num_classes: int = 2 # classification default
-    qlora: bool = False
     objective: str = "classification" if num_classes >= 2 else "regression"
+    clasi_metrics_threshold: float = 0.5
+    #lora params
+    qlora: bool = False
+    lora_rank: 64
+    lora_alpha: int | None = None
+    target_modules: list[str] = ["key", "query", "value", "attention.dense.output"]
+    lora_dropout: float = 0.05
     # lightning trainer params
     model_checkpoint_dir: str = "model_checkpoint"
     accumulate_grad_batches: int = 1
@@ -80,9 +86,7 @@ class TrainConfig:
     
 
 
-
-
-@dataclass
+@dataclass(slots=True)
 class SplitConfig:
     random_seed: int = 42
     stratify: bool = True

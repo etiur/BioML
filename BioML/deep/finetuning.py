@@ -11,6 +11,7 @@ import lightning as L
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import OneCycleLR
 from dataclasses import dataclass, asdict
+from functools import partial
 from peft import get_peft_model, LoraConfig, prepare_model_for_kbit_training
 from typing import Iterable
 from torchmetrics.functional.classification import (
@@ -219,16 +220,19 @@ class TransformerModule(LightningModule):
         self,
         model: PreTrainedModel,
         peft_config: LoraConfig,
-        objective: str,
+        train_config: TrainConfig,
         lr: float
     ):
         super().__init__()
 
         self.model = get_peft_model(model, peft_config)
         self.model.print_trainable_parameters()
-        self.objective = objective
+        self.train_config = train_config
         self.metrics = {"classifcation": classification_metrics, 
-                        "regression": regression_metrics}[self.objective]
+                        "regression": regression_metrics}[self.train_config.objective]
+        if self.train_config.objective == "classification":
+            self.metrics = partial(self.metrics, num_classes=self.train_config.num_classes, 
+                                   threshold=self.train_config.clasi_metrics_threshold)
         self.lr = lr
 
         self.save_hyperparameters()
@@ -258,9 +262,9 @@ class TransformerModule(LightningModule):
         )
 
         # For predicting probabilities, do softmax along last dimension (by row).
-        if self.objective == "classification":
+        if self.train_config.objective == "classification":
             pred = torch.argmax(torch.softmax(outputs["logits"], dim=-1), dim=1)
-        elif self.objective == "regression":
+        elif self.train_config.objective == "regression":
             pred = outputs["logits"]
         
         metrics = self.metrics(
@@ -311,10 +315,10 @@ def training_loop(llm_config: dataclass, train_config: TrainConfig, split_config
 
     peft = PreparePEFT(train_config.qlora)
     model = peft.get_model(llm_config)
-    peft_config = peft.get_lora_config(rank=64, target_modules=["key", "query", "value", "attention.dense.output"], 
-                                       lora_dropout=0.05)
+    peft_config = peft.get_lora_config(rank=train_config.lora_rank, target_modules=train_config.target_modules, 
+                                       lora_alpha=train_config.lora_alpha, lora_dropout=train_config.lora_dropout)
     
-    model = TransformerModule(model, peft_config, train_config.objective, lr=1e-5)
+    model = TransformerModule(model, peft_config, train_config, lr=1e-5)
 
     # Wire up MLflow context manager to Azure ML.
     mlflow.set_experiment(train_config.mlflow_experiment_name)
