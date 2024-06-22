@@ -9,7 +9,8 @@ from Bio import SeqIO
 from torch.utils.data import DataLoader
 import argparse
 from .train_config import LLMConfig
-from ..utilities.utils import set_seed, convert_to_parquet
+from .utils import set_seed
+from ..utilities.utils import convert_to_parquet
 
 
 def arg_parse():

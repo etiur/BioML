@@ -62,10 +62,12 @@ class TrainConfig:
     #lora params
     qlora: bool = False
     lora_rank: 64
+    use_dora: bool = True
     lora_alpha: int | None = None
-    target_modules: list[str] = ["key", "query", "value", "attention.dense.output"]
+    target_modules: list[str] | str = "all-linear"
     lora_dropout: float = 0.05
     # lightning trainer params
+    weight_decay: float = 0.01
     model_checkpoint_dir: str = "model_checkpoint"
     accumulate_grad_batches: int = 1
     debug_mode_sample: bool = False

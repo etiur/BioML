@@ -7,12 +7,12 @@ from typing import Iterable, Any
 from sklearn.model_selection import train_test_split
 from BioML.utilities import split_methods as split
 from lightning import LightningModule, LightningDataModule, Trainer
-import lightning as L
+import bitsandbytes as bnb
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import OneCycleLR
 from dataclasses import dataclass, asdict
 from functools import partial
-from peft import get_peft_model, LoraConfig, prepare_model_for_kbit_training
+from peft import get_peft_model, LoraConfig, prepare_model_for_kbit_training, replace_lora_weights_loftq, PeftModel
 from typing import Iterable
 from torchmetrics.functional.classification import (
     accuracy, f1_score, precision, recall, auroc, average_precision, cohen_kappa, confusion_matrix, 
@@ -23,7 +23,7 @@ from torchmetrics.functional.regression import (
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.loggers import MLFlowLogger
 import mlflow
-from ..utilities.utils import set_seed
+from .utils import set_seed
 from .embeddings import TokenizeFasta
 from .train_config import LLMConfig, SplitConfig, TrainConfig
 from ..models.metrics import ndcg_at_k
@@ -120,7 +120,7 @@ class PreparePEFT:
     
     @staticmethod
     def get_lora_config(rank: int, target_modules: str | list[str], lora_alpha: int | None=None, 
-                        lora_dropout: float=0.05):
+                        lora_dropout: float=0.05, use_dora: bool=True):
         
         if lora_alpha is None:
             lora_alpha = rank * 2
@@ -128,9 +128,10 @@ class PreparePEFT:
             print("Warning lora_alpha is set to a value. For optimal performance, it is recommended to set it double the rank")
         
         # get the lora models
-        peft_config = LoraConfig(inference_mode=False, r=rank, lora_alpha=lora_alpha, 
+        peft_config = LoraConfig(init_lora_weights="pissa_niter_20", inference_mode=False, r=rank, 
+                                 lora_alpha=lora_alpha, 
                                  lora_dropout=lora_dropout, 
-                                 target_modules=target_modules)
+                                 target_modules=target_modules, use_dora=use_dora)
         
         return peft_config
 
@@ -218,15 +219,13 @@ class DataModule(LightningDataModule):
 class TransformerModule(LightningModule):
     def __init__(
         self,
-        model: PreTrainedModel,
-        peft_config: LoraConfig,
+        model: PeftModel,
         train_config: TrainConfig,
         lr: float
     ):
         super().__init__()
 
-        self.model = get_peft_model(model, peft_config)
-        self.model.print_trainable_parameters()
+        self.model = model
         self.train_config = train_config
         self.metrics = {"classifcation": classification_metrics, 
                         "regression": regression_metrics}[self.train_config.objective]
@@ -235,7 +234,6 @@ class TransformerModule(LightningModule):
                                    threshold=self.train_config.clasi_metrics_threshold)
         self.lr = lr
 
-        self.save_hyperparameters()
 
     def forward(
         self,
@@ -295,11 +293,19 @@ class TransformerModule(LightningModule):
         return metrics
 
     def configure_optimizers(self) -> Optimizer:
-        optim = AdamW(
-            params=self.parameters(),
-            lr=self.lr)
+        if not self.train_config.qlora:
+            optim = AdamW(params=self.parameters(), lr=self.lr, weight_decay=self.train_config.weight_decay)
+        else:
+            optim = bnb.optim.PagedAdamW(self.parameters(), lr=self.lr, weight_decay=self.train_config.weight_decay)
         scheduler = OneCycleLR(optim, max_lr=self.lr, total_steps=self.trainer.estimated_stepping_batches)
         return {"optimizer": optim, "lr_scheduler": scheduler}
+
+    def on_save_checkpoint(self, checkpoint): # only saving lora config
+        state = checkpoint["state_dict"]
+        for name in list(state.keys()):
+            if "lora" not in name:  # <-- adapt the condition to your use case
+                state.pop(name)
+        return state
 
 
 
@@ -317,8 +323,11 @@ def training_loop(llm_config: dataclass, train_config: TrainConfig, split_config
     model = peft.get_model(llm_config)
     peft_config = peft.get_lora_config(rank=train_config.lora_rank, target_modules=train_config.target_modules, 
                                        lora_alpha=train_config.lora_alpha, lora_dropout=train_config.lora_dropout)
-    
-    model = TransformerModule(model, peft_config, train_config, lr=1e-5)
+    model = get_peft_model(model, peft_config)
+    model.print_trainable_parameters()
+    if train_config.qlora:
+        replace_lora_weights_loftq(model)
+    light_mod = TransformerModule(model, train_config, lr=1e-5)
 
     # Wire up MLflow context manager to Azure ML.
     mlflow.set_experiment(train_config.mlflow_experiment_name)
@@ -346,11 +355,14 @@ def training_loop(llm_config: dataclass, train_config: TrainConfig, split_config
                           max_time=train_config.max_time, precision=train_config.precision,
                           logger=mlf_logger, accumulate_grad_batches=train_config.accumulate_grad_batches, **lightning_trainer_args)
         
-        trainer.fit(model=model, datamodule=data_module)
+        trainer.fit(model=light_mod, datamodule=data_module)
         best_model_path = checkpoint_callback.best_model_path
 
         # Evaluate the last and the best models on the test sample.
-        trainer.test(model=model, datamodule=data_module)
-        trainer.test(model=model, datamodule=data_module, ckpt_path=best_model_path)
+        trainer.test(model=light_mod, datamodule=data_module)
+        trainer.test(model=light_mod, datamodule=data_module, ckpt_path=best_model_path)
+        # model.save_pretrained("output_dir") only need to save pretrained -> it only saves PEFT
 
-    return model, data_module
+    return light_mod, model, data_module, best_model_path
+
+
