@@ -11,6 +11,7 @@ import bitsandbytes as bnb
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import OneCycleLR
 from dataclasses import dataclass, asdict
+from safetensors import SafetensorError
 from functools import partial
 from peft import get_peft_model, LoraConfig, prepare_model_for_kbit_training, replace_lora_weights_loftq, PeftModel
 from typing import Iterable
@@ -20,6 +21,7 @@ from torchmetrics.functional.classification import (
 from torchmetrics.functional.regression import (
     mean_absolute_error, mean_squared_error,  pearson_corrcoef, kendall_rank_corrcoef, r2_score,
     mean_absolute_percentage_error, mean_squared_log_error)
+from pathlib import Path
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.loggers import MLFlowLogger
 import mlflow
@@ -45,24 +47,20 @@ def arg_parse():
 
 def classification_metrics(split: str, loss: torch.tensor, preds: torch.tensor, 
                                      target: torch.tensor, num_classes: int=2, threshold: float=0.5):
-    task = "binary" if num_classes == 2 else "multiclass"
+    task = "multiclass"
     metrics = {f"{split}_Loss": loss,
                 f"{split}_Acc": accuracy(preds=preds, target=target, num_classes=num_classes, task=task, 
-                                         threshold=threshold, average="weighted"),
-                f"{split}_F1":f1_score(preds=preds, target=target, task=task, num_classes=num_classes, 
-                                       average="weighted"),
-                f"{split}_Precision": precision(preds=preds, target=target, task=task, num_classes=num_classes, 
-                                                average="weighted"),
-                f"{split}_Recall": recall(preds=preds, target=target, task=task, num_classes=num_classes, 
-                                          average="weighted"),
+                                         threshold=threshold),
+                f"{split}_F1":f1_score(preds=preds, target=target, task=task, num_classes=num_classes),
+                f"{split}_Precision": precision(preds=preds, target=target, task=task, num_classes=num_classes),
+                f"{split}_Recall": recall(preds=preds, target=target, task=task, num_classes=num_classes),
                 f"{split}_MCC": matthews_corrcoef(preds=preds, target=target, num_classes=num_classes,
                                                   threshold=threshold, task=task),
-                f"{split}_Confusion_Matrix": confusion_matrix(preds=preds, target=target, num_classes=num_classes, normalize="true", 
-                                                              task=task, threshold=threshold),
+                #f"{split}_Confusion_Matrix": confusion_matrix(preds=preds, target=target, num_classes=num_classes, normalize="true", 
+                #                                              task=task, threshold=threshold),
                 f"{split}_AUROC": auroc(preds=preds, target=target, num_classes=num_classes, task=task, 
-                                        thresholds=None, average="weighted"),
-                f"{split}_Average_Precision": average_precision(preds=preds, target=target, num_classes=num_classes, task=task, 
-                                                                average="weighted"),
+                                        thresholds=None),
+                f"{split}_Average_Precision": average_precision(preds=preds, target=target, num_classes=num_classes, task=task),
                 f"{split}_Cohen_Kappa": cohen_kappa(preds=preds, target=target, num_classes=num_classes, 
                                                     task=task, threshold=threshold)}
     return metrics
@@ -128,10 +126,9 @@ class PreparePEFT:
             print("Warning lora_alpha is set to a value. For optimal performance, it is recommended to set it double the rank")
         
         # get the lora models
-        peft_config = LoraConfig(init_lora_weights="pissa_niter_20", inference_mode=False, r=rank, 
-                                 lora_alpha=lora_alpha, 
-                                 lora_dropout=lora_dropout, 
-                                 target_modules=target_modules, use_dora=use_dora)
+        peft_config = LoraConfig(inference_mode=False, r=rank, lora_alpha=lora_alpha, 
+                                 lora_dropout=lora_dropout, target_modules=target_modules, 
+                                 use_dora=use_dora)
         
         return peft_config
 
@@ -159,7 +156,7 @@ class PreparePEFT:
 @dataclass
 class PrepareSplit:
     cluster_file: str | None = None
-    shuffle = True
+    shuffle: bool = True
     random_seed: int = 21321412
     splitting_strategy: str = "random"
     num_split: int = 5
@@ -172,7 +169,7 @@ class PrepareSplit:
                                            shuffle=self.shuffle, random_state=self.random_seed)
             train, test = cluster.train_test_split(range(len(dataset)), groups=dataset["id"])
         elif self.splitting_strategy == "random":
-            stratify = dataset["labels"] if self.stratify else None
+            stratify = dataset["labels"].cpu() if self.stratify else None
             train, test = train_test_split(range(len(dataset)), stratify=stratify, 
                                            test_size=self.test_size)
         return train, test
@@ -186,19 +183,20 @@ class PrepareSplit:
 
 
 class DataModule(LightningDataModule):
-    def __init__(self, splitter: PrepareSplit, fasta_file: str, config: LLMConfig,
-                 batch_size: int=1, tokenizer_args: dict=dict()) -> None:
+    def __init__(self, splitter: PrepareSplit, fasta_file: str | Path, label: Iterable[int|float], 
+                 config: LLMConfig = LLMConfig(), batch_size: int=1, tokenizer_args: dict=dict()) -> None:
         super().__init__()
         self.splitter = splitter
         self.fasta_file = fasta_file
         self.batch_size = batch_size
-        self.config = config
+        self.llm_config = config
         self.tokenizer_args = tokenizer_args 
+        self.label = [("labels", label)]
     
     def prepare_data(self) -> None:
         """Tokenize the fasta file and store the dataset in the class instance."""
-        tokenizer = TokenizeFasta(self.config, tokenizer_args=self.tokenizer_args)
-        self.dataset = tokenizer.tokenize(self.fasta_file)
+        tokenizer = TokenizeFasta(self.llm_config, tokenizer_args=self.tokenizer_args)
+        self.dataset = tokenizer.tokenize(self.fasta_file, add_columns=self.label)
         
     def setup(self, stage: str):
         train, validation, test = self.splitter.get_data(self.dataset)
@@ -227,7 +225,7 @@ class TransformerModule(LightningModule):
 
         self.model = model
         self.train_config = train_config
-        self.metrics = {"classifcation": classification_metrics, 
+        self.metrics = {"classification": classification_metrics, 
                         "regression": regression_metrics}[self.train_config.objective]
         if self.train_config.objective == "classification":
             self.metrics = partial(self.metrics, num_classes=self.train_config.num_classes, 
@@ -256,12 +254,13 @@ class TransformerModule(LightningModule):
         outputs = self(
             input_ids=batch["input_ids"],
             attention_mask=batch["attention_mask"],
-            label=batch["label"],
+            label=batch["labels"],
         )
 
         # For predicting probabilities, do softmax along last dimension (by row).
         if self.train_config.objective == "classification":
-            pred = torch.argmax(torch.softmax(outputs["logits"], dim=-1), dim=1)
+            #pred = torch.argmax(torch.softmax(outputs["logits"], dim=-1), dim=1)
+            pred = torch.softmax(outputs["logits"], dim=-1)
         elif self.train_config.objective == "regression":
             pred = outputs["logits"]
         
@@ -269,7 +268,7 @@ class TransformerModule(LightningModule):
             split=split,
             loss=outputs["loss"],
             preds=pred,
-            target=batch["label"],
+            target=batch["labels"],
         )
 
         return outputs, metrics
@@ -309,7 +308,7 @@ class TransformerModule(LightningModule):
 
 
 
-def training_loop(llm_config: dataclass, train_config: TrainConfig, split_config: SplitConfig, 
+def training_loop(fasta_file: str | Path, label: Iterable[int|float], train_config: TrainConfig, llm_config: LLMConfig = LLMConfig(), split_config: SplitConfig=SplitConfig(), 
                   tokenizer_args: dict=dict(), lightning_trainer_args: dict = dict()) -> TransformerModule:
     """Train and checkpoint the model with highest score; log that model to MLflow and
     return it."""
@@ -317,7 +316,7 @@ def training_loop(llm_config: dataclass, train_config: TrainConfig, split_config
                             split_config.splitting_strategy, 
                             split_config.num_split, split_config.stratify, split_config.test_size)
     
-    data_module = DataModule(splitter, train_config.fasta_file, llm_config, train_config.batch_size, tokenizer_args)
+    data_module = DataModule(splitter, fasta_file, label, llm_config, train_config.batch_size, tokenizer_args)
 
     peft = PreparePEFT(train_config.qlora)
     model = peft.get_model(llm_config)
@@ -326,7 +325,10 @@ def training_loop(llm_config: dataclass, train_config: TrainConfig, split_config
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
     if train_config.qlora:
-        replace_lora_weights_loftq(model)
+        try:
+            replace_lora_weights_loftq(model)
+        except SafetensorError as e:
+            print(e)
     light_mod = TransformerModule(model, train_config, lr=1e-5)
 
     # Wire up MLflow context manager to Azure ML.

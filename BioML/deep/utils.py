@@ -4,6 +4,7 @@ import random
 import numpy as np
 from dataclasses import dataclass
 from peft import AutoPeftModelForSequenceClassification
+from peft import replace_lora_weights_loftq
 
 
 def estimate_deepmodel_size(model: PreTrainedModel, precision: torch.dtype):
@@ -67,3 +68,29 @@ def load_adapter(peft_model: str, use_adapter: str="initial", adapters: dict[str
     model.set_adapter(use_adapter)
     model.merge_adapter()
     return model
+
+def get_mae(x, y):
+    return (x - y).abs().mean()
+
+def get_mse(x, y):
+    return torch.pow(x - y, 2).mean()
+
+
+def loftq_initialization(model, inputs):
+    
+    logits_base = model(input_ids=inputs["input_ids"], 
+                        attention_mask=inputs["attention_mask"]).logits
+    
+    def my_callback(model, module_name):
+        """Callable to replace weights with LoFTQ if the mse is lower than the current best one."""
+        logits = model(**inputs).logits
+        mse = get_mse(logits_base, logits)
+        current_mse = float("inf")
+        if mse < current_mse:
+            current_mse = mse
+            print(f"MSE improved for module {module_name}")
+            return True
+        print(f"MSE did not improve for module {module_name}")
+        return False
+    
+    replace_lora_weights_loftq(model, callback=my_callback)

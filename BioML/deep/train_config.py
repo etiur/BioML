@@ -55,13 +55,12 @@ class LLMConfig:
 
 @dataclass(slots=True)
 class TrainConfig:
-    fasta_file: str
     num_classes: int = 2 # classification default
     objective: str = "classification" if num_classes >= 2 else "regression"
     clasi_metrics_threshold: float = 0.5
     #lora params
     qlora: bool = False
-    lora_rank: 64
+    lora_rank: int = 64
     use_dora: bool = True
     lora_alpha: int | None = None
     target_modules: list[str] | str = "all-linear"
