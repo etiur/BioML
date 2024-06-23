@@ -142,7 +142,7 @@ class PreparePEFT:
         else:
             bnb_config = None
         
-        device = "auto" if model_params.device == "cuda" or self.qlora else model_params.device
+        device = "cuda" if model_params.device == "cuda" or self.qlora else model_params.device
         model = AutoModelForSequenceClassification.from_pretrained(model_params.model_name, 
                                                                 num_labels=model_params.num_classes, 
                                                                 low_cpu_mem_usage=True,
