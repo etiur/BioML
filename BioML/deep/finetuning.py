@@ -268,7 +268,7 @@ class TransformerModule(LightningModule):
             split=split,
             loss=outputs["loss"],
             preds=pred,
-            target=batch["labels"],
+            target=batch["labels"].to(pred.device),
         )
 
         return outputs, metrics
