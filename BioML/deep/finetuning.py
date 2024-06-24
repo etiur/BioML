@@ -6,7 +6,7 @@ import argparse
 from typing import Iterable, Any
 from sklearn.model_selection import train_test_split
 from BioML.utilities import split_methods as split
-from lightning import LightningModule, LightningDataModule, Trainer
+from lightning import LightningModule, LightningDataModule, Trainer, seed_everything
 import bitsandbytes as bnb
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import OneCycleLR
@@ -308,6 +308,29 @@ class TransformerModule(LightningModule):
 
         return metrics
 
+    def predict_step(self, batch, batch_idx, dataloader_idx=None):
+        """Predict the output of the model.
+        
+        Example:
+        --------
+        >>> data_loader = DataLoader(...)
+        >>> model = MyModel()
+        >>> trainer = Trainer()
+        >>> predictions = trainer.predict(model, data_loader)
+
+        """
+        outputs = self(
+            input_ids=batch["input_ids"],
+            attention_mask=batch["attention_mask"],
+        )
+
+        if self.train_config.objective == "classification":
+            pred = torch.softmax(outputs["logits"], dim=-1)
+        elif self.train_config.objective == "regression":
+            pred = outputs["logits"]
+
+        return pred
+
     def configure_optimizers(self) -> Optimizer:
         if not self.train_config.qlora:
             optim = AdamW(params=self.parameters(), lr=self.lr, weight_decay=self.train_config.weight_decay)
@@ -325,6 +348,7 @@ def training_loop(fasta_file: str | Path, label: Iterable[int|float], lr: float=
                   use_best_model: bool = True) -> tuple[TransformerModule, DataModule, str]:
     """Train and checkpoint the model with highest score; log that model to MLflow and
     return it."""
+    seed_everything(split_config.random_seed, workers=True)
     splitter = PrepareSplit(split_config.cluster_file, split_config.shuffle, split_config.random_seed, 
                             split_config.splitting_strategy, 
                             split_config.num_split, split_config.stratify, split_config.test_size)
@@ -358,7 +382,8 @@ def training_loop(fasta_file: str | Path, label: Iterable[int|float], lr: float=
         trainer = Trainer(callbacks=[checkpoint_callback, early_callback], default_root_dir=train_config.model_checkpoint_dir,
                           fast_dev_run=bool(train_config.debug_mode_sample), max_epochs=train_config.max_epochs, 
                           max_time=train_config.max_time, precision=train_config.precision,
-                          logger=mlf_logger, accumulate_grad_batches=train_config.accumulate_grad_batches, **lightning_trainer_args)
+                          logger=mlf_logger, accumulate_grad_batches=train_config.accumulate_grad_batches, 
+                          deterministic=train_config.deterministic,**lightning_trainer_args)
         
         trainer.fit(model=light_mod, datamodule=data_module)
         best_model_path = checkpoint_callback.best_model_path

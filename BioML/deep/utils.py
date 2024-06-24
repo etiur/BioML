@@ -5,6 +5,10 @@ import numpy as np
 from dataclasses import dataclass
 from peft import AutoPeftModelForSequenceClassification
 from peft import replace_lora_weights_loftq
+from lightning import LightningModule, LightningDataModule, Trainer, seed_everything
+from lightning.pytorch.tuner import Tuner
+from pathlib import Path
+import pandas as pd
 
 
 def estimate_deepmodel_size(model: PreTrainedModel, precision: torch.dtype):
@@ -94,3 +98,23 @@ def loftq_initialization(model, inputs):
         return False
     
     replace_lora_weights_loftq(model, callback=my_callback)
+
+
+def learning_rate_finder(trainer: Trainer, light_mod: LightningModule, 
+                  data_module: LightningDataModule,
+                  output_dir: str | Path, 
+                  random_numer: int =52324, **tuner_kwargs):
+    
+    seed_everything(random_numer, workers=True)
+    tuner = Tuner(trainer)
+    # Run learning rate finder
+    lr_finder = tuner.lr_find(light_mod, data_module, max_lr=1, min_lr=1e-6, **tuner_kwargs)
+    # Results can be found in
+    pd.DataFrame(lr_finder.results).to_csv(output_dir/"lr_finder_results.csv")
+    # Plot with
+    fig = lr_finder.plot(suggest=True)
+    fig.savefig(output_dir/"lr_finder_plot.png")
+
+    # Pick point based on plot, or get suggestion
+    new_lr = lr_finder.suggestion()
+    return new_lr, lr_finder

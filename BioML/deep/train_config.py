@@ -65,6 +65,7 @@ class TrainConfig:
     lora_dropout: float = 0.05
     adapter_output: str = "peft_model"
     # lightning trainer params
+    deterministic: bool = True
     weight_decay: float = 0.01
     model_checkpoint_dir: str = "model_checkpoint"
     accumulate_grad_batches: int = 1
