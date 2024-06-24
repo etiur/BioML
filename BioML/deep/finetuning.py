@@ -10,7 +10,7 @@ from lightning import LightningModule, LightningDataModule, Trainer
 import bitsandbytes as bnb
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import OneCycleLR
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from safetensors import SafetensorError
 from functools import partial
 from peft import get_peft_model, LoraConfig, prepare_model_for_kbit_training, replace_lora_weights_loftq, PeftModel
@@ -83,8 +83,8 @@ def regression_metrics(split: str, loss: torch.tensor, preds: torch.tensor,
 
 @dataclass(slots=True)
 class PreparePEFT:
-    qlora: bool = False
-    gradient_cheeckpointing: bool = False
+    train_config: dataclass = field(default_factory=TrainConfig)
+    llm_config: dataclass = field(default_factory=LLMConfig)
     
     @staticmethod    
     def get_target_module_names_for_peft(model: PreTrainedModel, filter_: str | Iterable[str] ="attention"):
@@ -132,8 +132,8 @@ class PreparePEFT:
         
         return peft_config
 
-    def get_model(self, model_params: LLMConfig):
-        if self.qlora:
+    def setup_model(self):
+        if self.train_config.qlora:
             bnb_config = BitsAndBytesConfig(
                         load_in_4bit=True,
                         bnb_4bit_use_double_quant=True,
@@ -142,15 +142,32 @@ class PreparePEFT:
         else:
             bnb_config = None
         
-        device = "cuda" if model_params.device == "cuda" or self.qlora else model_params.device
-        model = AutoModelForSequenceClassification.from_pretrained(model_params.model_name, 
-                                                                num_labels=model_params.num_classes, 
+        device = "cuda" if self.llm_config.device == "cuda" or self.train_config.qlora else self.llm_config.device
+        model = AutoModelForSequenceClassification.from_pretrained(self.llm_config.model_name, 
+                                                                num_labels=self.train_config.num_classes, 
                                                                 low_cpu_mem_usage=True,
-                                                                torch_dtype= model_params.dtype, 
+                                                                torch_dtype= self.llm_config.dtype, 
                                                                 quantization_config=bnb_config,
                                                                 device_map=device)
-        if self.qlora:
+        if self.train_config.qlora:
             model = prepare_model_for_kbit_training(model)
+        return model
+    
+    def prepare_model(self):
+        model = self.setup_model()
+        peft_config = self.get_lora_config(rank=self.train_config.lora_rank, 
+                                           target_modules=self.train_config.target_modules, 
+                                           lora_alpha=self.train_config.lora_alpha, 
+                                           lora_dropout=self.train_config.lora_dropout,
+                                           use_dora=self.train_config.use_dora)
+        
+        model = get_peft_model(model, peft_config)
+        model.print_trainable_parameters()
+        if self.train_config.qlora and "esm2" not in self.llm_config.model_name:
+            try:
+                replace_lora_weights_loftq(model)
+            except SafetensorError as e:
+                print(e)
         return model
 
 @dataclass
@@ -218,7 +235,7 @@ class TransformerModule(LightningModule):
     def __init__(
         self,
         model: PeftModel,
-        train_config: TrainConfig,
+        train_config: dataclass,
         lr: float
     ):
         super().__init__()
@@ -229,10 +246,10 @@ class TransformerModule(LightningModule):
                         "regression": regression_metrics}[self.train_config.objective]
         if self.train_config.objective == "classification":
             self.metrics = partial(self.metrics, num_classes=self.train_config.num_classes, 
-                                   threshold=self.train_config.clasi_metrics_threshold)
+                                   threshold=self.train_config.classi_metrics_threshold)
         self.lr = lr
-
-
+        self.save_hyperparameters(ignore=["model", "metrics"])
+        
     def forward(
         self,
         input_ids: list[int],
@@ -299,17 +316,13 @@ class TransformerModule(LightningModule):
         scheduler = OneCycleLR(optim, max_lr=self.lr, total_steps=self.trainer.estimated_stepping_batches)
         return {"optimizer": optim, "lr_scheduler": scheduler}
 
-    def on_save_checkpoint(self, checkpoint): # only saving lora config
-        state = checkpoint["state_dict"]
-        for name in list(state.keys()):
-            if "lora" not in name:  # <-- adapt the condition to your use case
-                state.pop(name)
-        return state
 
-
-
-def training_loop(fasta_file: str | Path, label: Iterable[int|float], train_config: TrainConfig, llm_config: LLMConfig = LLMConfig(), split_config: SplitConfig=SplitConfig(), 
-                  tokenizer_args: dict=dict(), lightning_trainer_args: dict = dict()) -> TransformerModule:
+def training_loop(fasta_file: str | Path, label: Iterable[int|float], lr: float=1e-3,
+                  train_config: dataclass = TrainConfig(), 
+                  llm_config: dataclass = LLMConfig(), split_config: dataclass=SplitConfig(), 
+                  tokenizer_args: dict=dict(), 
+                  lightning_trainer_args: dict = dict(),
+                  use_best_model: bool = True) -> tuple[TransformerModule, DataModule, str]:
     """Train and checkpoint the model with highest score; log that model to MLflow and
     return it."""
     splitter = PrepareSplit(split_config.cluster_file, split_config.shuffle, split_config.random_seed, 
@@ -318,25 +331,15 @@ def training_loop(fasta_file: str | Path, label: Iterable[int|float], train_conf
     
     data_module = DataModule(splitter, fasta_file, label, llm_config, train_config.batch_size, tokenizer_args)
 
-    peft = PreparePEFT(train_config.qlora)
-    model = peft.get_model(llm_config)
-    peft_config = peft.get_lora_config(rank=train_config.lora_rank, target_modules=train_config.target_modules, 
-                                       lora_alpha=train_config.lora_alpha, lora_dropout=train_config.lora_dropout)
-    model = get_peft_model(model, peft_config)
-    model.print_trainable_parameters()
-    if train_config.qlora:
-        try:
-            replace_lora_weights_loftq(model)
-        except SafetensorError as e:
-            print(e)
-    light_mod = TransformerModule(model, train_config, lr=1e-5)
+    peft = PreparePEFT(train_config, llm_config)
+    model = peft.prepare_model()
+    light_mod = TransformerModule(model, train_config, lr=lr)
 
-    # Wire up MLflow context manager to Azure ML.
+    # Set Up MLflow context manager.
     mlflow.set_experiment(train_config.mlflow_experiment_name)
     with mlflow.start_run(run_name=train_config.mlflow_run_name, description=train_config.mlflow_description) as run:
-        # Connect Lightning's MLFlowLogger plugin to azureml-mlflow as defined in the
-        # context manager. TODO: MLflow metrics should show epochs rather than steps on
-        #  the x-axis
+        # TODO: MLflow metrics should show epochs rather than steps on the x-axis
+        
         mlf_logger = MLFlowLogger(experiment_name=mlflow.get_experiment(run.info.experiment_id).name, 
                                   tracking_uri=mlflow.get_tracking_uri(), log_model=True)
         
@@ -363,8 +366,10 @@ def training_loop(fasta_file: str | Path, label: Iterable[int|float], train_conf
         # Evaluate the last and the best models on the test sample.
         trainer.test(model=light_mod, datamodule=data_module)
         trainer.test(model=light_mod, datamodule=data_module, ckpt_path=best_model_path)
-        # model.save_pretrained("output_dir") only need to save pretrained -> it only saves PEFT
-
-    return light_mod, model, data_module, best_model_path
-
+        
+        if use_best_model:
+            light_mod = TransformerModule.load_from_checkpoint(best_model_path, model=model)
+            light_mod.model.save_pretrained(train_config.adapter_output) # it only saves PEFT adapters
+            
+    return light_mod, data_module, best_model_path
 

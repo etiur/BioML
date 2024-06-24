@@ -21,9 +21,7 @@ class LLMConfig:
     disable_gpu: bool = False
     _device: str = "cuda" if torch.cuda.is_available() else "cpu"
     dtype: torch.dtype = torch.float32
-    num_classes: int = 2 # classification default
     # training params
-    max_epochs: int = 10
     hidden_state_to_extract: int = -1
     
     @property
@@ -57,7 +55,7 @@ class LLMConfig:
 class TrainConfig:
     num_classes: int = 2 # classification default
     objective: str = "classification" if num_classes >= 2 else "regression"
-    clasi_metrics_threshold: float = 0.5
+    classi_metrics_threshold: float = 0.5
     #lora params
     qlora: bool = False
     lora_rank: int = 64
@@ -65,6 +63,7 @@ class TrainConfig:
     lora_alpha: int | None = None
     target_modules: list[str] | str = "all-linear"
     lora_dropout: float = 0.05
+    adapter_output: str = "peft_model"
     # lightning trainer params
     weight_decay: float = 0.01
     model_checkpoint_dir: str = "model_checkpoint"
@@ -85,7 +84,6 @@ class TrainConfig:
     mlflow_description: str = f"PEFT tune in {mlflow_experiment_name}."
     mlflow_run_name: str = f"{uuid.uuid4().hex[:10]}"
     
-
 
 @dataclass(slots=True)
 class SplitConfig:
