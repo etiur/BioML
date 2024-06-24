@@ -18,7 +18,7 @@ def arg_parse():
     parser.add_argument("fasta_file", type=str, help="Path to the FASTA file")
     parser.add_argument("-m", "--model_name", type=str, default="facebook/esm2_t6_8M_UR50D", 
                         help="Name of the language model from huggingface")
-    parser.add_argument("-d", "--disable_gpu", action="store_true", help="Whether to disable the GPU")
+    parser.add_argument("-d", "--mode", default="append", help="Whether to write all the embeddings at once or one batch at the time")
     parser.add_argument("-b", "--batch_size", type=int, default=8, help="The batch size")
     parser.add_argument("-p", "--save_path", type=str, default="embeddings.csv", help="The path to save the emebeddings in csv format")
     parser.add_argument("-s","--seed", type=int, default=12891245318, help="Seed for reproducibility")
@@ -28,7 +28,7 @@ def arg_parse():
 
     args = parser.parse_args()
     return [args.fasta_file, args.model_name, args.disable_gpu, args.batch_size, args.save_path, args.seed, args.option,
-            args.format]
+            args.format, args.mode]
 
     
 @dataclass(slots=True)
@@ -313,9 +313,10 @@ def generate_embeddings(fasta_file: str, model_name: str="facebook/esm2_t6_8M_UR
 
 
 def main():
-    fasta_file, model_name, disable_gpu, batch_size, save_path, seed, option, format = arg_parse()
+    fasta_file, model_name, batch_size, save_path, seed, option, format, mode = arg_parse()
     set_seed(seed)
-    generate_embeddings(model_name, fasta_file, disable_gpu, batch_size, save_path, option, format)
+    generate_embeddings(fasta_file, model_name, batch_size=batch_size, save_path=save_path, 
+                        option=option, format_=format, mode=mode)
 
 
 if __name__ == "__main__":
