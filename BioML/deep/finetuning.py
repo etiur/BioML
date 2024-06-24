@@ -15,18 +15,17 @@ from safetensors import SafetensorError
 from functools import partial
 from peft import get_peft_model, LoraConfig, prepare_model_for_kbit_training, replace_lora_weights_loftq, PeftModel
 from typing import Iterable
-from torchmetrics.functional.classification import (
-    accuracy, f1_score, precision, recall, auroc, average_precision, cohen_kappa, confusion_matrix, 
-    matthews_corrcoef) 
-from torchmetrics.functional.regression import (
-    mean_absolute_error, mean_squared_error,  pearson_corrcoef, kendall_rank_corrcoef, r2_score,
-    mean_absolute_percentage_error, mean_squared_log_error)
+from torchmetrics.classification import (
+    Accuracy, F1Score, Precision, Recall, AUROC, AveragePrecision, CohenKappa, MatthewsCorrCoef) 
+from torchmetrics.regression import (
+    MeanAbsoluteError, MeanSquaredError,  SpearmanCorrCoef, PearsonCorrCoef, KendallRankCorrCoef, R2Score,
+    MeanAbsolutePercentageError, MeanSquaredLogError)
 import pandas as pd
+import numpy as np
 from pathlib import Path
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.loggers import MLFlowLogger
 import mlflow
-from .utils import set_seed
 from .embeddings import TokenizeFasta
 from .train_config import LLMConfig, SplitConfig, TrainConfig
 from ..models.metrics import ndcg_at_k
@@ -46,42 +45,38 @@ def arg_parse():
     return [args.fasta_file, args.model_name, args.disable_gpu, args.batch_size, args.save_path, args.seed]
 
 
-def classification_metrics(split: str, loss: torch.tensor, preds: torch.tensor, 
-                                     target: torch.tensor, num_classes: int=2, threshold: float=0.5):
+def classification_metrics(split: str, num_classes: int=2, threshold: float=0.5):
     task = "multiclass"
-    metrics = {f"{split}_Loss": loss,
-                f"{split}_Acc": accuracy(preds=preds, target=target, num_classes=num_classes, task=task, 
+    metrics = {f"{split}_Acc": Accuracy(num_classes=num_classes, task=task, 
                                          threshold=threshold),
-                f"{split}_F1":f1_score(preds=preds, target=target, task=task, num_classes=num_classes),
-                f"{split}_Precision": precision(preds=preds, target=target, task=task, num_classes=num_classes),
-                f"{split}_Recall": recall(preds=preds, target=target, task=task, num_classes=num_classes),
-                f"{split}_MCC": matthews_corrcoef(preds=preds, target=target, num_classes=num_classes,
-                                                  threshold=threshold, task=task),
-                #f"{split}_Confusion_Matrix": confusion_matrix(preds=preds, target=target, num_classes=num_classes, normalize="true", 
+                f"{split}_F1":F1Score(task=task, num_classes=num_classes, 
+                                      threshold=threshold),
+                f"{split}_Precision": Precision(task=task, num_classes=num_classes, 
+                                                threshold=threshold),
+                f"{split}_Recall": Recall(task=task, num_classes=num_classes, 
+                                          threshold=threshold),
+                f"{split}_MCC": MatthewsCorrCoef(num_classes=num_classes, 
+                                                 threshold=threshold, task=task),
+                #f"{split}_Confusion_Matrix": confusion_matrix(num_classes=num_classes, normalize="true", 
                 #                                              task=task, threshold=threshold),
-                f"{split}_AUROC": auroc(preds=preds, target=target, num_classes=num_classes, task=task, 
-                                        thresholds=None),
-                f"{split}_Average_Precision": average_precision(preds=preds, target=target, num_classes=num_classes, task=task),
-                f"{split}_Cohen_Kappa": cohen_kappa(preds=preds, target=target, num_classes=num_classes, 
-                                                    task=task, threshold=threshold)}
+                f"{split}_AUROC": AUROC(num_classes=num_classes, task=task),
+                f"{split}_Average_Precision": AveragePrecision(num_classes=num_classes, 
+                                                               task=task),
+                f"{split}_Cohen_Kappa": CohenKappa(num_classes=num_classes, task=task, 
+                                                   threshold=threshold)}
     return metrics
 
 
-def regression_metrics(split: str, loss: torch.tensor, preds: torch.tensor, 
-                                 target: torch.tensor):
-    print(preds, target)
-    metrics = {f"{split}_Loss": loss,
-                f"{split}_MAE": mean_absolute_error(preds.squeeze(), target.to(torch.float32)),
-                f"{split}_MSE": mean_squared_error(preds.squeeze(), target.to(torch.float32)),
-                f"{split}_RMSE": mean_squared_error(preds.squeeze(), target.to(torch.float32), squared=False),
-                f"{split}_R2": r2_score(preds.squeeze(), target.to(torch.float32)),
-                f"{split}_Pearson": pearson_corrcoef(preds.squeeze(), target.to(torch.float32)),
-                f"{split}_Kendall": kendall_rank_corrcoef(preds.squeeze(), target.to(torch.float32)),
-                f"{split}_MAPE": mean_absolute_percentage_error(preds.squeeze(), target.to(torch.float32)),
-                f"{split}_MSLE": mean_squared_log_error(preds.squeeze(), target.to(torch.float32)),
-                f"{split}_NDCG": ndcg_at_k(pd.Series(target.detach().cpu().numpy()), 
-                                           preds.squeeze().detach().cpu().numpy(), 
-                                           k=10, penalty=15)}
+def regression_metrics(split: str):
+    
+    metrics = {f"{split}_MAE": MeanAbsoluteError(),
+                f"{split}_MSE": MeanSquaredError(squared=False),
+                f"{split}_RMSE": MeanSquaredError(squared=True),
+                f"{split}_R2": R2Score(),
+                f"{split}_Pearson": PearsonCorrCoef(),
+                f"{split}_Kendall": KendallRankCorrCoef(),
+                f"{split}_MAPE": MeanAbsolutePercentageError(),
+                f"{split}_MSLE": MeanSquaredLogError()}
     return metrics
 
 
@@ -210,7 +205,7 @@ class PrepareSplit:
 
 
 class DataModule(LightningDataModule):
-    def __init__(self, splitter: PrepareSplit, fasta_file: str | Path, label: Iterable[int|float], 
+    def __init__(self, splitter: PrepareSplit, fasta_file: str | Path, label: np.array, 
                  config: LLMConfig = LLMConfig(), batch_size: int=1, tokenizer_args: dict=dict()) -> None:
         super().__init__()
         self.splitter = splitter
@@ -255,10 +250,19 @@ class TransformerModule(LightningModule):
         self.metrics = {"classification": classification_metrics, 
                         "regression": regression_metrics}[self.train_config.objective]
         if self.train_config.objective == "classification":
-            self.metrics = partial(self.metrics, num_classes=self.train_config.num_classes, 
+            self.train_metrics = self.metrics(split="Train", num_classes=self.train_config.num_classes, 
                                    threshold=self.train_config.classi_metrics_threshold)
+            self.val_metrics = self.metrics(split="Val", num_classes=self.train_config.num_classes, 
+                                   threshold=self.train_config.classi_metrics_threshold)
+            self.test_metrics = self.metrics(split="Test", num_classes=self.train_config.num_classes,
+                                      threshold=self.train_config.classi_metrics_threshold)
+        elif self.train_config.objective == "regression":
+            self.train_metrics = self.metrics(split="Train")
+            self.val_metrics = self.metrics(split="Val")
+            self.test_metrics = self.metrics(split="Test")
+        
         self.lr = lr
-        self.save_hyperparameters(ignore=["model", "metrics"])
+        self.save_hyperparameters(ignore=["model", "metrics", "train_metrics", "val_metrics", "test_metrics"])
         
     def forward(
         self,
@@ -276,7 +280,7 @@ class TransformerModule(LightningModule):
             labels=label,
         )
 
-    def _compute_metrics(self, batch, split) -> tuple:
+    def _compute_predictions(self, batch) -> tuple:
         """Helper method hosting the evaluation logic common to the <split>_step methods."""
         outputs = self(
             input_ids=batch["input_ids"],
@@ -289,34 +293,53 @@ class TransformerModule(LightningModule):
             #pred = torch.argmax(torch.softmax(outputs["logits"], dim=-1), dim=1)
             pred = torch.softmax(outputs["logits"], dim=-1)
         elif self.train_config.objective == "regression":
-            pred = outputs["logits"]
-        
-        metrics = self.metrics(
-            split=split,
-            loss=outputs["loss"],
-            preds=pred,
-            target=batch["labels"].to(pred.device),
-        )
+            pred = outputs["logits"].flatten()
 
-        return outputs, metrics
+        return outputs, pred
 
     def training_step(self, batch, batch_idx):
-        outputs, metrics = self._compute_metrics(batch, "Train")
-        self.log_dict(metrics, on_epoch=True, on_step=False)
+        outputs, preds = self._compute_predictions(batch)
+        for metric in self.train_metrics.values():
+            metric.to(preds.device)
+            metric.update(preds, batch["labels"].to(preds.device))
+        self.log("loss", outputs["loss"], on_epoch=True, on_step=False)
 
-        return outputs["loss"]
-
+        return outputs["loss"] # the automodel has its own loss function depending on the problem
+    
+    def on_training_epoch_end(self):
+        # Log the accumulated training metrics
+        for name, metric in self.train_metrics.items():
+            self.log(f'{name}', metric.compute())
+            metric.reset()
+            
     def validation_step(self, batch, batch_idx) -> dict[str, Any]:
-        _, metrics = self._compute_metrics(batch, "Val")
-        self.log_dict(metrics, on_epoch=True, on_step=False)
-
-        return metrics
+        outputs, preds = self._compute_predictions(batch)
+        for metric in self.val_metrics.values():
+            metric.to(preds.device)
+            metric.update(preds, batch["labels"].to(preds.device))
+        self.log("loss", outputs["loss"], on_epoch=True, on_step=False)
+        return outputs["loss"]
+    
+    def on_validation_epoch_end(self):
+        # Log the accumulated validation metrics
+        for name, metric in self.val_metrics.items():
+            self.log(f'{name}', metric.compute())
+            metric.reset()
 
     def test_step(self, batch, batch_idx) -> dict[str, Any]:
-        _, metrics = self._compute_metrics(batch, "Test")
-        self.log_dict(metrics)
-
-        return metrics
+        outputs, preds = self._compute_predictions(batch, "Test")
+        for metric in self.test_metrics.values():
+            metric.to(preds.device)
+            metric.update(preds, batch["labels"].to(preds.device))
+        self.log("loss", outputs["loss"], on_epoch=True, on_step=False)
+        
+        return outputs["loss"]
+    
+    def on_test_epoch_end(self):
+        # Log the accumulated test metrics
+        for name, metric in self.test_metrics.items():
+            self.log(f'{name}', metric.compute())
+            metric.reset()
 
     def predict_step(self, batch, batch_idx, dataloader_idx=None):
         """Predict the output of the model.
@@ -350,7 +373,7 @@ class TransformerModule(LightningModule):
         return {"optimizer": optim, "lr_scheduler": scheduler}
 
 
-def training_loop(fasta_file: str | Path, label: Iterable[int|float], lr: float=1e-3,
+def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
                   train_config: dataclass = TrainConfig(), 
                   llm_config: dataclass = LLMConfig(), split_config: dataclass=SplitConfig(), 
                   tokenizer_args: dict=dict(), 
