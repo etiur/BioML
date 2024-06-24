@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import torch
 import uuid
 
@@ -54,15 +54,17 @@ class LLMConfig:
 @dataclass(slots=True)
 class TrainConfig:
     num_classes: int = 2 # classification default
-    objective: str = "classification" if num_classes >= 2 else "regression"
+    _objective: str = "classification"
     classi_metrics_threshold: float = 0.5
+    disable_gpu=False
     #lora params
     qlora: bool = False
     lora_rank: int = 64
     use_dora: bool = True
     lora_alpha: int | None = None
-    target_modules: list[str] | str = "all-linear"
+    target_modules: list[str] | str = field(default_factory=lambda: ['query', 'key', 'value', 'attention.dense'])
     lora_dropout: float = 0.05
+    modules_to_save: list[str] | str = field(default_factory=lambda: ["classifier.dense", "classifier.out_proj"])
     adapter_output: str = "peft_model"
     # lightning trainer params
     deterministic: bool = True
@@ -72,12 +74,12 @@ class TrainConfig:
     debug_mode_sample: bool = False
     max_time: dict[str, int] | None | str = None
     batch_size: int = 8
-    max_epochs: int = 10
-    precision: str = "16-mixed" if torch.cuda.is_available() else "32-true"
+    max_epochs: int = 20
+    _precision: str = "32-true"
     # callback params
     patience: int = 4
     min_delta: float = 0.005
-    optimize: str = "Val_MCC" if num_classes >= 2 else "Val_R2"
+    optimize: str = "Val_MCC"
     optimize_mode: str = "max"
     # mlflow params
     mlflow_experiment_name: str = "classification experiment" if num_classes >= 2 else "regression experiment"
@@ -85,11 +87,51 @@ class TrainConfig:
     mlflow_description: str = f"PEFT tune in {mlflow_experiment_name}."
     mlflow_run_name: str = f"{uuid.uuid4().hex[:10]}"
     
+    @property
+    def objective(self):
+        """
+        Get the device to use for the language model.
+
+        Returns
+        -------
+        str
+            Device to use for the language model.
+        """
+        if self.num_classes == 1:
+            return "regression"
+        return "classification"
+    
+    @property
+    def precision(self):
+        """
+        Get the device to use for the language model.
+
+        Returns
+        -------
+        str
+            Device to use for the language model.
+        """
+        if torch.cuda.is_available() and not self.disable_gpu:
+            return "16-mixed"
+        return self._precision
+    
+    @precision.setter
+    def precision(self, value: str):
+        """
+        Set the device to use for the language model.
+
+        Parameters
+        ----------
+        value : str
+            Device to use for the language model.
+        """
+        self._precision = value
+
 
 @dataclass(slots=True)
 class SplitConfig:
     random_seed: int = 42
-    stratify: bool = True
+    stratify: bool = False
     splitting_strategy: str = "random"
     num_split: int = 5
     stratify: bool = True

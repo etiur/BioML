@@ -109,11 +109,13 @@ class TokenizeFasta:
             Tokenized sequences.
         """
         dataset = self.create_dataset(fasta_file)
+        cols = []
         tok = dataset.map(lambda examples: self.tokenizer(examples["seq"], return_tensors="np", **self.tokenizer_args),
                           batched=True)
         tok.set_format(type="torch", columns=["input_ids", "attention_mask"], device=self.config.device)
         for x in add_columns:
             tok = tok.add_column(x[0], x[1])
+            cols.append(x[0])
         if removes_column:
             tok = tok.remove_columns(removes_column)
         return tok

@@ -3,12 +3,12 @@ import torch
 import random
 import numpy as np
 from dataclasses import dataclass
-from peft import AutoPeftModelForSequenceClassification
-from peft import replace_lora_weights_loftq
+from peft import replace_lora_weights_loftq, AutoPeftModel
 from lightning import LightningModule, LightningDataModule, Trainer, seed_everything
 from lightning.pytorch.tuner import Tuner
 from pathlib import Path
 import pandas as pd
+from .train_config import LLMConfig
 
 
 def estimate_deepmodel_size(model: PreTrainedModel, precision: torch.dtype):
@@ -64,8 +64,13 @@ def set_seed(seed: int):
     torch.use_deterministic_algorithms(True, warn_only=True)
     
     
-def load_adapter(peft_model: str, use_adapter: str="initial", adapters: dict[str, str] | None=None):
-    model = AutoPeftModelForSequenceClassification.from_pretrained(peft_model, adapter_name="initial")                                                                
+def load_adapter(peft_model: str, llm_config: dataclass = LLMConfig(),
+                 use_adapter: str="initial", adapters: dict[str, str] | None=None):
+    device = "auto" if llm_config.device == "cuda" else llm_config.device
+    # it shows something like not initialized but that is fine
+    model = AutoPeftModel.from_pretrained(peft_model, adapter_name="initial", 
+                                          low_cpu_mem_usage=True, device_map=device,
+                                          torch_dtype=llm_config.dtype)                                                                
     if adapters:
         for key, value in adapters.items():
             model.load_adapter(value, adapter_name=key)

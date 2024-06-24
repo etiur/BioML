@@ -21,6 +21,7 @@ from torchmetrics.functional.classification import (
 from torchmetrics.functional.regression import (
     mean_absolute_error, mean_squared_error,  pearson_corrcoef, kendall_rank_corrcoef, r2_score,
     mean_absolute_percentage_error, mean_squared_log_error)
+import pandas as pd
 from pathlib import Path
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.loggers import MLFlowLogger
@@ -68,16 +69,19 @@ def classification_metrics(split: str, loss: torch.tensor, preds: torch.tensor,
 
 def regression_metrics(split: str, loss: torch.tensor, preds: torch.tensor, 
                                  target: torch.tensor):
+    print(preds, target)
     metrics = {f"{split}_Loss": loss,
-                f"{split}_MAE": mean_absolute_error(preds, target),
-                f"{split}_MSE": mean_squared_error(preds, target),
-                f"{split}_RMSE": mean_squared_error(preds, target, squared=False),
-                f"{split}_R2": r2_score(preds, target),
-                f"{split}_Pearson": pearson_corrcoef(preds, target),
-                f"{split}_Kendall": kendall_rank_corrcoef(preds, target),
-                f"{split}_MAPE": mean_absolute_percentage_error(preds, target),
-                f"{split}_MSLE": mean_squared_log_error(preds, target),
-                f"{split}_NDCG": ndcg_at_k(target, preds, k=10, penalty=15)}
+                f"{split}_MAE": mean_absolute_error(preds.squeeze(), target.to(torch.float32)),
+                f"{split}_MSE": mean_squared_error(preds.squeeze(), target.to(torch.float32)),
+                f"{split}_RMSE": mean_squared_error(preds.squeeze(), target.to(torch.float32), squared=False),
+                f"{split}_R2": r2_score(preds.squeeze(), target.to(torch.float32)),
+                f"{split}_Pearson": pearson_corrcoef(preds.squeeze(), target.to(torch.float32)),
+                f"{split}_Kendall": kendall_rank_corrcoef(preds.squeeze(), target.to(torch.float32)),
+                f"{split}_MAPE": mean_absolute_percentage_error(preds.squeeze(), target.to(torch.float32)),
+                f"{split}_MSLE": mean_squared_log_error(preds.squeeze(), target.to(torch.float32)),
+                f"{split}_NDCG": ndcg_at_k(pd.Series(target.detach().cpu().numpy()), 
+                                           preds.squeeze().detach().cpu().numpy(), 
+                                           k=10, penalty=15)}
     return metrics
 
 
@@ -85,6 +89,7 @@ def regression_metrics(split: str, loss: torch.tensor, preds: torch.tensor,
 class PreparePEFT:
     train_config: dataclass = field(default_factory=TrainConfig)
     llm_config: dataclass = field(default_factory=LLMConfig)
+    lora_init: str | bool = True
     
     @staticmethod    
     def get_target_module_names_for_peft(model: PreTrainedModel, filter_: str | Iterable[str] ="attention"):
@@ -118,7 +123,8 @@ class PreparePEFT:
     
     @staticmethod
     def get_lora_config(rank: int, target_modules: str | list[str], lora_alpha: int | None=None, 
-                        lora_dropout: float=0.05, use_dora: bool=True):
+                        lora_dropout: float=0.05, use_dora: bool=True, lora_init: str | bool=True,
+                        modules_to_save: str | list[str] = ["classifier.dense", "classifier.out_proj"]):
         
         if lora_alpha is None:
             lora_alpha = rank * 2
@@ -126,9 +132,11 @@ class PreparePEFT:
             print("Warning lora_alpha is set to a value. For optimal performance, it is recommended to set it double the rank")
         
         # get the lora models
-        peft_config = LoraConfig(inference_mode=False, r=rank, lora_alpha=lora_alpha, 
-                                 lora_dropout=lora_dropout, target_modules=target_modules, 
-                                 use_dora=use_dora)
+        peft_config = LoraConfig(init_lora_weights=lora_init, inference_mode=False, r=rank, 
+                                 lora_alpha=lora_alpha, lora_dropout=lora_dropout, 
+                                 target_modules=target_modules, 
+                                 use_dora=use_dora, 
+                                 modules_to_save=modules_to_save)
         
         return peft_config
 
@@ -159,7 +167,9 @@ class PreparePEFT:
                                            target_modules=self.train_config.target_modules, 
                                            lora_alpha=self.train_config.lora_alpha, 
                                            lora_dropout=self.train_config.lora_dropout,
-                                           use_dora=self.train_config.use_dora)
+                                           use_dora=self.train_config.use_dora,
+                                           lora_init=self.lora_init,
+                                           modules_to_save=self.train_config.modules_to_save)
         
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()
