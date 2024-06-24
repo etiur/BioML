@@ -13,12 +13,12 @@ from torch.optim.lr_scheduler import OneCycleLR
 from dataclasses import dataclass, asdict, field
 from safetensors import SafetensorError
 from functools import partial
-from peft import get_peft_model, LoraConfig, prepare_model_for_kbit_training, replace_lora_weights_loftq, PeftModel
+from peft import get_peft_model, LoraConfig, prepare_model_for_kbit_training, PeftModel
 from typing import Iterable
 from torchmetrics.classification import (
     Accuracy, F1Score, Precision, Recall, AUROC, AveragePrecision, CohenKappa, MatthewsCorrCoef) 
 from torchmetrics.regression import (
-    MeanAbsoluteError, MeanSquaredError,  SpearmanCorrCoef, PearsonCorrCoef, KendallRankCorrCoef, R2Score,
+    MeanAbsoluteError, MeanSquaredError,  PearsonCorrCoef, KendallRankCorrCoef, R2Score,
     MeanAbsolutePercentageError, MeanSquaredLogError)
 import pandas as pd
 import numpy as np
@@ -28,7 +28,6 @@ from lightning.pytorch.loggers import MLFlowLogger
 import mlflow
 from .embeddings import TokenizeFasta
 from .train_config import LLMConfig, SplitConfig, TrainConfig
-from ..models.metrics import ndcg_at_k
 
 
 def arg_parse():
@@ -168,11 +167,6 @@ class PreparePEFT:
         
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()
-        if self.train_config.qlora and "esm2" not in self.llm_config.model_name:
-            try:
-                replace_lora_weights_loftq(model)
-            except SafetensorError as e:
-                print(e)
         return model
 
 @dataclass
