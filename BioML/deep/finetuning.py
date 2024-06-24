@@ -268,7 +268,7 @@ class TransformerModule(LightningModule):
         self,
         input_ids: list[int],
         attention_mask: list[int],
-        label: list[int],
+        label: list[int] | None = None,
     ):
         """Calc the loss by passing inputs to the model and comparing against ground
         truth labels. Here, all of the arguments of self.model comes from the
@@ -285,9 +285,7 @@ class TransformerModule(LightningModule):
         outputs = self(
             input_ids=batch["input_ids"],
             attention_mask=batch["attention_mask"],
-            label=batch["labels"],
-        )
-
+            label=batch["labels"])
         # For predicting probabilities, do softmax along last dimension (by row).
         if self.train_config.objective == "classification":
             #pred = torch.argmax(torch.softmax(outputs["logits"], dim=-1), dim=1)
@@ -327,7 +325,7 @@ class TransformerModule(LightningModule):
             metric.reset()
 
     def test_step(self, batch, batch_idx) -> dict[str, Any]:
-        outputs, preds = self._compute_predictions(batch, "Test")
+        outputs, preds = self._compute_predictions(batch)
         for metric in self.test_metrics.values():
             metric.to(preds.device)
             metric.update(preds, batch["labels"].to(preds.device))
