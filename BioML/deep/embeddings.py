@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 import argparse
 from .train_config import LLMConfig
 from .utils import set_seed
-from ..utilities.utils import convert_to_parquet
+from ..utilities.utils import convert_to_parquet, load_config
 
 
 def arg_parse():
@@ -25,10 +25,15 @@ def arg_parse():
     parser.add_argument("-op", "--option", type=str, default="mean", help="Option to concatenate the embeddings")
     parser.add_argument("-f", "--format", type=str, default="csv", choices=("csv", "parquet"), 
                         help="Format to save the embeddings")
-
+    parser.add_argument("-l", "--llm_config", type=str, default="",
+                        help="Path to the language model configuration file (optional). json or yaml file.")
+    parser.add_argument("-t", "--tokenizer_args", type=str, default="{}",
+                        help="JSON string of arguments to pass to the tokenizer (optional). json or yaml file.")
+    parser.add_argument("-pt", "--pretrained_args", type=str, default="{}",
+                        help="JSON string of arguments to pass to the from_pretrained (optional). json or yaml file.")
     args = parser.parse_args()
     return [args.fasta_file, args.model_name, args.disable_gpu, args.batch_size, args.save_path, args.seed, args.option,
-            args.format, args.mode]
+            args.format, args.mode, args.llm_config, args.pretrained_args, args.tokenizer_args]
 
     
 @dataclass(slots=True)
@@ -313,9 +318,14 @@ def generate_embeddings(fasta_file: str, model_name: str="facebook/esm2_t6_8M_UR
 
 
 def main():
-    fasta_file, model_name, batch_size, save_path, seed, option, format, mode = arg_parse()
+    fasta_file, model_name, batch_size, save_path, seed, option, format, mode, llm_args, pretrained_args, tokenizer_args = arg_parse()
     set_seed(seed)
-    generate_embeddings(fasta_file, model_name, batch_size=batch_size, save_path=save_path, 
+    tokenizer_args = load_config(tokenizer_args, extension=tokenizer_args.split(".")[-1])
+    llm_args = load_config(llm_args, extension=llm_args.split(".")[-1])
+    pretrained_args = load_config(pretrained_args, extension=pretrained_args.split(".")[-1])
+    
+    generate_embeddings(fasta_file, model_name, llm_args=llm_args, pretrained_args=pretrained_args,
+                        tokenizer_args=tokenizer_args, batch_size=batch_size, save_path=save_path, 
                         option=option, format_=format, mode=mode)
 
 

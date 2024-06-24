@@ -8,31 +8,26 @@ from subprocess import Popen, PIPE
 import time
 from collections import defaultdict
 from typing import Generator, Callable, Iterable
-import random
-import numpy as np
-import torch
 import json
 from Bio import SeqIO
 import yaml
 from typing import Any, Callable
-from dataclasses import dataclass
 from subprocess import call
 import tempfile
 
 
-@dataclass(slots=True)
-class FileParser:
-    file_path: str | Path
-
-    def load(self, extension: str="json") -> dict[str, Any]:
-        with open(self.file_path) as file:
+def load_config(file_path: str | Path, extension: str="json") -> dict:
+    file_path = Path(file_path)
+    if file_path.exists():
+        with open(file_path) as file:
             if extension == "json":
-                with open(self.file_path) as file:
-                    return json.load(file)
+                return json.load(file)
             elif extension == "yaml":
                 return yaml.load(file, Loader=yaml.FullLoader)
             else:
                 raise ValueError(f"Unsupported file extension: {extension}")
+    else:
+        return {}
 
 class Log:
     """

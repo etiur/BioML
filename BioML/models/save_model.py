@@ -8,7 +8,7 @@ from typing import Any
 from .base import PycaretInterface, Trainer, DataParser
 from .classification import Classifier
 from .regression import Regressor
-from ..utilities.utils import FileParser
+from ..utilities.utils import load_config
 from ..utilities import split_methods as split
 
 
@@ -180,8 +180,8 @@ def main():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
     if setup_config:
-        file = FileParser(setup_config)
-        setup_config = file.load(extension=setup_config.split(".")[-1])
+        setup_config = load_config(setup_config, 
+                                   extension=setup_config.split(".")[-1])
 
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
 

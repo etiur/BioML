@@ -11,8 +11,6 @@ import bitsandbytes as bnb
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import OneCycleLR
 from dataclasses import dataclass, asdict, field
-from safetensors import SafetensorError
-from functools import partial
 from peft import get_peft_model, LoraConfig, prepare_model_for_kbit_training, PeftModel
 from typing import Iterable
 from torchmetrics.classification import (
@@ -20,7 +18,6 @@ from torchmetrics.classification import (
 from torchmetrics.regression import (
     MeanAbsoluteError, MeanSquaredError,  PearsonCorrCoef, KendallRankCorrCoef, R2Score,
     MeanAbsolutePercentageError, MeanSquaredLogError)
-import pandas as pd
 import numpy as np
 from pathlib import Path
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
@@ -28,23 +25,60 @@ from lightning.pytorch.loggers import MLFlowLogger
 import mlflow
 from .embeddings import TokenizeFasta
 from .train_config import LLMConfig, SplitConfig, TrainConfig
+from ..utilities.utils import load_config
 
 
-def arg_parse():
-    parser = argparse.ArgumentParser(description="Generate embeddings from the protein large language model in Huggingface")
-    parser.add_argument("fasta_file", type=str, help="Path to the FASTA file")
-    parser.add_argument("-m", "--model_name", type=str, default="facebook/esm2_t6_8M_UR50D", 
-                        help="Name of the language model from huggingface")
-    parser.add_argument("-d", "--disable_gpu", action="store_true", help="Whether to disable the GPU")
-    parser.add_argument("-b", "--batch_size", type=int, default=8, help="The batch size")
-    parser.add_argument("-p", "--save_path", type=str, default="embeddings.csv", help="The path to save the emebeddings in csv format")
-    parser.add_argument("-s","--seed", type=int, default=12891245318, help="Seed for reproducibility")
+def parse_args():
+    """
+    Parse command line arguments for the training loop.
 
-    args = parser.parse_args()
-    return [args.fasta_file, args.model_name, args.disable_gpu, args.batch_size, args.save_path, args.seed]
+    Returns
+    -------
+    argparse.Namespace
+        The parsed arguments.
+    """
+    parser = argparse.ArgumentParser(description="Train a model using a fasta file and labels.")
+    
+    parser.add_argument("--fasta_file", type=Path, required=True,
+                        help="The path to the fasta file.")
+    parser.add_argument("--label", type=str, required=True,
+                        help="The path to the file containing labels as a numpy array.")
+    parser.add_argument("--lr", type=float, default=1e-3,
+                        help="The learning rate. Default is 1e-3.")
+    parser.add_argument("--train_config", type=str, default="",
+                        help="Path to the training configuration file (optional). json or yaml file.")
+    parser.add_argument("--llm_config", type=str, default="",
+                        help="Path to the language model configuration file (optional). json or yaml file.")
+    parser.add_argument("--split_config", type=str, default="",
+                        help="Path to the splitting configuration file (optional). json or yaml file.")
+    parser.add_argument("--tokenizer_args", type=str, default="{}",
+                        help="JSON string of arguments to pass to the tokenizer (optional). json or yaml file.")
+    parser.add_argument("--lightning_trainer_args", type=str, default="{}",
+                        help="JSON string of arguments to pass to the lightning trainer (optional). json or yaml file. ")
+    parser.add_argument("--use_best_model", action="store_true",
+                        help="Whether to use the best model saved with checkpoint. Default is True. json or yaml file.")
+
+    return parser.parse_args()
 
 
-def classification_metrics(split: str, num_classes: int=2, threshold: float=0.5):
+def classification_metrics(split: str, num_classes: int=2, threshold: float=0.5) -> dict:
+    """
+    Lightining metrics for classification tasks
+
+    Parameters
+    ----------
+    split : str
+        The split to get the metrics for (Train, Val or Test)
+    num_classes : int, optional
+        The number of classes, by default 2
+    threshold : float, optional
+        Threshold to be considered positive class, by default 0.5
+
+    Returns
+    -------
+    dict
+        Dictionary of the metrics
+    """
     task = "multiclass"
     metrics = {f"{split}_Acc": Accuracy(num_classes=num_classes, task=task, 
                                          threshold=threshold),
@@ -66,7 +100,20 @@ def classification_metrics(split: str, num_classes: int=2, threshold: float=0.5)
     return metrics
 
 
-def regression_metrics(split: str):
+def regression_metrics(split: str) -> dict:
+    """
+    Lightining metrics for regression tasks
+
+    Parameters
+    ----------
+    split : str
+        The split to get the metrics for (Train, Val or Test)
+
+    Returns
+    -------
+    dict
+        Dictionary of the metrics
+    """
     
     metrics = {f"{split}_MAE": MeanAbsoluteError(),
                 f"{split}_MSE": MeanSquaredError(squared=False),
@@ -81,6 +128,9 @@ def regression_metrics(split: str):
 
 @dataclass(slots=True)
 class PreparePEFT:
+    """
+    Prepare the model for training with PEFT
+    """
     train_config: dataclass = field(default_factory=TrainConfig)
     llm_config: dataclass = field(default_factory=LLMConfig)
     lora_init: str | bool = True
@@ -119,7 +169,32 @@ class PreparePEFT:
     def get_lora_config(rank: int, target_modules: str | list[str], lora_alpha: int | None=None, 
                         lora_dropout: float=0.05, use_dora: bool=True, lora_init: str | bool=True,
                         modules_to_save: str | list[str] = ["classifier.dense", "classifier.out_proj"]):
-        
+        """
+        Get the LoraConfig for the model
+
+        Parameters
+        ----------
+        rank : int
+            The rank of the Lora model. The higher the more costly and could lead to overfitting, but better performance
+        target_modules : str | list[str]
+            The target modules to apply the Lora model to
+        lora_alpha : int | None, optional
+            The alpha value for the Lora model, by default None
+        lora_dropout : float, optional
+            The dropout value for the Lora model, by default 0.05
+        use_dora : bool, optional
+            Whether to use Dora, by default True (it improves on Lora)
+        lora_init : str | bool, optional
+            The initialization for the Lora model, by default True (pissa, loftq, random, guassian)
+        modules_to_save : str | list[str], optional
+            The modules to save, by default ["classifier.dense", "classifier.out_proj"], the name is the same for regression
+            For Hugging Face at least
+
+        Returns
+        -------
+        LoraConfig
+            The LoraConfig for the model
+        """
         if lora_alpha is None:
             lora_alpha = rank * 2
         else:
@@ -134,7 +209,14 @@ class PreparePEFT:
         
         return peft_config
 
-    def setup_model(self):
+    def setup_model(self) -> PreTrainedModel:
+        """
+        Setup the model for training
+
+        Returns
+        -------
+        PreTrainedModel
+        """
         if self.train_config.qlora:
             bnb_config = BitsAndBytesConfig(
                         load_in_4bit=True,
@@ -155,7 +237,14 @@ class PreparePEFT:
             model = prepare_model_for_kbit_training(model)
         return model
     
-    def prepare_model(self):
+    def prepare_model(self) -> PeftModel:
+        """
+        Prepare the model for training with PEFT
+
+        Returns
+        -------
+        PeftModel
+        """
         model = self.setup_model()
         peft_config = self.get_lora_config(rank=self.train_config.lora_rank, 
                                            target_modules=self.train_config.target_modules, 
@@ -171,6 +260,9 @@ class PreparePEFT:
 
 @dataclass
 class PrepareSplit:
+    """
+    Prepare the data for training using custtom splitters and Datasets
+    """
     cluster_file: str | None = None
     shuffle: bool = True
     random_seed: int = 21321412
@@ -179,7 +271,20 @@ class PrepareSplit:
     stratify: bool | None = None
     test_size: float = 0.2
     
-    def get_split_indices(self, dataset: Dataset):
+    def get_split_indices(self, dataset: Dataset) -> tuple:
+        """
+        Get the split indices for the dataset
+
+        Parameters
+        ----------
+        dataset : Dataset
+            The dataset to split
+
+        Returns
+        -------
+        tuple
+            The train and test indices
+        """
         if self.splitting_strategy == "cluster":
             cluster = split.ClusterSpliter(self.cluster_file, self.num_split, 
                                            shuffle=self.shuffle, random_state=self.random_seed)
@@ -190,7 +295,20 @@ class PrepareSplit:
                                            test_size=self.test_size)
         return train, test
 
-    def get_data(self, dataset: Dataset):
+    def get_data(self, dataset: Dataset) -> tuple:
+        """
+        Get the data for training using the indices
+
+        Parameters
+        ----------
+        dataset : Dataset
+            The dataset to split
+
+        Returns
+        -------
+        tuple
+            The train, validation and test datasets
+        """
         train_indices, test_indices = self.get_split_indices(dataset)
         train_, test = dataset.select(train_indices), dataset.select(test_indices)
         train_indices, validation_indices = self.get_split_indices(train_)
@@ -201,6 +319,24 @@ class PrepareSplit:
 class DataModule(LightningDataModule):
     def __init__(self, splitter: PrepareSplit, fasta_file: str | Path, label: np.array, 
                  config: LLMConfig = LLMConfig(), batch_size: int=1, tokenizer_args: dict=dict()) -> None:
+        """
+        Prepare the data for training
+
+        Parameters
+        ----------
+        splitter : PrepareSplit
+            The splitter to use for the data
+        fasta_file : str | Path
+            The path to the fasta file
+        label : np.array
+            The labels for the fasta file
+        config : LLMConfig, optional
+            The config for the language model, by default LLMConfig()
+        batch_size : int, optional
+            The batch size, by default 1
+        tokenizer_args : dict, optional
+            The arguments to pass to the tokenizer, by default dict()
+        """
         super().__init__()
         self.splitter = splitter
         self.fasta_file = fasta_file
@@ -215,18 +351,22 @@ class DataModule(LightningDataModule):
         self.dataset = tokenizer.tokenize(self.fasta_file, add_columns=self.label)
         
     def setup(self, stage: str):
+        """Split the data into train, validation and test sets."""
         train, validation, test = self.splitter.get_data(self.dataset)
         self.train = train
         self.validation = validation
         self.test = test
         
     def train_dataloader(self):
+        """Return the training dataloader."""
         return DataLoader(self.train, batch_size=self.batch_size)
 
     def val_dataloader(self):
+        """Return the validation dataloader."""
         return DataLoader(self.validation, batch_size=self.batch_size)
 
     def test_dataloader(self):
+        """Return the test dataloader."""
         return DataLoader(self.test, batch_size=self.batch_size)
 
 
@@ -237,6 +377,18 @@ class TransformerModule(LightningModule):
         train_config: dataclass,
         lr: float
     ):
+        """
+        Initialize the LightningModule with the model, training configuration and learning rate.
+
+        Parameters
+        ----------
+        model : PeftModel
+            The model to train
+        train_config : dataclass
+            The training configuration
+        lr : float
+            The learning rate
+        """
         super().__init__()
 
         self.model = model
@@ -262,11 +414,25 @@ class TransformerModule(LightningModule):
         self,
         input_ids: list[int],
         attention_mask: list[int],
-        label: list[int] | None = None,
-    ):
-        """Calc the loss by passing inputs to the model and comparing against ground
-        truth labels. Here, all of the arguments of self.model comes from the
+        label: list[int] | None = None):
+        """
+        Calculate the logits and the loss by passing inputs to the model and comparing against ground truth labels. 
+        Here, all of the arguments of self.model comes from the
         SequenceClassification head from HuggingFace.
+
+        Parameters
+        ----------
+        input_ids : list[int]
+            The input ids
+        attention_mask : list[int]
+            The attention mask
+        label : list[int] | None, optional
+            The labels, by default None
+
+        Returns
+        -------
+        dict
+            The logits and the loss
         """
         return self.model(
             input_ids=input_ids,
@@ -275,7 +441,7 @@ class TransformerModule(LightningModule):
         )
 
     def _compute_predictions(self, batch) -> tuple:
-        """Helper method hosting the evaluation logic common to the <split>_step methods."""
+        """Helper method hosting the evaluation logic common to the validation and test steps."""
         outputs = self(
             input_ids=batch["input_ids"],
             attention_mask=batch["attention_mask"],
@@ -290,6 +456,7 @@ class TransformerModule(LightningModule):
         return outputs, pred
 
     def training_step(self, batch, batch_idx):
+        """Perform a training step on the batch."""
         outputs, preds = self._compute_predictions(batch)
         for metric in self.train_metrics.values():
             metric.to(preds.device)
@@ -299,12 +466,14 @@ class TransformerModule(LightningModule):
         return outputs["loss"] # the automodel has its own loss function depending on the problem
     
     def on_training_epoch_end(self):
+        """Log the accumulated training metrics at the end of an epoch."""
         # Log the accumulated training metrics
         for name, metric in self.train_metrics.items():
             self.log(f'{name}', metric.compute())
             metric.reset()
             
     def validation_step(self, batch, batch_idx) -> dict[str, Any]:
+        """Perform a validation step on the batch."""
         outputs, preds = self._compute_predictions(batch)
         for metric in self.val_metrics.values():
             metric.to(preds.device)
@@ -313,12 +482,14 @@ class TransformerModule(LightningModule):
         return outputs["loss"]
     
     def on_validation_epoch_end(self):
+        """Log the accumulated validation metrics at the end of an epoch."""
         # Log the accumulated validation metrics
         for name, metric in self.val_metrics.items():
             self.log(f'{name}', metric.compute())
             metric.reset()
 
     def test_step(self, batch, batch_idx) -> dict[str, Any]:
+        """Perform a test step on the batch."""
         outputs, preds = self._compute_predictions(batch)
         for metric in self.test_metrics.values():
             metric.to(preds.device)
@@ -328,14 +499,15 @@ class TransformerModule(LightningModule):
         return outputs["loss"]
     
     def on_test_epoch_end(self):
+        """ Log the accumulated test metrics at the end of an epoch."""
         # Log the accumulated test metrics
         for name, metric in self.test_metrics.items():
             self.log(f'{name}', metric.compute())
             metric.reset()
 
     def predict_step(self, batch, batch_idx, dataloader_idx=None):
-        """Predict the output of the model.
-        
+        """Predict the output of the model. Use as below (when you have the data_loader object):
+        If not you can just use model(**batch) to get the predictions (see the forward method).
         Example:
         --------
         >>> data_loader = DataLoader(...)
@@ -357,6 +529,7 @@ class TransformerModule(LightningModule):
         return pred
 
     def configure_optimizers(self) -> Optimizer:
+        """Configure the optimizer and the learning rate scheduler."""
         if not self.train_config.qlora:
             optim = AdamW(params=self.parameters(), lr=self.lr, weight_decay=self.train_config.weight_decay)
         else:
@@ -371,8 +544,36 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
                   tokenizer_args: dict=dict(), 
                   lightning_trainer_args: dict = dict(),
                   use_best_model: bool = True) -> tuple[TransformerModule, DataModule, str]:
-    """Train and checkpoint the model with highest score; log that model to MLflow and
-    return it."""
+    """
+    Train the model using the fasta file and the labels checkpoint the model with highest score; log that model to MLflow and
+    return it
+
+    Parameters
+    ----------
+    fasta_file : str | Path
+        The path to the fasta file
+    label : np.array
+        The labels for the fasta file
+    lr : float, optional
+        The learning rate, by default 1e-3
+    train_config : dataclass, optional
+        The training configuration, by default TrainConfig()
+    llm_config : dataclass, optional
+        The language model configuration, by default LLMConfig()
+    split_config : dataclass, optional
+        The splitting configuration, by default SplitConfig()
+    tokenizer_args : dict, optional
+        The arguments to pass to the tokenizer, by default dict()
+    lightning_trainer_args : dict, optional
+        The arguments to pass to the lightning trainer, by default dict()
+    use_best_model : bool, optional
+        Whether to use the best model saved with checkpoint, by default True
+
+    Returns
+    -------
+    tuple[TransformerModule, DataModule, str]
+        The trained model, the data module and the path to the best model
+    """
     seed_everything(split_config.random_seed, workers=True)
     splitter = PrepareSplit(split_config.cluster_file, split_config.shuffle, split_config.random_seed, 
                             split_config.splitting_strategy, 
@@ -423,3 +624,27 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
             
     return light_mod, data_module, best_model_path
 
+def main():
+    args = parse_args()
+    # Convert JSON strings to dictionaries
+    tokenizer_args = load_config(args.tokenizer_args, extension=args.tokenizer_args.split(".")[-1])
+    lightning_trainer_args = load_config(args.lightning_trainer_args, extension=args.lightning_trainer_args.split(".")[-1])
+
+    # Load label array from file
+    label = np.load(args.label)
+    # Placeholder for loading configurations from files if provided
+    train_config = TrainConfig(**load_config(args.train_config, 
+                                             extension=args.train_config.split(".")[-1])) if args.train_config else TrainConfig()
+    llm_config = LLMConfig(**load_config(args.llm_config, 
+                                         extension=args.llm_config.split(".")[-1])) if args.llm_config else LLMConfig()
+    split_config = SplitConfig(**load_config(args.split_config,  
+                                             extension=args.split_config.split(".")[-1])) if args.split_config else SplitConfig()
+
+    # Placeholder for the training loop call
+    model, data_module, best_model_path = training_loop(args.fasta_file, label, args.lr,
+                                                        train_config, llm_config, split_config,
+                                                        tokenizer_args, lightning_trainer_args,
+                                                        args.use_best_model)
+
+if __name__ == "__main__":
+    main()
