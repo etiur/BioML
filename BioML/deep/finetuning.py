@@ -633,12 +633,9 @@ def main():
     # Load label array from file
     label = np.load(args.label)
     # Placeholder for loading configurations from files if provided
-    train_config = TrainConfig(**load_config(args.train_config, 
-                                             extension=args.train_config.split(".")[-1])) if args.train_config else TrainConfig()
-    llm_config = LLMConfig(**load_config(args.llm_config, 
-                                         extension=args.llm_config.split(".")[-1])) if args.llm_config else LLMConfig()
-    split_config = SplitConfig(**load_config(args.split_config,  
-                                             extension=args.split_config.split(".")[-1])) if args.split_config else SplitConfig()
+    train_config = TrainConfig(**load_config(args.train_config, extension=args.train_config.split(".")[-1]))
+    llm_config = LLMConfig(**load_config(args.llm_config, extension=args.llm_config.split(".")[-1]))
+    split_config = SplitConfig(**load_config(args.split_config, extension=args.split_config.split(".")[-1]))
 
     # Placeholder for the training loop call
     model, data_module, best_model_path = training_loop(args.fasta_file, label, args.lr,
