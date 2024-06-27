@@ -17,11 +17,11 @@ from torchmetrics.classification import (
     Accuracy, F1Score, Precision, Recall, AUROC, AveragePrecision, CohenKappa, MatthewsCorrCoef) 
 from torchmetrics.regression import (
     MeanAbsoluteError, MeanSquaredError,  PearsonCorrCoef, KendallRankCorrCoef, R2Score,
-    MeanAbsolutePercentageError, MeanSquaredLogError)
+    MeanAbsolutePercentageError, MeanSquaredLogError, SpearmanCorrCoef)
 import numpy as np
 from pathlib import Path
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
-from lightning.pytorch.loggers import MLFlowLogger
+from lightning.pytorch.loggers import MLFlowLogger, CSVLogger
 import mlflow
 from .embeddings import TokenizeFasta
 from .train_config import LLMConfig, SplitConfig, TrainConfig
@@ -122,7 +122,8 @@ def regression_metrics(split: str) -> dict:
                 f"{split}_Pearson": PearsonCorrCoef(),
                 f"{split}_Kendall": KendallRankCorrCoef(),
                 f"{split}_MAPE": MeanAbsolutePercentageError(),
-                f"{split}_MSLE": MeanSquaredLogError()}
+                f"{split}_MSLE": MeanSquaredLogError(),
+                f"{split}_Spearman": SpearmanCorrCoef()}
     return metrics
 
 
@@ -591,8 +592,8 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
         # TODO: MLflow metrics should show epochs rather than steps on the x-axis
         
         mlf_logger = MLFlowLogger(experiment_name=mlflow.get_experiment(run.info.experiment_id).name, 
-                                  tracking_uri=mlflow.get_tracking_uri(), log_model=True)
-        
+                                  tracking_uri=mlflow.get_tracking_uri(), log_model=True, save_dir=train_config.log_save_dir)
+        csv_logger = CSVLogger(save_dir=train_config.log_save_dir, name=train_config.csv_experiment_name)
         mlf_logger._run_id = run.info.run_id
         mlflow.log_params({k: v for k, v in asdict(train_config).items() if not k.startswith("mlflow_")})
         mlflow.log_params({k: v for k, v in asdict(split_config).items() if not k.startswith("mlflow_")})
@@ -608,7 +609,7 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
         trainer = Trainer(callbacks=[checkpoint_callback, early_callback], default_root_dir=train_config.model_checkpoint_dir,
                           fast_dev_run=bool(train_config.debug_mode_sample), max_epochs=train_config.max_epochs, 
                           max_time=train_config.max_time, precision=train_config.precision,
-                          logger=mlf_logger, accumulate_grad_batches=train_config.accumulate_grad_batches, 
+                          logger=[mlf_logger, csv_logger], accumulate_grad_batches=train_config.accumulate_grad_batches, 
                           deterministic=train_config.deterministic,**lightning_trainer_args)
         
         trainer.fit(model=light_mod, datamodule=data_module)
