@@ -55,9 +55,10 @@ def parse_args():
                         help="JSON string of arguments to pass to the tokenizer (optional). json or yaml file.")
     parser.add_argument("--lightning_trainer_args", type=str, default="{}",
                         help="JSON string of arguments to pass to the lightning trainer (optional). json or yaml file. ")
-    parser.add_argument("--use_best_model", action="store_true",
+    parser.add_argument("-u","--use_best_model", action="store_true",
                         help="Whether to use the best model saved with checkpoint. Default is True. json or yaml file.")
-
+    parser.add_argument("-l", "--lora_init", type=str, default="True", 
+                        help="The initialization for the Lora model. Default is True.")
     return parser.parse_args()
 
 
@@ -544,7 +545,7 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
                   llm_config: dataclass = LLMConfig(), split_config: dataclass=SplitConfig(), 
                   tokenizer_args: dict=dict(), 
                   lightning_trainer_args: dict = dict(),
-                  use_best_model: bool = True) -> tuple[TransformerModule, DataModule, str]:
+                  use_best_model: bool = True, lora_init: bool | str = True) -> tuple[TransformerModule, DataModule, str]:
     """
     Train the model using the fasta file and the labels checkpoint the model with highest score; log that model to MLflow and
     return it
@@ -569,7 +570,9 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
         The arguments to pass to the lightning trainer, by default dict()
     use_best_model : bool, optional
         Whether to use the best model saved with checkpoint, by default True
-
+    lora_init : bool | str, optional
+        The initialization for the Lora model, by default True
+        
     Returns
     -------
     tuple[TransformerModule, DataModule, str]
@@ -582,7 +585,7 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
     
     data_module = DataModule(splitter, fasta_file, label, llm_config, train_config.batch_size, tokenizer_args)
 
-    peft = PreparePEFT(train_config, llm_config)
+    peft = PreparePEFT(train_config, llm_config, lora_init=lora_init)
     model = peft.prepare_model()
     light_mod = TransformerModule(model, train_config, lr=lr)
 
@@ -592,8 +595,10 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
         # TODO: MLflow metrics should show epochs rather than steps on the x-axis
         
         mlf_logger = MLFlowLogger(experiment_name=mlflow.get_experiment(run.info.experiment_id).name, 
-                                  tracking_uri=mlflow.get_tracking_uri(), log_model=True, save_dir=train_config.log_save_dir)
-        csv_logger = CSVLogger(save_dir=train_config.log_save_dir, name=train_config.csv_experiment_name)
+                                  tracking_uri=mlflow.get_tracking_uri(), log_model=True, 
+                                  save_dir=Path(train_config.root_dir) /train_config.log_save_dir)
+        csv_logger = CSVLogger(save_dir=Path(train_config.root_dir) / train_config.log_save_dir, 
+                               name=train_config.csv_experiment_name)
         mlf_logger._run_id = run.info.run_id
         mlflow.log_params({k: v for k, v in asdict(train_config).items() if not k.startswith("mlflow_")})
         mlflow.log_params({k: v for k, v in asdict(split_config).items() if not k.startswith("mlflow_")})
@@ -601,7 +606,8 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
         # Keep the model with the highest user defined score.
     
         filename = f"{{epoch}}-{{{train_config.optimize}:.2f}}"
-        checkpoint_callback = ModelCheckpoint(dirpath=train_config.model_checkpoint_dir, filename=filename, monitor=train_config.optimize, 
+        checkpoint_callback = ModelCheckpoint(dirpath=Path(train_config.root_dir) / train_config.model_checkpoint_dir, 
+                                              filename=filename, monitor=train_config.optimize, 
                                               mode=train_config.optimize_mode, verbose=True, save_top_k=1)
         early_callback = EarlyStopping(monitor=train_config.optimize, min_delta=train_config.min_delta, 
                                        patience=train_config.patience, verbose=True, mode=train_config.optimize_mode)
@@ -621,7 +627,7 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
         
         if use_best_model:
             light_mod = TransformerModule.load_from_checkpoint(best_model_path, model=model)
-            light_mod.model.save_pretrained(train_config.adapter_output) # it only saves PEFT adapters
+            light_mod.model.save_pretrained(Path(train_config.root_dir) / train_config.adapter_output) # it only saves PEFT adapters
             
     return light_mod, data_module, best_model_path
 
@@ -630,7 +636,13 @@ def main():
     # Convert JSON strings to dictionaries
     tokenizer_args = load_config(args.tokenizer_args, extension=args.tokenizer_args.split(".")[-1])
     lightning_trainer_args = load_config(args.lightning_trainer_args, extension=args.lightning_trainer_args.split(".")[-1])
-
+    if args.lora_init == "True":
+        lora_init = True
+    elif args.lora_init == "False":
+        lora_init = False
+    else:
+        lora_init = args.lora_init
+    
     # Load label array from file
     label = np.load(args.label)
     # Placeholder for loading configurations from files if provided
@@ -642,7 +654,7 @@ def main():
     model, data_module, best_model_path = training_loop(args.fasta_file, label, args.lr,
                                                         train_config, llm_config, split_config,
                                                         tokenizer_args, lightning_trainer_args,
-                                                        args.use_best_model)
+                                                        args.use_best_model, lora_init)
 
 if __name__ == "__main__":
     main()
