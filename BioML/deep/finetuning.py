@@ -601,12 +601,12 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
         # Keep the model with the highest user defined score.
     
         filename = f"{{epoch}}-{{{train_config.optimize}:.2f}}"
-        checkpoint_callback = ModelCheckpoint(filename=filename, monitor=train_config.optimize, 
+        checkpoint_callback = ModelCheckpoint(dirpath=train_config.model_checkpoint_dir, filename=filename, monitor=train_config.optimize, 
                                               mode=train_config.optimize_mode, verbose=True, save_top_k=1)
         early_callback = EarlyStopping(monitor=train_config.optimize, min_delta=train_config.min_delta, 
                                        patience=train_config.patience, verbose=True, mode=train_config.optimize_mode)
         # Run the training loop.
-        trainer = Trainer(callbacks=[checkpoint_callback, early_callback], default_root_dir=train_config.model_checkpoint_dir,
+        trainer = Trainer(callbacks=[checkpoint_callback, early_callback], default_root_dir=train_config.root_dir,
                           fast_dev_run=bool(train_config.debug_mode_sample), max_epochs=train_config.max_epochs, 
                           max_time=train_config.max_time, precision=train_config.precision,
                           logger=[mlf_logger, csv_logger], accumulate_grad_batches=train_config.accumulate_grad_batches, 
