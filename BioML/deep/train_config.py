@@ -82,7 +82,6 @@ class TrainConfig:
     optimize: str = "Val_MCC"
     optimize_mode: str = "max"
     # logging params
-
     log_save_dir: str = "LLM_run"
     mlflow_description: str = f"PEFT tune"
     mlflow_run_name: str = f"{uuid.uuid4().hex[:10]}"
