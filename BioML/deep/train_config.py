@@ -56,7 +56,7 @@ class TrainConfig:
     num_classes: int = 2 # classification default
     _objective: str = "classification"
     classi_metrics_threshold: float = 0.5
-    disable_gpu=False
+    disable_gpu: bool =False
     #lora params
     qlora: bool = False
     lora_rank: int = 64
@@ -67,8 +67,8 @@ class TrainConfig:
     modules_to_save: list[str] | str = field(default_factory=lambda: ["classifier.dense", "classifier.out_proj"])
     adapter_output: str = "peft_model"
     # lightning trainer params
-    root_dir="."
-    deterministic: bool = True
+    root_dir: str ="."
+    deterministic: bool = False
     weight_decay: float = 0.01
     model_checkpoint_dir: str = "model_checkpoint"
     accumulate_grad_batches: int = 1
