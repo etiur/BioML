@@ -8,6 +8,7 @@ from typing import Iterable, Sequence, Callable
 from functools import partial
 from dataclasses import dataclass, field
 import pandas as pd
+from iFeatureOmegaCLI import iDNA, iRNA, iLigand, iStructure
 from ..models.base import DataParser
 from ..utilities.utils import rewrite_possum, run_program_subprocess, clean_fasta
 
@@ -306,6 +307,63 @@ class IfeatureFeatures:
             command.extend(command_2)
 
         run_program_subprocess(command, "Ifeature programs")
+
+
+@dataclass
+class OmegaFeatures:
+    file: str | Path
+    molecule: str = "structure"
+    select: None | list[str] | str = None
+    drop: None | list[str] | str = None
+    output: str | Path = "omega_features"
+
+    def __post_init__(self):
+        self.extract = {"structure": iStructure, "DNA": iDNA, 
+                       "RNA": iRNA, "ligand": iLigand}[self.molecule]
+        if self.molecule == "structure":
+            self.file = list(self.file.glob("*.pdb"))
+            self.features = self.get_feature_list(self.extract(self.file[0]))
+        else:
+            self.features = self.get_feature_list(self.extract(self.file))
+
+    def get_feautre_list(self, features):
+        if self.molecule == "structure":
+            feat = list(features._iStructure__cmd_dict.keys())
+        elif self.molecule == "RNA":
+            feat = list(features._iRNA__cmd_dict.keys())
+        elif self.molecule == "DNA":
+            feat = list(features._iDNA__cmd_dict.keys())
+        elif self.molecule == "ligand":
+            feat = list(features._iLigand__cmd_dict.keys())
+        return feat     
+
+    def extract_feature(self, extractor):
+        features = {}
+        for feat in self.features:
+            extractor.get_descriptor(feat)
+            if extractor.encodings is not None and not len(features):
+                features[feat] = extractor.encodings
+            
+            test = features[-1].columns[0] if len(features) else None
+            if extractor.encodings is not None and test not in extractor.encodings.columns:
+                features[feat] = extractor.encodings
+        return pd.concat(features, axis=1)
+
+    def extract_multiple_features(self):
+        output = Path(self.output)
+        output.mkdir(parents=True, exist_ok=True)
+        if self.molecule != "structure":
+            extractor = self.extract(self.file)
+            features = self.extract_feature(extractor)
+            features.to_csv(f"{output}/{self.molecule}_features.csv")
+
+        else:
+            for pdb in self.file:
+                name = Path(pdb).stem
+                extractor = self.extract(pdb)
+                features = self.extract_feature(extractor)
+            
+                features.to_csv(f"{output}/{name}.csv")
 
 
 def return_features(program: str, drop_file: str | Path |None=None, 
