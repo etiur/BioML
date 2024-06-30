@@ -56,7 +56,7 @@ class TrainConfig:
     num_classes: int = 2 # classification default
     _objective: str = "classification"
     classi_metrics_threshold: float = 0.5
-    disable_gpu=False
+    disable_gpu: bool =False
     #lora params
     qlora: bool = False
     lora_rank: int = 64
@@ -67,7 +67,8 @@ class TrainConfig:
     modules_to_save: list[str] | str = field(default_factory=lambda: ["classifier.dense", "classifier.out_proj"])
     adapter_output: str = "peft_model"
     # lightning trainer params
-    deterministic: bool = True
+    root_dir: str ="."
+    deterministic: bool = False
     weight_decay: float = 0.01
     model_checkpoint_dir: str = "model_checkpoint"
     accumulate_grad_batches: int = 1
@@ -81,10 +82,9 @@ class TrainConfig:
     min_delta: float = 0.005
     optimize: str = "Val_MCC"
     optimize_mode: str = "max"
-    # mlflow params
-    mlflow_experiment_name: str = "classification experiment" if num_classes >= 2 else "regression experiment"
-    mlflow_save_dir: str = "LLM_run"
-    mlflow_description: str = f"PEFT tune in {mlflow_experiment_name}."
+    # logging params
+    log_save_dir: str = "LLM_run"
+    mlflow_description: str = f"PEFT tune"
     mlflow_run_name: str = f"{uuid.uuid4().hex[:10]}"
     
     @property
@@ -114,6 +114,34 @@ class TrainConfig:
         if torch.cuda.is_available() and not self.disable_gpu:
             return "16-mixed"
         return self._precision
+    
+    @property
+    def mlflow_experiment_name(self):
+        """
+        Get the device to use for the language model.
+
+        Returns
+        -------
+        str
+            Device to use for the language model.
+        """
+        if self.num_classes == 1:
+            return "Mlflow Regression"
+        return "Mlflow Classification"
+    
+    @property
+    def csv_experiment_name(self):
+        """
+        Get the device to use for the language model.
+
+        Returns
+        -------
+        str
+            Device to use for the language model.
+        """
+        if self.num_classes == 1:
+            return "CSV Regression"
+        return "CSV Classification"
     
     @precision.setter
     def precision(self, value: str):
