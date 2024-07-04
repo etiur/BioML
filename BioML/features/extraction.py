@@ -382,7 +382,7 @@ class OmegaFeatures:
             index = features[done[0]].index
             for k, v in features:
                 v.index = index
-                features[k] = index
+                features[k] = v
         return pd.concat(features, axis=1)
 
     def extract_multiple_features(self):
