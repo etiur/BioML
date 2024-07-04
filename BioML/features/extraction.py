@@ -54,12 +54,15 @@ def arg_parse():
     parser.add_argument("-t", "--new_features", required=False, help="The path to the features from the new samples so "
                                                 "it can be filtered according to the training features")
     parser.add_argument("-cl", "--cleaned_fasta", required=False, help="Name of the cleaned fasta file")
-
+    parser.add_argument("-om", "--omega_type", required=False, choices=("structure", "RNA", "DNA", "ligand"), 
+    help="molecule type for the omega features, if proteins specify in the fasta file the pdb folder. Ligand has to be in SMILE strings. RNA and DNA in fasta format")
+    parser.add_argument("-mout", "--omega_out", required=False, help="The directory for the omega features",
+                        default="omega_features")
     args = parser.parse_args()
 
     return [args.fasta_file, args.pssm_dir, args.ifeature_dir, args.possum_dir, args.ifeature_out,
             args.possum_out, args.extracted_out, args.purpose, args.long, args.run, args.num_thread, args.drop,
-            args.drop_file, args.sheets, args.training_features, args.new_features, args.cleaned_fasta]
+            args.drop_file, args.sheets, args.training_features, args.new_features, args.cleaned_fasta, args.omega_type, args.omega_out]
 
 
 class ExtractFeatures:
@@ -322,48 +325,81 @@ class OmegaFeatures:
                        "RNA": iRNA, "ligand": iLigand}[self.molecule]
         if self.molecule == "structure":
             self.file = list(self.file.glob("*.pdb"))
-            self.features = self.get_feature_list(self.extract(self.file[0]))
+            features = self.get_feature_list(self.extract(self.file[0]))
         else:
-            self.features = self.get_feature_list(self.extract(self.file))
+            features = self.get_feature_list(self.extract(self.file))
+        self.features = self._filter(features)
 
-    def get_feautre_list(self, features):
+    def get_feature_list(self, features):
         if self.molecule == "structure":
             feat = list(features._iStructure__cmd_dict.keys())
+            feat.remove("AC_type1")
+            feat.remove("HSE_CA")
         elif self.molecule == "RNA":
             feat = list(features._iRNA__cmd_dict.keys())
+            feat.remove("KNN")
         elif self.molecule == "DNA":
             feat = list(features._iDNA__cmd_dict.keys())
+            feat.remove("KNN")
         elif self.molecule == "ligand":
-            feat = list(features._iLigand__cmd_dict.keys())
-        return feat     
+            feat = list(features._iLigand__default_para_dict.keys())
+            feat.remove('Atom pairs fingerprints')
+            feat.remove('TopologicalTorsion fingerprints')
+            feat.remove('Daylight-type fingerprints')
+            feat.remove('Morgan fingerprints')
+        elif self.molecule == "protein":
+            feat = list(features._iProtein__cmd_dict.keys())
+            feat.remove("OPF_10bit type 1")
+            feat.remove("KNN")
+        return feat
 
-    def extract_feature(self, extractor):
+    def _filter(self, feat):
+        if self.select:
+            if isinstance(self.select, str): 
+                feat = [self.select]
+            else:
+                feat = self.select
+        if self.drop:
+            for x in self.drop:
+                if x in feat:
+                    feat.remove(x) 
+        return feat
+
+    def extract_feature(self, extractor, index=False):
         features = {}
+        done = []
         for feat in self.features:
             extractor.get_descriptor(feat)
             if extractor.encodings is not None and not len(features):
+                done.append(feat)
                 features[feat] = extractor.encodings
             
             test = features[-1].columns[0] if len(features) else None
             if extractor.encodings is not None and test not in extractor.encodings.columns:
                 features[feat] = extractor.encodings
+                done.append(feat)
+        if index:
+            index = features[done[0]].index
+            for k, v in features:
+                v.index = index
+                features[k] = index
         return pd.concat(features, axis=1)
 
     def extract_multiple_features(self):
         output = Path(self.output)
         output.mkdir(parents=True, exist_ok=True)
-        if self.molecule != "structure":
-            extractor = self.extract(self.file)
-            features = self.extract_feature(extractor)
-            features.to_csv(f"{output}/{self.molecule}_features.csv")
+        extractor = self.extract(self.file)
+        features = self.extract_feature(extractor)
+        features.to_csv(f"{output}/{self.molecule}_features.csv")
 
-        else:
-            for pdb in self.file:
-                name = Path(pdb).stem
-                extractor = self.extract(pdb)
-                features = self.extract_feature(extractor)
-            
-                features.to_csv(f"{output}/{name}.csv")
+    def extract_pdb(self):
+        for pdb in self.file:
+            output = Path(self.output)
+            output.mkdir(parents=True, exist_ok=True)
+            name = Path(pdb).stem
+            extractor = self.extract(pdb)
+            features = self.extract_feature(extractor, True)
+            features.to_csv(f"{output}/{name}_features.csv")
 
 
 def return_features(program: str, drop_file: str | Path |None=None, 
@@ -502,6 +538,16 @@ def read_possum(features: dict[str, list[str]], length: int, index: Iterable[str
     return everything
 
 
+def read_omega(omega_out, omega_type):
+    if omega_type != "structure":
+        data = pd.read_csv(f"{omega_out}/{omega_type}_features.csv", index_col=0)
+    else:
+        file = list(Path(omega_out).glob("*.csv"))
+        data = pd.concat([pd.read_csv(x, index_col=0) for x in file], axis=0)
+
+    return data
+
+
 def read_features(program: str, drop_file: str | Path=None, drop: Iterable[str]=(), 
                   ifeature_out:str|Path="ifeature_features",  
                   possum_out: str | Path="possum_features", file_splits: int=1, 
@@ -560,36 +606,44 @@ def filter_features(new_features: pd.DataFrame, training_features: pd.DataFrame,
 
 def main():
     fasta_file, pssm_dir, ifeature_dir, possum_dir, ifeature_out, possum_out, extracted_out, purpose, \
-    long, run, num_thread, drop, drop_file, sheets, training_features, new_features, clean = arg_parse()
+    long, run, num_thread, drop, drop_file, sheets, training_features, new_features, clean, omega_type, omega_out = arg_parse()
 
     if "extract" in purpose:
         # feature extraction
-        func = {}
-        if clean:
-            clean_fasta(possum_dir, fasta_file, clean)
-            fasta_file = clean
-        extract = ExtractFeatures(fasta_file)
-        extract.separate_bunch()
-        file = list(extract.fasta_file.parent.glob("group_*.fasta"))
-        possum = PossumFeatures(pssm_dir, possum_out, possum_dir, drop_file, drop)
-        ifeature = IfeatureFeatures(ifeature_dir, ifeature_out, drop_file, drop)
-        func["possum"] = partial(possum.extract, long=long)
-        func["ifeature"] = partial(ifeature.extract, long=long)
+        if not omega_type:
+            func = {}
+            if clean:
+                clean_fasta(possum_dir, fasta_file, clean)
+                fasta_file = clean
+            extract = ExtractFeatures(fasta_file)
+            extract.separate_bunch()
+            file = list(extract.fasta_file.parent.glob("group_*.fasta"))
+            possum = PossumFeatures(pssm_dir, possum_out, possum_dir, drop_file, drop)
+            ifeature = IfeatureFeatures(ifeature_dir, ifeature_out, drop_file, drop)
+            func["possum"] = partial(possum.extract, long=long)
+            func["ifeature"] = partial(ifeature.extract, long=long)
 
-        for prog in run:
-            extract.run_extraction_parallel(file, num_thread, func[prog])
+            for prog in run:
+                extract.run_extraction_parallel(file, num_thread, func[prog])
+        else:
+            omega = OmegaFeatures(fasta_file, omega_type, output=omega_out)
+            if omega_type == "structure":
+                omega.extract_pdb()
+            else:
+                omega.extract_multiple_features()
 
     if "read" in purpose:
-        file = list(Path(fasta_file).parent.glob("group_*.fasta"))
-        features = {}
-        for prog in run:
-            features[prog] = read_features(file, prog, drop_file, drop, ifeature_out, possum_out)
+        if not omega_type:
+            file = list(Path(fasta_file).parent.glob("group_*.fasta"))
+            features = {}
+            for prog in run:
+                features[prog] = read_features(file, prog, drop_file, drop, ifeature_out, possum_out)
 
-        if len(features.values()) == 2 :
-            features["possum"].index == features["ifeature"].index
+            if len(features.values()) == 2 :
+                features["possum"].index == features["ifeature"].index
 
-        every_features = pd.concat(features.values(), axis=1)
-        every_features.to_csv(f"{extracted_out}/every_features.csv")
+            every_features = pd.concat(features.values(), axis=1)
+            every_features.to_csv(f"{extracted_out}/every_features.csv")
 
     if "filter" in purpose:
         # feature filtering
@@ -599,7 +653,7 @@ def main():
         if new_features:
             every_features = new_features
         try:
-            new_features = training_features.read_features(every_features)
+            new_features = DataParser.read_features(every_features)
         except NameError as exe:
             raise NameError("You have not defined the new features from the new samples to perform the filtering, use -t argument") from exe
         filter_features(new_features, train_features.features, Path(extracted_out) / "new_features.csv")
