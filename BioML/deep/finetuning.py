@@ -213,7 +213,7 @@ class PreparePEFT:
 
     def setup_model(self) -> PreTrainedModel:
         """
-        Setup the model for training
+        Setup the model for training, you can override this method to use your own huggingface model
 
         Returns
         -------

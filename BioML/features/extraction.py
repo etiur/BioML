@@ -8,7 +8,6 @@ from typing import Iterable, Sequence, Callable
 from functools import partial
 from dataclasses import dataclass, field
 import pandas as pd
-from iFeatureOmegaCLI import iDNA, iRNA, iLigand, iStructure
 from ..models.base import DataParser
 from ..utilities.utils import rewrite_possum, run_program_subprocess, clean_fasta
 
@@ -321,6 +320,7 @@ class OmegaFeatures:
     output: str | Path = "omega_features"
 
     def __post_init__(self):
+        from iFeatureOmegaCLI import iDNA, iRNA, iLigand, iStructure
         self.extract = {"structure": iStructure, "DNA": iDNA, 
                        "RNA": iRNA, "ligand": iLigand}[self.molecule]
         if self.molecule == "structure":
