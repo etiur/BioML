@@ -37,8 +37,6 @@ def arg_parse():
     parser.add_argument("-e", "--excel_file", required=False,
                         help="The file path to where the selected features will be saved in excel format",
                         default="training_features/selected_features.xlsx")
-    parser.add_argument("-ts", "--test_size", required=False, type=float,
-                        help="The test size of the split", default=0.2)
     parser.add_argument("-rt", "--rfe_steps", required=False, type=int,
                         help="The number of steps for the RFE algorithm, the more step the more precise "
                              "but also more time consuming and might lead to overfitting", default=30)
@@ -54,7 +52,7 @@ def arg_parse():
     args = parser.parse_args()
 
     return [args.features, args.label, args.variance_threshold, args.feature_range, args.num_thread, args.scaler,
-            args.excel_file, args.test_size, args.rfe_steps, args.plot, args.plot_num_features,
+            args.excel_file, args.rfe_steps, args.plot, args.plot_num_features,
             args.seed, args.problem]
 
 
@@ -275,7 +273,7 @@ class DataReader:
 class FeatureSelection:
     def __init__(self, excel_file: str | Path, filter_args: SelectionArguments, 
                  num_thread: int =10, seed: int | None=None, 
-                 scaler: str="robust", test_size: float=0.2):
+                 scaler: str="robust"):
         """
         A class for performing feature selection on a dataset.
 
@@ -306,7 +304,6 @@ class FeatureSelection:
         self.excel_file.parent.mkdir(parents=True, exist_ok=True)
         if seed: self.seed = seed
         else: self.seed = int(time.time())
-        self.test_size = test_size
         # log parameters
         self.log.info("Starting feature selection and using the following parameters")    
         self.log.info(f"seed: {self.seed}")
@@ -667,7 +664,7 @@ def translate_range_str_to_list(feature_range: str) -> tuple[int | None, int | N
 
 
 def main():
-    features, label, variance_threshold, feature_range, num_thread, scaler, excel_file, test_size, rfe_steps, plot, \
+    features, label, variance_threshold, feature_range, num_thread, scaler, excel_file, rfe_steps, plot, \
         plot_num_features, seed, problem = arg_parse()
 
     num_features_min, num_features_max, step = translate_range_str_to_list(feature_range)
@@ -682,7 +679,7 @@ def main():
     elif problem == "regression":
         filters = FeatureRegression()
     
-    selection = FeatureSelection(excel_file, filters, num_thread, seed, scaler, test_size)
+    selection = FeatureSelection(excel_file, filters, num_thread, seed, scaler)
 
 
     selection.construct_features(training_data.features, training_data.features, training_data.label, feature_range, 
