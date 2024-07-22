@@ -7,7 +7,7 @@ import time
 from pycaret.classification import ClassificationExperiment
 from pycaret.regression import RegressionExperiment
 from sklearn.metrics import average_precision_score
-from typing import Iterable
+from typing import Iterable, Sequence
 import warnings
 from collections import defaultdict
 from typing import Protocol
@@ -206,8 +206,8 @@ class PycaretInterface:
     experiment_name: str | None = None
     log_experiment: bool = True
     # No need to provide values
-    _plots: list[str] = field(init=False)
-    _final_models: list[str] = field(init=False)
+    _plots: Sequence[str] = field(init=False)
+    _final_models: Sequence[str] = field(init=False)
     original_plots: list[str] = field(init=False)
     original_models: list[str] = field(init=False)
     model: ClassificationExperiment | RegressionExperiment = field(init=False, repr=False, compare=False)
@@ -251,7 +251,7 @@ class PycaretInterface:
         self.log.info(f"Output path: {self.output_path}")
     
     @staticmethod
-    def _check_value(value: str | Iterable[str] | Any, element_list: list[str], element_name: str) -> list[str]:
+    def _check_value(value: str | Sequence[str] | Any, element_list: list[str], element_name: str) -> Sequence[str]:
         """
         To set the value of the plots and models
 
@@ -277,7 +277,7 @@ class PycaretInterface:
             If the value is not a string or an array of strings
         """
         if not len(value):
-            return ()
+            return []
         if isinstance(value, (list, np.ndarray, tuple, set)):
             if isinstance(value[0], str):
                 test = list(set(value).difference(element_list))
@@ -294,19 +294,19 @@ class PycaretInterface:
         return value
 
     @property
-    def plots(self) -> list[str]:
+    def plots(self) -> Sequence[str]:
         """
         The plots that should be saved
         """
         return self._plots
     
     @plots.setter
-    def plots(self, value):
+    def plots(self, value: str | Sequence[str]):
         
         self._plots = self._check_value(value, self.original_plots, "plots")
 
     @property
-    def final_models(self) -> list[str]:
+    def final_models(self) -> Sequence[str]:
         """
         The models to be used for classification or regression use one of the keys, 
         you can include custom models
@@ -368,7 +368,7 @@ class PycaretInterface:
         self._final_models = self._check_value(value, self.original_models, "models")
 
     def setup_training(self, feature: pd.DataFrame, label_name: str, fold: int=5, 
-                       test_size:float=0.2, k: int=6, penalty: int=2, 
+                       test_size:float=0.2, k: int=8, penalty: int=2, 
                        **kwargs: Any):
         """
         Call pycaret set_up for the training.
@@ -396,9 +396,11 @@ class PycaretInterface:
                            **kwargs)
 
         if self.objective == "classification":
+            self.log.info("Added metrics for classification: Average precision")
             self.pycaret.add_metric("averagePre", "Average Precision Score", average_precision_score,  # type: ignore
                                    average="weighted", target="pred_proba", multiclass=False)
         elif self.objective == "regression":
+            self.log.info(f"Added metrics for regression: NDCG k={k}, penalty={penalty} and Pearson")
             self.pycaret.add_metric("ndcg", "NDCG", ndcg_at_k, k=k, penalty=penalty) # type: ignore
             self.pycaret.add_metric("pearson", "Pearson", pear_r, **kwargs) # type: ignore
             
@@ -870,7 +872,7 @@ class Trainer:
         self.log.info("--------Retuning the best models--------")
         for key, model in list(sorted_models.items())[:self.experiment.best_model]:
             self.log.info(f"Retuning {key}")
-            if key in ["nb", "svm"] or (key not in self.experiment.final_models and not custom_grid):
+            if key in ["nb", "svm", "par"] or (key not in self.experiment.final_models and not custom_grid):
                 new_models[key] = model
             else:
                 tuned_model, results, params =  self.experiment.retune_model(key, model, self.num_iter, fold=self.num_splits, custom_grid=custom_grid)

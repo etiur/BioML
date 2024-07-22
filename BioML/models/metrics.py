@@ -5,7 +5,7 @@ from scipy.stats import pearsonr
 
 
 def ndcg_at_k(true_relevance: pd.Series, predicted_ranking: Iterable[int | float], 
-              k: int=10, form: str="exp", penalty: int=15, **kwargs):
+              k: int=10, form: str="exp", penalty: int=3, **kwargs):
     """
     Compute the Normalized Discounted Cumulative Gain at k (NDCG@k) for a given ranking.
 
