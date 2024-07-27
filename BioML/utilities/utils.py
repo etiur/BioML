@@ -17,6 +17,31 @@ import tempfile
 
 
 def load_config(file_path: str | Path, extension: str="json") -> dict:
+    """
+    Load a configuration file and return its contents as a dictionary.
+
+    Parameters
+    ----------
+    file_path : str or Path
+        The path to the configuration file.
+    extension : str, optional
+        The file extension. Defaults to "json".
+
+    Returns
+    -------
+    dict
+        The contents of the configuration file as a dictionary.
+
+    Raises
+    ------
+    ValueError
+        If the file extension is not supported.
+
+    Examples
+    --------
+    >>> load_config("path/to/config.json")
+    {'key1': 'value1', 'key2': 'value2'}
+    """
     file_path = Path(file_path)
     if file_path.exists():
         with open(file_path) as file:
@@ -27,6 +52,7 @@ def load_config(file_path: str | Path, extension: str="json") -> dict:
             else:
                 raise ValueError(f"Unsupported file extension: {extension}")
     else:
+        print("no concent found returning empty {}")
         return {}
 
 class Log:
@@ -139,14 +165,14 @@ class Threshold:
     input_data : pd.DataFrame
         The data to apply the threshold
     output_csv : str or Path object
-        The path to the output CSV file.
+        The path to the output label CSV file.
 
     Methods
     -------
     apply_threshold(threshold) -> None
         Apply a threshold to the regression labels.
     save_csv() -> None
-        Save the CSV file to disk.
+        Save the new classification labels into the CSV file to disk.
     
     Notes
     -----
@@ -158,9 +184,8 @@ class Threshold:
     >>> from utilities import Threshold
     >>> import pandas as pd
     >>> data = pd.read_csv('data/data.csv')
-    >>> threshold = Threshold(data, 'data/data_threshold.csv')
-    >>> threshold.apply_threshold(0.5)
-    >>> threshold.save_csv()
+    >>> threshold = Threshold(data, 'data/regression_to_classification_label.csv')
+    >>> threshold.save_csv(0.5, greater=True, column_name='temperature')
     """
 
     def __init__(self, input_data: pd.DataFrame, output_csv: str | Path):
@@ -168,7 +193,8 @@ class Threshold:
         self.output_csv = Path(output_csv)
         self.output_csv.parent.mkdir(exist_ok=True, parents=True)
 
-    def apply_threshold(self, threshold: float, greater: bool=True, column_name: str='temperature'):
+    def apply_threshold(self, threshold: float, column_name: str,
+                        greater: bool=True):
         """
         Convert a regression problem to a classification problem by applying a threshold to a column in the dataset.
 
@@ -176,10 +202,11 @@ class Threshold:
         ----------
         threshold : float
             The threshold value to apply.
-        greater : bool, default=True
-            A boolean value to indicate if the threshold is greater or lower.
-        column_name : str, default='temperature'
+        column_name : str
             The name of the column to apply the threshold to.
+        greater : bool, default=True
+            A boolean value to indicate if the positive class or the label 1 is for the values that are 
+            greater or lower than the threshold.
 
         Returns
         -------
@@ -217,8 +244,8 @@ class Threshold:
         print(f"using the threshold {threshold} returns these proportions", Counter(data))
         return data
 
-    def save_csv(self, threshold: int | float, greater: bool=True, column_name: str='temperature'):
-        data = self.apply_threshold(threshold, greater, column_name)
+    def save_csv(self, threshold: int | float, column_name: str, greater: bool=True):
+        data = self.apply_threshold(threshold, column_name, greater)
         data.to_csv(self.output_csv)
 
 

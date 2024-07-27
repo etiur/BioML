@@ -872,7 +872,7 @@ class Trainer:
         self.log.info("--------Retuning the best models--------")
         for key, model in list(sorted_models.items())[:self.experiment.best_model]:
             self.log.info(f"Retuning {key}")
-            if key in ["nb", "svm", "par"] or (key not in self.experiment.final_models and not custom_grid):
+            if key in ["nb", "svm", "par", "mlp"] or (key not in self.experiment.final_models and not custom_grid):
                 new_models[key] = model
             else:
                 tuned_model, results, params =  self.experiment.retune_model(key, model, self.num_iter, fold=self.num_splits, custom_grid=custom_grid)

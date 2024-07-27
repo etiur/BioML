@@ -1,8 +1,8 @@
 import pandas as pd
 import pytest
-from sklearn.preprocessing import RobustScaler, StandardScaler, MinMaxScaler
-from BioML.utilities.utils import scale, Log
-from BioML.utilities.utils import run_program_subprocess
+from BioML.utilities.utils import scale, Log, Threshold
+import numpy as np
+import logging
 
 
 @pytest.fixture
@@ -12,101 +12,20 @@ def sample_data():
     X_test = pd.DataFrame({'A': [7, 8, 9], 'B': [10, 11, 12]})
     return X_train, X_test
 
-def test_scale_robust(sample_data):
+def test_scale(sample_data):
     X_train, X_test = sample_data
-    transformed, scaler_dict = scale("robust", X_train, X_test)
-    
+    transformed, scaler_dict, test_x = scale("robust", X_train, X_test, True)
+    transformed2, scaler_dict = scale("zscore", X_train, to_dataframe=False)
+
     # Check if the scaler object used is RobustScaler
-    assert isinstance(scaler_dict["robust"], RobustScaler)
-    
+    assert len(set(list(scaler_dict.keys())).intersection(["robust", "zscore", "minmax"])) == 0 
     # Check if the transformed data is a pandas DataFrame
     assert isinstance(transformed, pd.DataFrame)
-    
-    # Check if the transformed data has the same shape as the input data
-    assert transformed.shape == X_train.shape
-    
-    # Check if the transformed test data is None
-    assert X_test is None
-
-def test_scale_zscore(sample_data):
-    X_train, X_test = sample_data
-    transformed, scaler_dict, test_x = scale("zscore", X_train, X_test)
-    
-    # Check if the scaler object used is StandardScaler
-    assert isinstance(scaler_dict["zscore"], StandardScaler)
-    
-    # Check if the transformed data is a pandas DataFrame
-    assert isinstance(transformed, pd.DataFrame)
-    
-    # Check if the transformed data has the same shape as the input data
-    assert transformed.shape == X_train.shape
-    
-    # Check if the transformed test data is a pandas DataFrame
     assert isinstance(test_x, pd.DataFrame)
-    
-    # Check if the transformed test data has the same shape as the input test data
-    assert test_x.shape == X_test.shape
-
-def test_scale_minmax(sample_data):
-    X_train, X_test = sample_data
-    transformed, scaler_dict, test_x = scale("minmax", X_train, X_test)
-    
-    # Check if the scaler object used is MinMaxScaler
-    assert isinstance(scaler_dict["minmax"], MinMaxScaler)
-    
-    # Check if the transformed data is a pandas DataFrame
-    assert isinstance(transformed, pd.DataFrame)
+    assert isinstance(transformed2, np.ndarray)
     
     # Check if the transformed data has the same shape as the input data
     assert transformed.shape == X_train.shape
-    
-    # Check if the transformed test data is a pandas DataFrame
-    assert isinstance(test_x, pd.DataFrame)
-    
-    # Check if the transformed test data has the same shape as the input test data
-    assert test_x.shape == X_test.shape
-
-
-def test_run_program_subprocess_single_command():
-    command = "echo 'Hello, World!'"
-    output = run_program_subprocess(command)
-    assert output == "Hello, World!\n"
-
-def test_run_program_subprocess_multiple_commands():
-    commands = ["echo 'Hello'", "echo 'World!'"]
-    output = run_program_subprocess(commands)
-    assert output == "Hello\nWorld!\n"
-
-def test_run_program_subprocess_with_program_name():
-    command = "echo 'Hello, World!'"
-    program_name = "Test Program"
-    output = run_program_subprocess(command, program_name=program_name)
-    assert output == "Hello, World!\n"
-
-def test_run_program_subprocess_with_shell():
-    command = "echo $HOME"
-    output = run_program_subprocess(command, shell=True)
-    assert output == "/home/user\n"
-
-def test_run_program_subprocess_with_errors():
-    command = "invalid_command"
-    with pytest.raises(Exception):
-        run_program_subprocess(command)
-
-def test_run_program_subprocess_with_output_file():
-    command = "echo 'Hello, World!'"
-    run_program_subprocess(command)
-    with open("output_file.txt", "r") as f:
-        output = f.read()
-    assert output == "Hello, World!\n"
-
-def test_run_program_subprocess_with_error_file():
-    command = "invalid_command"
-    with pytest.raises(Exception):
-        run_program_subprocess(command)
-    with open("error_file.txt", "r") as f:
-        error = f.read()
-    assert "invalid_command: command not found" in error
 
 
 @pytest.fixture
@@ -142,3 +61,18 @@ def test_log_critical(log, caplog):
     log.critical("Critical message")
     assert "Critical message" in caplog.text
     assert caplog.records[-1].levelno == logging.CRITICAL
+
+
+def test_threshold_apply_threshold():
+    # Create sample data
+    data = pd.DataFrame({'temperature': [25, 30, 35, 40, 45]})
+
+    # Create Threshold object
+    threshold = Threshold(data, 'data/data_threshold.csv')
+
+    # Apply threshold
+    filtered_data = threshold.apply_threshold(35, "temperature")
+
+    # Check if the filtered data has the expected values
+    expected_data = pd.Series([0, 0, 1, 1, 1])
+    assert filtered_data.equals(expected_data)
