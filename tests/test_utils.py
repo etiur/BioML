@@ -1,6 +1,7 @@
 import pandas as pd
 import pytest
-from BioML.utilities.utils import scale, Log, Threshold
+from BioML.utilities.utils import scale, Log, Threshold, read_outlier_file
+
 import numpy as np
 import logging
 
@@ -76,3 +77,23 @@ def test_threshold_apply_threshold():
     # Check if the filtered data has the expected values
     expected_data = pd.Series([0, 0, 1, 1, 1])
     assert filtered_data.equals(expected_data)
+
+
+def test_read_outlier_file(tmp_path):
+    # Create a temporary file with outliers
+    outliers = ("outlier1", "outlier2", "outlier3")
+    file_path = tmp_path / "outliers.txt"
+    with open(file_path, "w") as f:
+        f.write("\n".join(outliers))
+
+    # Test reading outliers from file
+    result = read_outlier_file(file_path)
+    assert result == outliers
+
+    # Test reading outliers from tuple
+    result = read_outlier_file(outliers)
+    assert result == outliers
+
+    # Test reading outliers from non-existent file
+    result = read_outlier_file("non_existent_file.txt")
+    assert result is None

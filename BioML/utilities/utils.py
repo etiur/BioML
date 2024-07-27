@@ -664,7 +664,7 @@ def scale(scaler: str, X_train: pd.DataFrame,
     return transformed, scaler_dict, test_x
 
 
-def read_outlier_file(outliers: tuple[str,...] | str | None=None) -> tuple[str,...] | None:
+def read_outlier_file(outliers: tuple[str,...] | str | None=None) -> tuple[str,...] | str | None:
     """
     Read the outliers from a file.
 
@@ -678,53 +678,32 @@ def read_outlier_file(outliers: tuple[str,...] | str | None=None) -> tuple[str,.
     tuple[str,...] | None
         A tuple containing the outliers.
     """
-    if outliers and Path(outliers[0]).exists():
+    if isinstance(outliers, str) and Path(outliers).exists():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
     return outliers
 
 
-def write_excel(file: str | pd.io.excel._openpyxl.OpenpyxlWriter, 
-                dataframe: pd.DataFrame | pd.Series, sheet_name: str) -> None:
+def write_excel(file_path: str, dataframe: pd.DataFrame, sheet_name: str) -> None:
     """
     Write a pandas DataFrame to an Excel file.
 
     Parameters
     ----------
-    file : str or pandas ExcelWriter object
-        The file path or ExcelWriter object to write to.
-    dataframe : pandas DataFrame object
+    file_path : str
+        The path to the Excel file.
+    dataframe : pandas.DataFrame
         The DataFrame to write to the Excel file.
     sheet_name : str
         The name of the sheet to write to.
-
-    Returns
-    -------
-    None
-
-    Notes
-    -----
-    This function writes a pandas DataFrame to an Excel file. If the file does not exist, it creates a new file. 
-    If the file exists and `overwrite` is set to `True`, it overwrites the file. 
-    If the file exists and `overwrite` is set to `False`, it appends the DataFrame to the existing file. 
-    The function uses the `openpyxl` engine to write to the Excel file.
-
-    Examples
-    --------
-    >>> from utilities import write_excel
-    >>> import pandas as pd
-    >>> df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
-    >>> write_excel('example.xlsx', df, 'Sheet1')
     """
-    if not isinstance(file, pd.io.excel._openpyxl.OpenpyxlWriter):
-        if not Path(file).exists():
-            with pd.ExcelWriter(file, mode="w", engine="openpyxl") as writer:
-                dataframe.to_excel(writer, sheet_name=sheet_name)
-        else:
-            with pd.ExcelWriter(file, mode="a", engine="openpyxl", if_sheet_exists="replace") as writer:
-                dataframe.to_excel(writer, sheet_name=sheet_name)              
+    if not Path(file_path).exists():
+        with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
+            dataframe.to_excel(writer, sheet_name=sheet_name)
     else:
-        dataframe.to_excel(file, sheet_name=sheet_name)
+        with pd.ExcelWriter(file_path, mode="a", engine="openpyxl",
+                            if_sheet_exists="replace") as writer:
+            dataframe.to_excel(writer, sheet_name=sheet_name)
 
 
 def run_program_subprocess(commands: list[str] | str, program_name: str | None=None, 
