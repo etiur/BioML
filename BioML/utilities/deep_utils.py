@@ -8,7 +8,7 @@ from lightning import LightningModule, LightningDataModule, Trainer, seed_everyt
 from lightning.pytorch.tuner import Tuner
 from pathlib import Path
 import pandas as pd
-from .train_config import LLMConfig
+from ..deep.train_config import LLMConfig
 
 
 def estimate_deepmodel_size(model: PreTrainedModel, precision: torch.dtype):
