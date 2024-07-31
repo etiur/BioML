@@ -501,9 +501,12 @@ class MmseqsClustering:
         if generate_searchdb and database_output is None:
             search_db = input_database.with_suffix("")/"searchdb"
             cls.create_database(input_database, search_db)
+        elif generate_searchdb and database_output is not None:
+            search_db = Path(database_output)
+            cls.create_database(input_database, search_db)
         elif not generate_searchdb and database_output is None and database_input:
             search_db = input_database.with_suffix("")/"searchdb"
-        if database_output:
+        elif not generate_searchdb and database_output is not None:
             search_db = Path(database_output)
 
         # generate the pssm files
