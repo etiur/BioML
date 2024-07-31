@@ -88,31 +88,6 @@ class DataReader:
     sheet: str or int or None, optional
         The sheet_name for the excel file. Default is None.
 
-    Attributes
-    ----------
-    label : pd.Series
-        The label column of the CSV file.
-    features : pd.DataFrame
-        The feature columns of the CSV file.
-    variance_thres : float or None
-        The variance threshold for feature selection.
-    checked_label_path : str
-        The file path for the corrected label values if the length between features and labels are different.
-    sheet: str or int
-        The sheet_name for the excel file
-
-    Methods
-    -------
-    preprocess()
-        Preprocesses the feature data using the specified scaler.
-    read_features(features)
-        Reads the feature data from the specified source.
-    read_label(label)
-        Reads the label data from the specified source.
-    _check_label(checked_label_path)
-        Checks if the length of the label data matches the length of the feature data.
-    analyse_composition(features)
-        Analyses the composition of the feature data.
     """
     label: pd.Series | pd.DataFrame | str | Iterable[int|float]
     features: pd.DataFrame | str | list | Iterable[int|float]
