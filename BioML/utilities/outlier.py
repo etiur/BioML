@@ -10,10 +10,12 @@ from pyod.models.ocsvm import OCSVM
 from pyod.models.ecod import ECOD
 from openpyxl import load_workbook
 import pandas as pd
-from BioML.utilities import scale
+import numpy as np
 from pathlib import Path
 import random
 import argparse
+from typing import Iterable
+from .utils import scale
 
 
 def arg_parse():
@@ -22,7 +24,7 @@ def arg_parse():
     parser.add_argument("-e", "--excel", required=False,
                         help="The file to where the selected features are saved in excel format",
                         default="training_features/selected_features.xlsx")
-    parser.add_argument("-o", "--outlier", required=False,
+    parser.add_argument("-o", "--output", required=False,
                         help="The path to the output for the outliers",
                         default="training_results/outliers.csv")
     parser.add_argument("-n", "--num_thread", required=False, default=10, type=int,
@@ -36,17 +38,34 @@ def arg_parse():
 
     args = parser.parse_args()
 
-    return [args.excel, args.outlier, args.scaler, args.contamination, args.num_thread, args.num_features]
+    return [args.excel, args.output, args.scaler, args.contamination, args.num_thread, args.num_features]
 
 
 class OutlierDetection:
-    def __init__(self, feature_file="training_features/selected_features.xlsx", output="training_results/outliers.csv",
-                 scaler="robust", contamination=0.06, num_thread=10, num_feature=1):
+    def __init__(self, feature_file: str, output: str="training_results/outliers.csv", scaler: str="minmax", 
+                 contamination: float=0.06, num_thread: int=10, num_feature: float=1.0):
+        """
+        Class to detect outliers from the selected features
+
+        Parameters
+        ----------
+        feature_file : str
+            The path to the excel file where the selected features are saved
+        output : str, optional
+            The output file, by default "training_results/outliers.csv"
+        scaler : str, optional
+            The scaler used, by default minmax
+        contamination : float, optional
+            How much outliers, by default 0.06
+        num_thread : int, optional
+            To paralelize the training, by default 10
+        num_feature : float, optional
+            The fraction of features to use, by default 1.0
+        """
         self.scaler = scaler
         self.contamination = contamination
         self.feature_file = feature_file
         self.num_threads = num_thread
-        self.book = load_workbook(feature_file, read_only=True)
         self.output = Path(output)
         self.output.parent.mkdir(parents=True, exist_ok=True)
         self.num_feature = num_feature
@@ -54,9 +73,21 @@ class OutlierDetection:
             self.output.with_suffix(".csv")
         self.with_split = True
 
-    def outlier(self, transformed_x):
-        """Given a model it will return all its scores for each of the worksheets"""
+    def validate(self, file):
+        match file:
+            case str() | Path() as  x if str(x).endswith(".xlsx"):
+                book = load_workbook(x, read_only=True)
+                excel_data = self._read_features(x, book.sheetnames)
+                return excel_data
+            case str() | Path() as x if str(x).endswith(".csv"):
+                excel_data = pd.read_csv(file, index_col=0)
+                return {"csv_data":excel_data}
+            case pd.DataFrame() as feat:
+                return {"dataframe":feat}
+            case list() | np.ndarray() | dict() as feat:
+                return {"arrays": pd.DataFrame(feat)}
 
+    def initalize_models(self):
         iforest = IForest(n_estimators=200, random_state=0, max_features=0.8, contamination=self.contamination,
                           n_jobs=self.num_threads)
         knn = KNN(method="mean", contamination=self.contamination, n_jobs=self.num_threads)
@@ -69,7 +100,12 @@ class OutlierDetection:
         ecod = ECOD(contamination=self.contamination, n_jobs=self.num_threads)
         classifiers = {"iforest": iforest, "knn": knn, "bagging": bagging, "hbos": hbos, "abod": abod,
                        "pca": pca, "ocsvm": ocsvm, "ecod": ecod}
+        return classifiers
 
+    def outlier(self, transformed_x):
+        """Given a model it will return all its scores for each of the worksheets"""
+        classifiers = self.initalize_models()
+    
         prediction = {}
         raw = {}
         for name, clf in classifiers.items():
@@ -83,8 +119,22 @@ class OutlierDetection:
         return prediction
 
     @staticmethod
-    def counting(prediction, index):
+    def counting(prediction: dict, index: Iterable[str]):
+        """
+        Given the prediction from outlier detection it will return the number of times each feature was an outlier
 
+        Parameters
+        ----------
+        prediction : dict
+            The prediction from outlier detection
+        index : Iterable[str]
+            The index of the features    
+
+        Returns
+        -------
+        pd.DataFrame
+            A dataframe with the number of times each feature was an outlier
+        """
         pred = {key: pd.DataFrame(value).T for key, value in prediction.items()}
         pred = pd.concat(pred)
         summed = pred.sum()
@@ -92,27 +142,39 @@ class OutlierDetection:
         summed.sort_values(ascending=False, inplace=True)
         return summed
 
-    def _check_features(self, book):
-        features = pd.read_excel(self.feature_file, index_col=0, header=[0, 1], engine='openpyxl')
-        if f"split_{0}" not in features.columns.unique(0):
-            self.with_split = False
-        if self.with_split:
-            new_excel = {}
-            excel_data = pd.read_excel(self.feature_file, index_col=0, sheet_name=book, header=[0, 1])
-            for key, values in excel_data.items():
-                for col in values.columns.unique(level=0):
-                    ind = int(col.split("_")[-1])
-                    new_excel[f"{key}_{ind}"] = values.loc[:, f"split_{ind}"]
-            excel_data = new_excel
-        else:
-            excel_data = pd.read_excel(self.feature_file, index_col=0, sheet_name=book, header=0)
+    @staticmethod
+    def _read_features(feature_file, book):
+        """
+        Read the features from the excel file
+
+        Parameters
+        ----------
+        book : 
+            The excel list of sheets
+
+        Returns
+        -------
+        dict
+            The features from each sheet
+        """
+        excel_data = pd.read_excel(feature_file, index_col=0, sheet_name=book, header=0)
+        excel_data = {key: x.sample(frac=1, random_state=0) for key, x in excel_data.items()}
         return excel_data
 
     def run(self):
+        """
+        Run the outlier detection and save the results
+
+        Returns
+        -------
+        _ : pd.DataFrame
+            The number of times each feature was an outlier
+        """
+        if self.output.exists():
+            return pd.read_csv(self.output, index_col=0)
+        
         results = {}
-        book = self.book.sheetnames
-        excel_data = self._check_features(book)
-        excel_data = {key: x.sample(frac=1, random_state=0) for key, x in excel_data.items()}
+        excel_data = self.validate(self.feature_file)
         scaled_data = []
         for key, x in excel_data.items():
             transformed_x, scaler_dict = scale(self.scaler, x)
@@ -131,8 +193,8 @@ class OutlierDetection:
 
 
 def main():
-    excel, outlier, scaler, contamination, num_thread, num_features = arg_parse()
-    detection = OutlierDetection(excel, outlier, scaler, contamination, num_thread, num_features)
+    excel, output, scaler, contamination, num_thread, num_features = arg_parse()
+    detection = OutlierDetection(excel, output, scaler, contamination, num_thread, num_features)
     detection.run()
 
 
