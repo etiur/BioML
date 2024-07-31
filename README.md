@@ -16,4 +16,4 @@ BioML can extract 3 types of features in the case of protein sequences (in FASTA
 
 The features for the other biomolecules are extracted using [iFeatureOmega](https://github.com/Superzchen/iFeatureOmega-CLI)
 
-In the examples/test_end_to_end.ipynb
+In the [examples/test_end_to_end.ipynb](https://github.com/etiur/BioML/blob/main/examples/test_end_to_end.ipynb) I show all the steps necessary to run BioML from end to end look there for updates

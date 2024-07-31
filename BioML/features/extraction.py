@@ -101,26 +101,26 @@ class ExtractFeatures:
         for ndx in range(0, length, batch_size):
             yield iterable[ndx:min(ndx + batch_size, length)]
 
-    def separate_bunch(self):
+    def separate_bunch(self, base: str = "group"):
         """
         A class that separates the fasta files into smaller fasta files
 
         """
-        if self.fasta_file.with_name("group_1.fasta").exists():
+        if self.fasta_file.with_name(f"{base}_1.fasta").exists():
             return
         
         with open(self.fasta_file) as inp:
             record = list(SeqIO.parse(inp, "fasta"))
             if len(record) > 5_000:
                 for i, batch in enumerate(self._batch_iterable(record, 5_000)):
-                    filename = f"group_{i}.fasta"
+                    filename = f"{base}_{i}.fasta"
                     with open(self.fasta_file.with_name(filename), "w") as split:
                         print(self.fasta_file.with_name(filename))
                         fasta_out = FastaIO.FastaWriter(split, wrap=None)
                         fasta_out.write_file(batch)
                 del record
             else:
-                shutil.copyfile(self.fasta_file, self.fasta_file.with_name("group_1.fasta"))
+                shutil.copyfile(self.fasta_file, self.fasta_file.with_name(f"{base}_1.fasta"))
 
     def run_extraction_parallel(self, file: list[str|Path], num_thread: int, 
                                 *run: Callable[[str|Path], None]):
@@ -623,8 +623,8 @@ def main():
             func["possum"] = partial(possum.extract, long=long)
             func["ifeature"] = partial(ifeature.extract, long=long)
 
-            for prog in run:
-                extract.run_extraction_parallel(file, num_thread, func[prog])
+            extract.run_extraction_parallel(file, num_thread, func["possum"], func["ifeature"])
+            
         else:
             omega = OmegaFeatures(fasta_file, omega_type, output=omega_out)
             if omega_type == "structure":

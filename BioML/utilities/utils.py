@@ -461,10 +461,10 @@ class MmseqsClustering:
         ----------
         input_file : str or Path
             Path to the input sequence file.
-        database_output : str or Path
-            Path to the database output file to create a new database.
         database_input : str or Path
             Path to the database input file to create a new database.
+        database_output : str or Path, optional
+            name of the search database created from the database_input, it is not required
         evalue : float, optional
             E-value threshold for the search, by default 0.01.
         num_iterations : int, optional
@@ -474,7 +474,8 @@ class MmseqsClustering:
         pssm_filename : str or Path, optional
             Path to the output PSSM file, by default "result.pssm".
         generate_searchdb : bool, optional
-            Whether to generate a search database from the database file, by default False.
+            Whether to generate a search database from the database file, by default False. 
+            Set it to True only the first time you run it to create the search database 
         max_seqs : int, optional
             Maximum number of sequences to keep per query, by default 600.
         output_dir : str, optional
