@@ -688,7 +688,7 @@ def read_outlier_file(outliers: tuple[str,...] | str | None=None) -> tuple[str,.
     return outliers
 
 
-def write_excel(file_path: str, dataframe: pd.DataFrame, sheet_name: str) -> None:
+def write_excel(file_path: str | Path, dataframe: pd.DataFrame, sheet_name: str, mode: str="a") -> None:
     """
     Write a pandas DataFrame to an Excel file.
 
@@ -700,8 +700,10 @@ def write_excel(file_path: str, dataframe: pd.DataFrame, sheet_name: str) -> Non
         The DataFrame to write to the Excel file.
     sheet_name : str
         The name of the sheet to write to.
+    mode : str, optional
+        The mode to open the Excel file in. The default is "a".
     """
-    if not Path(file_path).exists():
+    if not Path(file_path).exists() or mode=="w":
         with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
             dataframe.to_excel(writer, sheet_name=sheet_name)
     else:

@@ -379,9 +379,8 @@ class FeatureSelection:
         None
         """
 
-        with pd.ExcelWriter(self.excel_file, mode="w", engine="openpyxl") as writer:
-            for key, value in feature_dict.items():
-                write_excel(writer, value, key)
+        for key, value in feature_dict.items():
+            write_excel(self.excel_file, value, key)
 
     def generate_features(self, filter_args: dict[str, Any], transformed: np.ndarray, Y_train: pd.Series | np.ndarray, 
                           test_x: pd.DataFrame | np.ndarray,
