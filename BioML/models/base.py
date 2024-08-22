@@ -1102,6 +1102,7 @@ class Trainer:
         return prediction_results
 
     def iterate_multiple_features(self, iterator: Iterator, training_output: Path, split_strategy: Any=None, split_index: int=0,
+                                  filter_sheet: str | None | list[str] = None,
                                   **kwargs: Any) -> None:
     
         """
@@ -1116,7 +1117,10 @@ class Trainer:
         split_strategy : Any, optional
             The split strategy to use for training. It has to be a custom split function compatible
             with scikit-learn. Defaults to None which will use the default split strategy from pycaret (stratifiedkfold or kfold)
-
+        split_index : int, optional
+            The index to use for the split. Defaults to 0.
+        filter_sheet : str | None | list[str], optional
+            The sheet name or names to filter, it could be substring or exact matches. Defaults to None.
         Returns
         -------
         None
@@ -1124,6 +1128,8 @@ class Trainer:
 
         performance_list = []
         for input_feature, label_name, sheet in iterator:
+            if filter_sheet is not None and sheet in filter_sheet:
+                continue
             if split_strategy is not None:
                 X_train, X_test, _, _ = split_strategy.train_test_split(input_feature, input_feature[label_name], split_index=split_index)
                 sorted_results, sorted_models, top_params = self.run_training(X_train, label_name, test_data=X_test, 
