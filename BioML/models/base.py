@@ -1102,7 +1102,7 @@ class Trainer:
         return prediction_results
 
     def iterate_multiple_features(self, iterator: Iterator, training_output: Path, split_strategy: Any=None, split_index: int=0,
-                                  filter_sheet: str | None | list[str] = None,
+                                  filter_sheet: str | None | list[str] = None, test_size: float = 0.2,
                                   **kwargs: Any) -> None:
     
         """
@@ -1117,6 +1117,8 @@ class Trainer:
         split_strategy : Any, optional
             The split strategy to use for training. It has to be a custom split function compatible
             with scikit-learn. Defaults to None which will use the default split strategy from pycaret (stratifiedkfold or kfold)
+        test_size : float, optional
+            The proportion of the data to use as a test set. Defaults to 0.2.
         split_index : int, optional
             The index to use for the split. Defaults to 0.
         filter_sheet : str | None | list[str], optional
@@ -1131,7 +1133,9 @@ class Trainer:
             if filter_sheet is not None and sheet in filter_sheet:
                 continue
             if split_strategy is not None:
-                X_train, X_test, _, _ = split_strategy.train_test_split(input_feature, input_feature[label_name], split_index=split_index)
+                X_train, X_test, _, _ = split_strategy.train_test_split(input_feature, input_feature[label_name], 
+                                                                        test_size=test_size, 
+                                                                        split_index=split_index)
                 sorted_results, sorted_models, top_params = self.run_training(X_train, label_name, test_data=X_test, 
                                                             fold_strategy=split_strategy, **kwargs)
             else:

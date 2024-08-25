@@ -184,6 +184,8 @@ class ShuffleGroupKFold:
         # generate the train_test_split
         if self.stratified and y is not None:
             group_kfold = StratifiedGroupKFold(n_splits=len(X)//num_test)
+        elif self.stratified and y is None:
+            raise ValueError("StratifiedGroupKFold requires the target variable")
         else:
             group_kfold = GroupKFold(n_splits=len(X)//num_test)
         for i, (train_index, test_index) in enumerate(group_kfold.split(train_data, train_target, groups=train_group)):
