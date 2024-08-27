@@ -238,6 +238,7 @@ class DataReader:
             fit = variance.fit_transform(self.features)
             features = pd.DataFrame(fit, index=self.features.index, columns=variance.get_feature_names_out())
             
+        if self.outliers:
             self.features = features.loc[[x for x in features.index if x not in self.outliers]]
     
     def __repr__(self):
