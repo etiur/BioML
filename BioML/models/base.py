@@ -1021,7 +1021,7 @@ class Trainer:
             A tuple of dictionary containing the training results and the models.
         """    
         sorted_results, sorted_models, top_params = self.run_training(feature, label_name, **kwargs)
-        if 'dummy' in sorted_results.index.unique(0)[:3]:
+        if 'dummy' in sorted_results.index.unique(0)[:self.experiment.best_model]:
             warnings.warn(f"Dummy model is in the top {list(sorted_results.index.unique(0)).index('dummy')} models")
             tune = False
         if len(sorted_models) == 1 and tune:
