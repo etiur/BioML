@@ -1,5 +1,5 @@
 from pyod.models.abod import ABOD
-# from pyod.models.cblof import CBLOF
+# from pyod.models.cblof import DIF
 from pyod.models.feature_bagging import FeatureBagging
 from pyod.models.hbos import HBOS
 from pyod.models.iforest import IForest
