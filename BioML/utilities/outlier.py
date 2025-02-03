@@ -29,7 +29,7 @@ def arg_parse():
                         default="training_results/outliers.csv")
     parser.add_argument("-n", "--num_thread", required=False, default=10, type=int,
                         help="The number of threads to use for the parallelization of outlier detection")
-    parser.add_argument("-s", "--scaler", required=False, default="robust", choices=("robust", "standard", "minmax"),
+    parser.add_argument("-s", "--scaler", required=False, default="zscore", choices=("robust", "standard", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
     parser.add_argument("-c", "--contamination", required=False, default=0.06, type=float,
                         help="The expected % of outliers")
