@@ -34,7 +34,7 @@ def arg_parse():
     parser.add_argument("-c", "--contamination", required=False, default=0.06, type=float,
                         help="The expected % of outliers")
     parser.add_argument("-nfe", "--num_features", required=False, type=float,
-                        help="The fraction of features to use, maximum 1 which is all the features", default=0.8)
+                        help="The fraction of features to use, maximum 1 which is all the features", default=1.0)
 
     args = parser.parse_args()
 
@@ -88,7 +88,7 @@ class OutlierDetection:
                 return {"arrays": pd.DataFrame(feat)}
 
     def initalize_models(self):
-        iforest = IForest(n_estimators=200, random_state=0, max_features=0.8, contamination=self.contamination,
+        iforest = IForest(n_estimators=200, random_state=0, max_features=self.num_feature, contamination=self.contamination,
                           n_jobs=self.num_threads)
         knn = KNN(method="mean", contamination=self.contamination, n_jobs=self.num_threads)
         bagging = FeatureBagging(LOF(), random_state=20, contamination=self.contamination, n_jobs=self.num_threads)
