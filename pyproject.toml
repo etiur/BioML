@@ -14,7 +14,7 @@ dependencies = [
   "matplotlib",
   "pycaret[analysis, models]",
   "openpyxl",
-  "pyod",
+  "pyod==1.1.3",
   "combo",
   "mlflow",
   "optuna",

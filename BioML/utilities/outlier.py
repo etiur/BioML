@@ -22,7 +22,7 @@ def arg_parse():
     parser = argparse.ArgumentParser(description="Detect outliers from the selected features")
 
     parser.add_argument("-e", "--excel", required=False,
-                        help="The file to where the selected features are saved in excel format",
+                        help="The file to where the selected features are saved in excel or csv format",
                         default="training_features/selected_features.xlsx")
     parser.add_argument("-o", "--output", required=False,
                         help="The path to the output for the outliers",
@@ -30,7 +30,7 @@ def arg_parse():
     parser.add_argument("-n", "--num_thread", required=False, default=10, type=int,
                         help="The number of threads to use for the parallelization of outlier detection")
     parser.add_argument("-s", "--scaler", required=False, default="zscore", choices=("robust", "standard", "minmax"),
-                        help="Choose one of the scaler available in scikit-learn, defaults to RobustScaler")
+                        help="Choose one of the scaler available in scikit-learn, defaults to zscore")
     parser.add_argument("-c", "--contamination", required=False, default=0.06, type=float,
                         help="The expected % of outliers")
     parser.add_argument("-nfe", "--num_features", required=False, type=float,

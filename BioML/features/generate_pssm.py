@@ -10,7 +10,7 @@ from Bio import SeqIO
 from Bio.SeqIO import FastaIO
 from subprocess import call
 import shlex
-from ..utilities.utils import rewrite_possum, MmseqsClustering
+from ..utilities.utils import rewrite_possum, MmseqsClustering, clean_fasta
 
 
 def arg_parse():
@@ -43,9 +43,10 @@ class ExtractPssm:
     """
     A class to extract pssm profiles from protein sequecnes
     """
-    def __init__(self, fasta: str | Path, num_threads: int=100, fasta_dir: str | Path="fasta_files", 
-                 pssm_dir: str| Path="pssm", dbinp: str=None,
-                 dbout: str | Path="uniref50", iterations: int=3, possum_dir: str="POSSUM_Toolkit/"):
+    def __init__(self, fasta: str | Path, num_threads: int=100, 
+                 fasta_dir: str | Path="fasta_files", 
+                 pssm_dir: str| Path="pssm", dbinp: str | None=None,
+                 dbout: str | Path="uniref50", iterations: int=3):
         """
         Initialize the ExtractPssm class
 
@@ -65,8 +66,6 @@ class ExtractPssm:
             The name of the created database database
         iterations: int, optional
             The number of iterations in PSIBlast
-        possum_dir: str, optional
-            A path to the possum programme
         """
         self.fasta_file = Path(fasta)
         self.pssm = Path(pssm_dir)
@@ -75,8 +74,6 @@ class ExtractPssm:
         self.dbout = Path(dbout)
         self.num_thread = num_threads
         self.iter = iterations
-        self.possum = f"{possum_dir}/possum_standalone.pl"
-        rewrite_possum(self.possum)
 
     def makedata(self):
         """
@@ -140,23 +137,6 @@ class ExtractPssm:
             res = self.generate(file)
             print(res)
     
-    def _clean_fasta(self, length: int=100):
-        """
-        Clean the fasta file
-
-        Parameters
-        ==========
-        length: int
-            length_threshold
-
-        """
-        illegal = f"perl {self.possum}/utils/removeIllegalSequences.pl -i {self.fasta_file} -o {self.fasta_file.parent}/no_illegal.fasta"
-        short = f"perl {self.possum}/utils/removeShortSequences.pl -i {self.fasta_file.parent}/no_illegal.fasta -o {self.fasta_file.parent}/no_short.fasta -n {length}"
-        call(shlex.split(illegal), close_fds=False)
-        call(shlex.split(short), close_fds=False)
-        self.fasta_file.rename("original_fasta.fasta")
-        (self.fasta_file.parent/"no_short.fasta").rename(self.fasta_file.with_stem(f"{self.fasta_file.stem}_fixed"))
-        self.fasta_file = self.fasta_file.with_stem(f"{self.fasta_file.stem}_fixed")
     
     def _separate_single(self):
         """
@@ -229,10 +209,9 @@ def generate_pssm(fasta: str | Path, num_threads: int=100, fasta_dir: str | Path
     """
     Path(fasta_dir).mkdir(parents=True, exist_ok=True)
     Path(pssm_dir).mkdir(parents=True, exist_ok=True)
-
-    pssm = ExtractPssm(fasta, num_threads, fasta_dir, pssm_dir, dbinp, dbout, iterations, possum_dir)
+    out_fasta = clean_fasta(possum_dir, fasta)
+    pssm = ExtractPssm(out_fasta, num_threads, fasta_dir, pssm_dir, dbinp, dbout, iterations)
     # generate the database if not present
-    pssm._clean_fasta()
     pssm._separate_single()
 
     if dbinp and dbout:
@@ -257,7 +236,8 @@ def main():
     use_mmseqs, evalue, sensitivity = arg_parse()
     
     if use_mmseqs:
-        generate_with_mmseqs(fasta_file, dbinp, dbout, evalue, iterations, sensitivity, num_thread, pssm_dir=pssm_dir)
+        out_fasta = clean_fasta(possum_dir, fasta_file)
+        generate_with_mmseqs(out_fasta, dbinp, dbout, evalue, iterations, sensitivity, num_thread, pssm_dir=pssm_dir)
     else:
         generate_pssm(num_thread, fasta_dir, pssm_dir, dbinp, dbout, num, fasta_file, iterations, possum_dir)
 

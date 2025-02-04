@@ -887,14 +887,17 @@ def iterate_excel(excel_file: str | Path, parser: Any, label: Any, outliers: Ite
             yield feature.features, feature.label, sheet
 
 
-def clean_fasta(possum_program: str, fasta_file:str | Path, out_fasta: Path | str, min_aa:int=100):
+def clean_fasta(possum_program: str, fasta_file:str | Path, out_fasta: Path | str | None=None, min_aa:int=100):
     """
     Clean the fasta file
     """
     fasta_file = Path(fasta_file)
+    if not out_fasta:
+        out_fasta = fasta_file.with_stem(f"{fasta_file.stem}_fixed")
     out_fasta = Path(out_fasta)
     out_fasta.parent.mkdir(exist_ok=True, parents=True)
     illegal = f"perl {possum_program}/utils/removeIllegalSequences.pl -i {fasta_file} -o {fasta_file.parent}/no_illegal.fasta"
     short = f"perl {possum_program}/utils/removeShortSequences.pl -i {fasta_file.parent}/no_illegal.fasta -o {out_fasta} -n {min_aa}"
     call(shlex.split(illegal), close_fds=False)
     call(shlex.split(short), close_fds=False)
+    return out_fasta
