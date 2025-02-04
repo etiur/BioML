@@ -33,10 +33,14 @@ def arg_parse():
     parser.add_argument("-m", "--use_mmseqs", action="store_false", help="Use mmseqs to cluster the sequences")
     parser.add_argument("-e", "--evalue", required=False, default=0.01, type=float, help="The evalue for the mmseqs")
     parser.add_argument("-s", "--sensitivity", required=False, default=6.5, type=float, help="The sensitivity for the mmseqs")
+    parser.add_argument("-gdb", "--generate_searchdb", action="store_true", 
+                        help="Generate a search database from the database file in MMseqs")
+    
     args = parser.parse_args()
 
     return [args.fasta_dir, args.pssm_dir, args.dbinp, args.dbout, args.num_thread, args.number,
-            args.fasta_file, args.iterations, args.possum_dir, args.use_mmseqs, args.evalue, args.sensitivity]
+            args.fasta_file, args.iterations, args.possum_dir, args.use_mmseqs, args.evalue, args.sensitivity,
+            args.generate_searchdb]
 
 
 class ExtractPssm:
@@ -222,10 +226,35 @@ def generate_pssm(fasta: str | Path, num_threads: int=100, fasta_dir: str | Path
     
 
 def generate_with_mmseqs(fasta: str | Path, dbinp: str | Path | None=None, dbout: str | Path="uniref50", evalue: float =0.01, num_iterations: int=3, 
-                         sensitivity: float = 6.5, num_threads: int=100,  pssm_file: str = "result.pssm", pssm_dir: str | Path="pssm"):
-    generate_searchdb = False
-    if dbinp is not None and dbout is not None:
-        generate_searchdb = True
+                         sensitivity: float = 6.5, num_threads: int=100,  pssm_file: str = "result.pssm", 
+                         pssm_dir: str | Path="pssm", generate_searchdb: bool=False):
+    """
+    A function that generates the pssm profiles using mmseqs
+
+    Parameters
+    __________
+    fasta: str, optional
+        The file to be analysed
+    dbinp: str, optional
+        The path to the protein database
+    dbout: str, optional
+        The name of the created databse database
+    evalue: float, optional
+        The evalue threshold for the mmseqs
+    num_iterations: int, optional
+        The number of iterations in PSIBlast
+    sensitivity: float, optional    
+        The sensitivity parameter for mmseqs
+    num_threads: int, optional
+        The number of threads to use for the generation of pssm profiles
+    pssm_file: str, optional    
+        The path to the output pssm file
+    pssm_dir: str, optional
+        The directory for the output pssm files
+    generate_searchdb: bool, optional
+        Whether to generate a search database from the database file, by default False. 
+        Set it to True only the first time you run it to create the search database
+    """
     MmseqsClustering.easy_generate_pssm(fasta, dbout, dbinp , evalue, num_iterations, sensitivity, pssm_file, 
                                         generate_searchdb, threads=num_threads)
     MmseqsClustering.split_pssm(pssm_file, pssm_dir)
@@ -233,11 +262,12 @@ def generate_with_mmseqs(fasta: str | Path, dbinp: str | Path | None=None, dbout
 
 def main():
     fasta_dir, pssm_dir, dbinp, dbout, num_thread, num, fasta_file, iterations, possum_dir, \
-    use_mmseqs, evalue, sensitivity = arg_parse()
+    use_mmseqs, evalue, sensitivity, generate_searchdb = arg_parse()
     
     if use_mmseqs:
         out_fasta = clean_fasta(possum_dir, fasta_file)
-        generate_with_mmseqs(out_fasta, dbinp, dbout, evalue, iterations, sensitivity, num_thread, pssm_dir=pssm_dir)
+        generate_with_mmseqs(out_fasta, dbinp, dbout, evalue, iterations, sensitivity, num_thread,
+                             pssm_dir=pssm_dir, generate_searchdb=generate_searchdb)
     else:
         generate_pssm(num_thread, fasta_dir, pssm_dir, dbinp, dbout, num, fasta_file, iterations, possum_dir)
 

@@ -499,7 +499,9 @@ class MmseqsClustering:
         # generate the databases using the fasta files from input and the search databse like uniref
         if not query_db.with_suffix("").exists():
             cls.create_database(input_file, query_db)
-        if generate_searchdb and database_output is None:
+        if generate_searchdb and database_input is None:
+            raise ValueError("database_input is required when generate_searchdb is True")
+        elif generate_searchdb and database_output is None:
             search_db = input_database.with_suffix("")/"searchdb"
             cls.create_database(input_database, search_db)
         elif generate_searchdb and database_output is not None:
