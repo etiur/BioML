@@ -140,8 +140,7 @@ class ExtractPssm:
             print(f"Generate PSSM for {file}, {files.index(file)+1}/{len(files)}")
             res = self.generate(file)
             print(res)
-    
-    
+      
     def _separate_single(self):
         """
         A function that separates the fasta files into individual files
@@ -225,7 +224,7 @@ def generate_pssm(fasta: str | Path, num_threads: int=100, fasta_dir: str | Path
     pssm._remove_sequences_from_input()
     
 
-def generate_with_mmseqs(fasta: str | Path, dbinp: str | Path | None=None, dbout: str | Path="uniref50", evalue: float =0.01, num_iterations: int=3, 
+def generate_with_mmseqs(fasta: str | Path, dbinp: str | Path, evalue: float =0.01, num_iterations: int=3, 
                          sensitivity: float = 6.5, num_threads: int=100,  pssm_file: str = "result.pssm", 
                          pssm_dir: str | Path="pssm", generate_searchdb: bool=False):
     """
@@ -237,8 +236,6 @@ def generate_with_mmseqs(fasta: str | Path, dbinp: str | Path | None=None, dbout
         The file to be analysed
     dbinp: str, optional
         The path to the protein database
-    dbout: str, optional
-        The name of the created databse database
     evalue: float, optional
         The evalue threshold for the mmseqs
     num_iterations: int, optional
@@ -255,7 +252,7 @@ def generate_with_mmseqs(fasta: str | Path, dbinp: str | Path | None=None, dbout
         Whether to generate a search database from the database file, by default False. 
         Set it to True only the first time you run it to create the search database
     """
-    MmseqsClustering.easy_generate_pssm(fasta, dbout, dbinp , evalue, num_iterations, sensitivity, pssm_file, 
+    MmseqsClustering.easy_generate_pssm(fasta, dbinp , evalue, num_iterations, sensitivity, pssm_file, 
                                         generate_searchdb, threads=num_threads)
     MmseqsClustering.split_pssm(pssm_file, pssm_dir)
 
@@ -266,7 +263,7 @@ def main():
     
     if use_mmseqs:
         out_fasta = clean_fasta(possum_dir, fasta_file)
-        generate_with_mmseqs(out_fasta, dbinp, dbout, evalue, iterations, sensitivity, num_thread,
+        generate_with_mmseqs(out_fasta, dbinp, evalue, iterations, sensitivity, num_thread,
                              pssm_dir=pssm_dir, generate_searchdb=generate_searchdb)
     else:
         generate_pssm(num_thread, fasta_dir, pssm_dir, dbinp, dbout, num, fasta_file, iterations, possum_dir)

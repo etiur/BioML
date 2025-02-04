@@ -448,8 +448,7 @@ class MmseqsClustering:
         return cluster_info
 
     @classmethod
-    def easy_generate_pssm(cls, input_file: str | Path, database_input: str | Path | None=None, 
-                           database_output: str | Path | None= None,
+    def easy_generate_pssm(cls, input_file: str | Path, database_input: str | Path, 
                            evalue: float = 0.01, num_iterations: int = 3, 
                            sensitivity: float = 6.5, pssm_filename: str | Path = "result.pssm", 
                            generate_searchdb: bool = False, 
@@ -463,8 +462,6 @@ class MmseqsClustering:
             Path to the input sequence file.
         database_input : str or Path
             Path to the database input file to create a new database.
-        database_output : str or Path, optional
-            name of the search database created from the database_input, it is not required
         evalue : float, optional
             E-value threshold for the search, by default 0.01.
         num_iterations : int, optional
@@ -495,22 +492,16 @@ class MmseqsClustering:
         """
 
         query_db = Path(input_file).with_suffix("")/"querydb"
-        input_database = Path(database_input) if database_input else Path()
-        # generate the databases using the fasta files from input and the search databse like uniref
+        input_database = Path(database_input)
+        search_db = input_database.with_suffix("")/"searchdb"
+        # generate the databases using the fasta files from input and the search database like uniref
         if not query_db.with_suffix("").exists():
             cls.create_database(input_file, query_db)
-        if generate_searchdb and database_input is None:
-            raise ValueError("database_input is required when generate_searchdb is True")
-        elif generate_searchdb and database_output is None:
-            search_db = input_database.with_suffix("")/"searchdb"
+        if generate_searchdb:
             cls.create_database(input_database, search_db)
-        elif generate_searchdb and database_output is not None:
-            search_db = Path(database_output)
-            cls.create_database(input_database, search_db)
-        elif not generate_searchdb and database_output is None and database_input:
-            search_db = input_database.with_suffix("")/"searchdb"
-        elif not generate_searchdb and database_output is not None:
-            search_db = Path(database_output)
+        else:
+            if not search_db.exists():
+                raise FileNotFoundError("The search database does not exist. Set generate_searchdb to True to create it.")
 
         # generate the pssm files
         cls.generate_pssm(query_db, search_db, evalue, num_iterations, pssm_filename, 
