@@ -44,7 +44,7 @@ def arg_parse():
                         help="Default to true, plot the feature importance using shap")
     parser.add_argument("-pk", "--plot_num_features", required=False, default=20, type=int,
                         help="How many features to include in the plot")
-    parser.add_argument("-se", "--seed", required=False, type=int, default=None,
+    parser.add_argument("-se", "--seed", required=False, type=int, default=978236392,
                         help="The seed number used for reproducibility")
     parser.add_argument("-pr", "--problem", required=True, choices=("classification", "regression"), 
                         default="classification", help="Classification or Regression problem")
@@ -248,7 +248,7 @@ class DataReader:
 
 class FeatureSelection:
     def __init__(self, excel_file: str | Path, filter_args: SelectionArguments, 
-                 num_thread: int =10, seed: int | None=None, 
+                 num_thread: int =10, seed: int | None=978236392, 
                  scaler: str="robust"):
         """
         A class for performing feature selection on a dataset.

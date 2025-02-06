@@ -27,7 +27,7 @@ def arg_parse():
     parser.add_argument("-te", "--test_features", required=True,
                         help="The file to where the test features are saved in excel or csv format")
     parser.add_argument("-d", "--res_dir", required=False,
-                        help="The file where the extracted features from the new data are stored",
+                        help="The folder to store the prediction results",
                         default="prediction_results")
     parser.add_argument("-nss", "--number_similar_samples", required=False, default=1, type=int,
                         help="The number of similar training samples to filter the predictions")
@@ -39,10 +39,10 @@ def arg_parse():
                         help="A list of outliers if any, the name should be the same as the index of "
                              " test features, you can also specify the path to a file in plain text format, each "
                              "record should be in a new line")
-    parser.add_argument("-p", "--problem", required=False, 
+    parser.add_argument("-p", "--problem", required=True, 
                         default="classification", choices=("classification", "regression"), help="The problem type")
     parser.add_argument("-l", "--label", required=False, default=None,
-                        help="Use it if the lables is in the training features so it is removed, but not necessary otherwise")
+                        help="Use it if the labels is in the training features so it is removed, but not necessary otherwise")
     parser.add_argument("-ad", "--applicability_domain", required=False, action="store_false", 
                         help="If to use the applicability domain to filter the predictions")
     parser.add_argument("-sh", "--sheet_name", required=False, default=None, 

@@ -5,26 +5,26 @@ build-backend = "hatchling.build"
 [project]
 name = "BioML"
 version = "1.0.0"
-requires-python = ">=3.9,<3.11"
+requires-python = ">3.9"
 dependencies = [
-  "pandas",
   "scikit-learn",
   "biopython",
   "shap",
   "matplotlib",
-  "pycaret[analysis, models]",
+  "pycaret[analysis,models]",
   "openpyxl",
-  "pyod==1.1.3",
+  "pyod",
   "combo",
   "mlflow",
   "optuna",
   "transformers",
-  "werkzeug<=2.3.0",
+  "werkzeug",
   "optuna-integration",
   "lightning",
   "peft",
   "datasets",
-  "torch"]
+  "torch",
+  "pytest"]
 
 authors = [
   {name = "Ruite Xiang", email = "ruite.xiang@gmail.com"}
@@ -48,9 +48,10 @@ classifiers=["Programming Language :: Python :: 3.10",
 [project.optional-dependencies]
 cluster = ["mmseqs2", 
            "perl-bio-featureio", # Installed with conda in the bioconda channel it seems that perl-bio-feaureio may download a wrong version of scikit-learn which makes it incompatible with pycaret so install everything with conda then pycaret
-           "iFeatureOmegaCLI"] # got there to pre-install some dependencies first https://github.com/Superzchen/iFeatureOmega-CLI, 
+           "iFeatureOmegaCLI", # got there to pre-install some dependencies first https://github.com/Superzchen/iFeatureOmega-CLI, 
            # not all of the dependencies are needed to run iFeatureOmega for feature extraction (only rdkit, biopython and networkx)
 
+           "bitsandbytes"] # need cudatoolkit
 
 [project.urls]
 Repository = "https://github.com/etiur/BioML"
