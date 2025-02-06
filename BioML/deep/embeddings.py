@@ -22,15 +22,16 @@ def arg_parse():
     parser.add_argument("-b", "--batch_size", type=int, default=8, help="The batch size")
     parser.add_argument("-p", "--save_path", type=str, default="embeddings.csv", help="The path to save the emebeddings in csv format")
     parser.add_argument("-s","--seed", type=int, default=12891245318, help="Seed for reproducibility")
-    parser.add_argument("-op", "--option", type=str, default="mean", help="Option to concatenate the embeddings")
+    parser.add_argument("-op", "--option", type=str, default="mean", help="Option to concatenate the embeddings", 
+                        choices=("mean", "sum", "max", "flatten"))
     parser.add_argument("-f", "--format", type=str, default="csv", choices=("csv", "parquet"), 
                         help="Format to save the embeddings")
     parser.add_argument("-l", "--llm_config", type=str, default="",
                         help="Path to the language model configuration file (optional). json or yaml file.")
-    parser.add_argument("-t", "--tokenizer_args", type=str, default="{}",
-                        help="JSON string of arguments to pass to the tokenizer (optional). json or yaml file.")
-    parser.add_argument("-pt", "--pretrained_args", type=str, default="{}",
-                        help="JSON string of arguments to pass to the from_pretrained (optional). json or yaml file.")
+    parser.add_argument("-t", "--tokenizer_args", type=str, default="",
+                        help="Path to the tokenizer configuration file (optional). json or yaml file.")
+    parser.add_argument("-pt", "--pretrained_args", type=str, default="",
+                        help="Path to the pretrained model configuration file (optional), used in the AutoModel.from_pretrained function. json or yaml file.")
     args = parser.parse_args()
     return [args.fasta_file, args.model_name, args.disable_gpu, args.batch_size, args.save_path, args.seed, args.option,
             args.format, args.mode, args.llm_config, args.pretrained_args, args.tokenizer_args]
