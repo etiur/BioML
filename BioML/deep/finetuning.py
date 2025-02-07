@@ -39,21 +39,21 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Train a model using a fasta file and labels.")
     
-    parser.add_argument("--fasta_file", type=Path, required=True,
+    parser.add_argument("-i", "--fasta_file", type=Path, required=True,
                         help="The path to the fasta file.")
     parser.add_argument("--label", type=str, required=True,
-                        help="The path to the file containing labels as a numpy array.")
+                        help="The path to the file containing labels that can be read by numpy load")
     parser.add_argument("--lr", type=float, default=1e-3,
                         help="The learning rate. Default is 1e-3.")
-    parser.add_argument("--train_config", type=str, default="",
+    parser.add_argument("-tr", "--train_config", type=str, default="",
                         help="Path to the training configuration file (optional). json or yaml file.")
-    parser.add_argument("--llm_config", type=str, default="",
+    parser.add_argument("-lc", "--llm_config", type=str, default="",
                         help="Path to the language model configuration file (optional). json or yaml file.")
-    parser.add_argument("--split_config", type=str, default="",
+    parser.add_argument("-sp", "--split_config", type=str, default="",
                         help="Path to the splitting configuration file (optional). json or yaml file.")
-    parser.add_argument("--tokenizer_args", type=str, default="{}",
+    parser.add_argument("-tc", "--tokenizer_args", type=str, default="{}",
                         help="JSON string of arguments to pass to the tokenizer (optional). json or yaml file.")
-    parser.add_argument("--lightning_trainer_args", type=str, default="{}",
+    parser.add_argument("-lt", "--lightning_trainer_args", type=str, default="{}",
                         help="JSON string of arguments to pass to the lightning trainer (optional). json or yaml file. ")
     parser.add_argument("-u","--use_best_model", action="store_true",
                         help="Whether to use the best model saved with checkpoint. Default is True. json or yaml file.")

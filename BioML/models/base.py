@@ -111,7 +111,7 @@ class DataParser:
 
             case _:
                 raise ValueError(f"features should be a csv or excel file, an array or a pandas DataFrame, you provided {features}")
-        
+
     def read_labels(self, label: str | pd.Series) -> str | pd.Series:
         """
         Reads the label data from a file or returns the input data.
