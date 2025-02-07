@@ -36,7 +36,7 @@ def arg_parse():
                         default="MCC", choices=("MCC", "Prec.", "Recall", "F1", "AUC", "Accuracy", "Average Precision Score", 
                                                 "RMSE", "R2", "MSE", "MAE", "RMSLE", "MAPE"), 
                         help="The metric to optimize")
-    parser.add_argument("-m", "--model_strategy", 
+    parser.add_argument("-ms", "--model_strategy", 
                         help="The strategy to use for the model generation, choices are majority, stacking or simple:model_index, model index should be an integer", default="simple:0")
     parser.add_argument("--seed", required=False, default=63462634, help="The seed for the random state")
 

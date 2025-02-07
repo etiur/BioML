@@ -17,7 +17,7 @@ def arg_parse():
 
     parser.add_argument("-o", "--training_output", required=False,
                         help="The path where to save the models training results",
-                        default="training_results")
+                        default="classification_results")
     parser.add_argument("-l", "--label", required=True,
                         help="The path to the labels of the training set in a csv format or string if it is inside training features")
     parser.add_argument("-s", "--scaler", required=False, default="zscore", choices=("robust", "zscore", "minmax"),
