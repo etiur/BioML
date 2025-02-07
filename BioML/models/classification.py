@@ -47,7 +47,7 @@ def arg_parse():
 
     parser.add_argument("-be", "--best_model", required=False, default=3, type=int,
                         help="The number of best models to select, it affects the analysis and the saved hyperparameters")
-    parser.add_argument("--seed", required=False, default=None, type=int, help="The seed for the random state")
+    parser.add_argument("--seed", required=False, default=63462634, type=int, help="The seed for the random state")
 
     parser.add_argument("-d", "--drop", nargs="+", required=False, default=("ada", "gpc", "lightgbm"),
                         choices=('lr','knn','nb','dt','svm','rbfsvm','gpc','mlp','ridge','rf','qda','ada','gbc',
@@ -93,7 +93,7 @@ def arg_parse():
 
 
 class Classifier:
-    def __init__(self, ranking_params: dict[str, float] | None=None, drop: Iterable[str] = ("ada", "gpc"), 
+    def __init__(self, ranking_params: dict[str, float] | None=None, drop: Iterable[str] = ("ada"), 
                  selected: Iterable[str] =(), add: Any | Iterable[Any]=(), optimize: str="MCC", 
                  plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report")):
         """
