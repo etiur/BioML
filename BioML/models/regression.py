@@ -39,9 +39,9 @@ def arg_parse():
                         help="How important is to have similar training and test metrics")
     parser.add_argument("-be", "--best_model", required=False, default=3, type=int,
                         help="The number of best models to select, it affects the analysis and the save hyperparameters")
-    parser.add_argument("--seed", required=False, default=None, type=int, help="The seed for the random state")
+    parser.add_argument("--seed", required=False, default=63462634, type=int, help="The seed for the random state")
 
-    parser.add_argument("-d", "--drop", nargs="+", required=False, default=("tr", "kr", "ransac", "ard", "ada", "lightgbm"), 
+    parser.add_argument("-d", "--drop", nargs="+", required=False, default=("tr", "kr", "ransac"), 
                         choices=('lr','lasso','ridge','en','lar','llar','omp','br','ard','par','ransac',
                                   'tr','huber','kr','svm','knn','dt','rf','et','ada','gbr','mlp','xgboost',
                                   'lightgbm','catboost','dummy'), help="The models to drop")

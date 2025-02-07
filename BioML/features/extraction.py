@@ -55,13 +55,12 @@ def arg_parse():
     parser.add_argument("-cl", "--cleaned_fasta", required=False, help="Name of the cleaned fasta file")
     parser.add_argument("-om", "--omega_type", required=False, choices=("structure", "RNA", "DNA", "ligand"), 
     help="molecule type for the omega features, if proteins specify in the fasta file the pdb folder. Ligand has to be in SMILE strings. RNA and DNA in fasta format")
-    parser.add_argument("-mout", "--omega_out", required=False, help="The directory for the omega features",
-                        default="omega_features")
+
     args = parser.parse_args()
 
     return [args.fasta_file, args.pssm_dir, args.ifeature_dir, args.possum_dir, args.ifeature_out,
             args.possum_out, args.extracted_out, args.purpose, args.long, args.run, args.num_thread, args.drop,
-            args.drop_file, args.sheets, args.training_features, args.new_features, args.cleaned_fasta, args.omega_type, args.omega_out]
+            args.drop_file, args.sheets, args.training_features, args.new_features, args.cleaned_fasta, args.omega_type]
 
 
 class ExtractFeatures:
@@ -538,7 +537,7 @@ def read_possum(features: dict[str, list[str]], length: int, index: Iterable[str
     return everything
 
 
-def read_omega(omega_out, omega_type):
+def read_omega(omega_out: str|Path, omega_type: str) -> pd.DataFrame:
     if omega_type != "structure":
         data = pd.read_csv(f"{omega_out}/{omega_type}_features.csv", index_col=0)
     else:
@@ -548,10 +547,10 @@ def read_omega(omega_out, omega_type):
     return data
 
 
-def read_features(program: str, drop_file: str | Path=None, drop: Iterable[str]=(), 
+def read_features(program: str, drop_file: str | Path | None=None, drop: Iterable[str]=(), 
                   ifeature_out:str|Path="ifeature_features",  
                   possum_out: str | Path="possum_features", file_splits: int=1, 
-                  index: Iterable[str|int] | None=None) -> Callable[[dict[str, list[str]]], pd.DataFrame]:
+                  index: Iterable[str|int] | None=None) ->  pd.DataFrame:
     """
     A function to read the features from the possum and ifeature programmes.
 
@@ -606,7 +605,7 @@ def filter_features(new_features: pd.DataFrame, training_features: pd.DataFrame,
 
 def main():
     fasta_file, pssm_dir, ifeature_dir, possum_dir, ifeature_out, possum_out, extracted_out, purpose, \
-    long, run, num_thread, drop, drop_file, sheets, training_features, new_features, clean, omega_type, omega_out = arg_parse()
+    long, run, num_thread, drop, drop_file, sheets, training_features, new_features, clean, omega_type = arg_parse()
 
     if "extract" in purpose:
         # feature extraction
@@ -620,13 +619,15 @@ def main():
             file = list(extract.fasta_file.parent.glob("group_*.fasta"))
             possum = PossumFeatures(pssm_dir, possum_out, possum_dir, drop_file, drop)
             ifeature = IfeatureFeatures(ifeature_dir, ifeature_out, drop_file, drop)
-            func["possum"] = partial(possum.extract, long=long)
-            func["ifeature"] = partial(ifeature.extract, long=long)
+            if "possum" in run:
+                func["possum"] = partial(possum.extract, long=long)
+            if "ifeature" in run:
+                func["ifeature"] = partial(ifeature.extract, long=long)
 
-            extract.run_extraction_parallel(file, num_thread, func["possum"], func["ifeature"])
+            extract.run_extraction_parallel(file, num_thread, *func.values())
             
         else:
-            omega = OmegaFeatures(fasta_file, omega_type, output=omega_out)
+            omega = OmegaFeatures(fasta_file, omega_type, output=extracted_out)
             if omega_type == "structure":
                 omega.extract_pdb()
             else:
@@ -637,13 +638,17 @@ def main():
             file = list(Path(fasta_file).parent.glob("group_*.fasta"))
             features = {}
             for prog in run:
-                features[prog] = read_features(file, prog, drop_file, drop, ifeature_out, possum_out)
+                features[prog] = read_features(prog, drop_file, drop, ifeature_out, possum_out, len(file))
 
             if len(features.values()) == 2 :
                 features["possum"].index == features["ifeature"].index
 
             every_features = pd.concat(features.values(), axis=1)
             every_features.to_csv(f"{extracted_out}/every_features.csv")
+        else:
+            if omega_type == "structure":
+                omega = read_omega(extracted_out, omega_type)
+                omega.to_csv(f"{extracted_out}/structure_features.csv")
 
     if "filter" in purpose:
         # feature filtering

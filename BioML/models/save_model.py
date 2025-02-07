@@ -38,7 +38,8 @@ def arg_parse():
                         help="The metric to optimize")
     parser.add_argument("-m", "--model_strategy", 
                         help="The strategy to use for the model generation, choices are majority, stacking or simple:model_index, model index should be an integer", default="simple:0")
-    parser.add_argument("--seed", required=True, help="The seed for the random state")
+    parser.add_argument("--seed", required=False, default=63462634, help="The seed for the random state")
+
     parser.add_argument("-k", "--kfold_parameters", required=False,
                         help="The parameters for the kfold in num_split:test_size format", default="5:0.2")
     parser.add_argument("-sh", "--sheet_name", required=False, default=None, 
@@ -58,13 +59,15 @@ def arg_parse():
                         help="Include in the test set, mutations that are greater of less than the threshold, default greater")
     parser.add_argument("-cv", "--cross_validation", required=False, action="store_false", 
                         help="If to use cross validation, default is True")
+    parser.add_argument("-sf", "--shuffle", required=False, default=True, action="store_false",
+                        help="If to shuffle the data before splitting")
     
     args = parser.parse_args()
 
     return [args.training_features, args.label, args.scaler, args.model_output, args.outliers, args.selected_models, 
             args.problem, args.optimize, args.model_strategy, args.seed, args.kfold_parameters, args.tune, args.sheet_name, 
             args.setup_config, args.num_iter, args.split_strategy, args.cluster, args.mutations, 
-            args.test_num_mutations, args.greater, args.cross_validation]
+            args.test_num_mutations, args.greater, args.cross_validation, args.shuffle]
 
 
 class GenerateModel:
@@ -174,7 +177,7 @@ class GenerateModel:
 def main():
     training_features, label, scaler, model_output, outliers, selected_models, \
     problem, optimize, model_strategy, seed, kfold, tune, sheet, setup_config, num_iter, split_strategy, cluster, mutations, \
-        test_num_mutations, greater, cross_validation = arg_parse()
+        test_num_mutations, greater, cross_validation, shuffle = arg_parse()
     
     if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
@@ -198,9 +201,9 @@ def main():
 
     training = Trainer(experiment, model, num_split, test_size, num_iter, cross_validation)
 
-    spliting = {"cluster": split.ClusterSpliter(cluster, num_split, random_state=experiment.seed),
+    spliting = {"cluster": split.ClusterSpliter(cluster, num_split, random_state=experiment.seed, shuffle=shuffle),
                 "mutations": split.MutationSpliter(mutations, test_num_mutations, greater, 
-                                                   num_splits=num_split, random_state=experiment.seed)}
+                                                   num_splits=num_split, random_state=experiment.seed, shuffle=shuffle),}
     # split the data based on the strategy
     if split_strategy in ["cluster", "mutations"]:
         X_train, X_test = spliting[split_strategy].train_test_split(feature.features, test_size=test_size)
