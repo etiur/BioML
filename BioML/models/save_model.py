@@ -20,7 +20,7 @@ def arg_parse():
     parser.add_argument("-sc", "--scaler", default="zscore", choices=("robust", "zscore", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to minmax")
     parser.add_argument("-l", "--label", required=True,
-                        help="The path to the labels of the training set in a csv format")
+                        help="The path to the labels of the training set in a csv format or the column name if it is in training features")
     parser.add_argument("-o", "--model_output", required=False,
                         help="The directory for the generated models",
                         default="models")
@@ -30,14 +30,14 @@ def arg_parse():
                              "record should be in a new line")
     parser.add_argument("-se", "--selected_models", nargs="+", required=True, 
                         help="The models to use, can be regression or classification")
-    parser.add_argument("-p", "--problem", required=False, 
+    parser.add_argument("-p", "--problem", required=True, 
                         default="classification", choices=("classification", "regression"), help="The problem type")
     parser.add_argument("-op", "--optimize", required=False, 
                         default="MCC", choices=("MCC", "Prec.", "Recall", "F1", "AUC", "Accuracy", "Average Precision Score", 
                                                 "RMSE", "R2", "MSE", "MAE", "RMSLE", "MAPE"), 
                         help="The metric to optimize")
     parser.add_argument("-m", "--model_strategy", 
-                        help="The strategy to use for the model, choices are majority, stacking or simple:model_index, model index should be an integer", default="simple:0")
+                        help="The strategy to use for the model generation, choices are majority, stacking or simple:model_index, model index should be an integer", default="simple:0")
     parser.add_argument("--seed", required=True, help="The seed for the random state")
     parser.add_argument("-k", "--kfold_parameters", required=False,
                         help="The parameters for the kfold in num_split:test_size format", default="5:0.2")
