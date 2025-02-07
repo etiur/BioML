@@ -13,6 +13,7 @@ from sklearn.ensemble import RandomForestClassifier as rfc
 from sklearn.ensemble import RandomForestRegressor as rfr
 import xgboost as xgb
 from ..utilities.utils import Log, scale, write_excel
+from ..utilities.utils import read_outlier_file
 from ..utilities.custom_errors import DifferentLabelFeatureIndexError
 from . import methods
 
@@ -48,12 +49,17 @@ def arg_parse():
                         help="The seed number used for reproducibility")
     parser.add_argument("-pr", "--problem", required=True, choices=("classification", "regression"), 
                         default="classification", help="Classification or Regression problem")
-
+    parser.add_argument("-ot", "--outliers", nargs="+", required=False, default=(),
+                        help="A list of outliers if any, the name should be the same as in the excel file with the "
+                             "filtered features, you can also specify the path to a file in plain text format, each "
+                             "record should be in a new line")
+    parser.add_argument("-sh", "--sheet_name", required=False, default=None, 
+                        help="The sheet name for the excel file if the training features is in excel format")
     args = parser.parse_args()
 
     return [args.features, args.label, args.variance_threshold, args.feature_range, args.num_thread, args.scaler,
             args.excel_file, args.rfe_steps, args.plot, args.plot_num_features,
-            args.seed, args.problem]
+            args.seed, args.problem, args.outliers, args.sheet_name]
 
 
 
@@ -92,9 +98,9 @@ class DataReader:
     label: pd.Series | pd.DataFrame | str | Iterable[int|float]
     features: pd.DataFrame | str | list | Iterable[int|float]
     variance_thres: float | None = 0
-    checked_label_path: str = "labels_corrected.csv"
-    sheet: str | int | None = None
     outliers: Iterable[str | int] = ()
+    sheet: str | int | None = None
+    checked_label_path: str = "labels_corrected.csv"
 
     def __post_init__(self):
 
@@ -640,12 +646,12 @@ def translate_range_str_to_list(feature_range: str) -> tuple[int | None, int | N
 
 def main():
     features, label, variance_threshold, feature_range, num_thread, scaler, excel_file, rfe_steps, plot, \
-        plot_num_features, seed, problem = arg_parse()
+        plot_num_features, seed, problem, outliers, sheets = arg_parse()
 
     num_features_min, num_features_max, step = translate_range_str_to_list(feature_range)
-
+    outliers = read_outlier_file(outliers)
     # generate the dataset
-    training_data = DataReader(label, features, variance_threshold)
+    training_data = DataReader(label, features, variance_threshold, outliers, sheets)
     feature_range = get_range_features(training_data.features, num_features_min, num_features_max, step)
     
     # select features

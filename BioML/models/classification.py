@@ -38,7 +38,7 @@ def arg_parse():
     parser.add_argument("-rw", "--recall_weight", required=False, default=0.8, type=float,
                         help="Weights to specify how relevant is the recall for the ranking of the different features")
 
-    parser.add_argument("-rpw", "--report_weight", required=False, default=0.6, type=float,
+    parser.add_argument("-rpw", "--report_weight", required=False, default=0.8, type=float,
                         help="Weights to specify how relevant is the f1, precision and recall for the ranking of the "
                              "different features with respect to MCC which is a more general measures of "
                              "the performance of a model")
@@ -49,7 +49,7 @@ def arg_parse():
                         help="The number of best models to select, it affects the analysis and the saved hyperparameters")
     parser.add_argument("--seed", required=False, default=63462634, type=int, help="The seed for the random state")
 
-    parser.add_argument("-d", "--drop", nargs="+", required=False, default=("ada", "gpc", "lightgbm"),
+    parser.add_argument("-d", "--drop", nargs="+", required=False, default=("ada"),
                         choices=('lr','knn','nb','dt','svm','rbfsvm','gpc','mlp','ridge','rf','qda','ada','gbc',
                                 'lda','et','xgboost','lightgbm','catboost','dummy'), 
                         help="The models to drop")
@@ -65,7 +65,6 @@ def arg_parse():
     parser.add_argument("-op", "--optimize", required=False, default="MCC", choices=("MCC", "Prec.", "Recall", "F1", "AUC", "Accuracy", 
                                                                                      "Average Precision Score"),
                         help="The metric to optimize for retuning the best models")
-    
     parser.add_argument("-sh", "--sheet_name", required=False, default=None, 
                         help="The sheet name for the excel file if the training features is in excel format")
     parser.add_argument("-ni", "--num_iter", default=30, type=int, required=False, 
