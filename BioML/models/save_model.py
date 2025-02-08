@@ -30,7 +30,7 @@ def arg_parse():
                              "record should be in a new line")
     parser.add_argument("-se", "--selected_models", nargs="+", required=True, 
                         help="The models to use, can be regression or classification")
-    parser.add_argument("-p", "--problem", required=True, 
+    parser.add_argument("-p", "--problem", required=False, 
                         default="classification", choices=("classification", "regression"), help="The problem type")
     parser.add_argument("-op", "--optimize", required=False, 
                         default="MCC", choices=("MCC", "Prec.", "Recall", "F1", "AUC", "Accuracy", "Average Precision Score", 

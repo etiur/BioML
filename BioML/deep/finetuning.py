@@ -631,6 +631,38 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
             
     return light_mod, data_module, best_model_path
 
+
+def read_labels(self, label: str | pd.Series) -> str | pd.Series:
+    """
+    Reads the label data from a file or returns the input data.
+
+    Parameters
+    ----------
+    label : str or pd.Series
+        The label data.
+
+    Returns
+    -------
+    pd.Series
+        The label data as a pandas Series.
+    """
+    match label:
+        case pd.Series() as labels:
+            return labels.to_numpy()
+        
+        case pd.DataFrame() as labels:
+            return labels.squeeze().to_numpy()
+        
+        case str() | Path() as labels if Path(labels).exists() and Path(labels).suffix == ".csv":
+            labels = pd.read_csv(labels, index_col=0)
+            return labels.squeeze().to_numpy()
+        
+        case list() | np.ndarray() as labels:
+            return np.array(labels)
+        case _:
+            raise ValueError(f"label should be a csv file, an array, a pandas Series, DataFrame: you provided {label}")
+        
+        
 def main():
     args = parse_args()
     # Convert JSON strings to dictionaries
@@ -644,7 +676,7 @@ def main():
         lora_init = args.lora_init
     
     # Load label array from file
-    label = np.load(args.label)
+    label = read_labels(args.label)
     # Placeholder for loading configurations from files if provided
     train_config = TrainConfig(**load_config(args.train_config, extension=args.train_config.split(".")[-1]))
     llm_config = LLMConfig(**load_config(args.llm_config, extension=args.llm_config.split(".")[-1]))
