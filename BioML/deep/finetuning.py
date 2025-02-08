@@ -657,6 +657,11 @@ def read_labels(self, label: str | pd.Series) -> str | pd.Series:
             labels = pd.read_csv(labels, index_col=0)
             return labels.squeeze().to_numpy()
         
+        case str() | Path() as labels if Path(labels).exists() and Path(labels).suffix in [".npy", ".npz"]:
+            if Path(labels).suffix == ".npz":
+                return list(np.load(labels).values())[0]
+            return np.load(labels)
+        
         case list() | np.ndarray() as labels:
             return np.array(labels)
         case _:
