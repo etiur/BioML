@@ -2,7 +2,6 @@
 [![DOI](https://zenodo.org/badge/635341591.svg)](https://doi.org/10.5281/zenodo.14971157)
 
 
-
 # Introduction
 
 BioML is an all-in-one library capable of performing the complete machine-learning pipeline consisting of 4 blocks: feature extraction, selection, outlier detection, and model training. You can use the blocks independetly as long as you provide the necessary inputs so if you already has the features you could jump directly to the model training block.
