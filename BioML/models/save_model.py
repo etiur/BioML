@@ -36,8 +36,11 @@ def arg_parse():
                         default="MCC", choices=("MCC", "Prec.", "Recall", "F1", "AUC", "Accuracy", "Average Precision Score", 
                                                 "RMSE", "R2", "MSE", "MAE", "RMSLE", "MAPE"), 
                         help="The metric to optimize")
+    parser.add_argument("-be", "--best_model", required=False, default=3, type=int,
+                        help="The number of best models to select, it affects the analysis and the save hyperparameters")
     parser.add_argument("-ms", "--model_strategy", 
-                        help="The strategy to use for the model generation, choices are majority, stacking or simple:model_index, model index should be an integer", default="simple:0")
+                        help="The strategy to use for the model generation, choices are majority, stacking or simple:model_index, model index should be an integer", 
+                        default="simple:0")
     parser.add_argument("--seed", required=False, default=63462634, help="The seed for the random state")
 
     parser.add_argument("-k", "--kfold_parameters", required=False,
@@ -67,7 +70,7 @@ def arg_parse():
     return [args.training_features, args.label, args.scaler, args.model_output, args.outliers, args.selected_models, 
             args.problem, args.optimize, args.model_strategy, args.seed, args.kfold_parameters, args.tune, args.sheet_name, 
             args.setup_config, args.num_iter, args.split_strategy, args.cluster, args.mutations, 
-            args.test_num_mutations, args.greater, args.cross_validation, args.shuffle]
+            args.test_num_mutations, args.greater, args.cross_validation, args.shuffle, args.best_model]
 
 
 class GenerateModel:
@@ -177,7 +180,7 @@ class GenerateModel:
 def main():
     training_features, label, scaler, model_output, outliers, selected_models, \
     problem, optimize, model_strategy, seed, kfold, tune, sheet, setup_config, num_iter, split_strategy, cluster, mutations, \
-        test_num_mutations, greater, cross_validation, shuffle = arg_parse()
+        test_num_mutations, greater, cross_validation, shuffle, best_model = arg_parse()
     
     if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
@@ -191,7 +194,7 @@ def main():
     # instantiate everything to run training
     feature = DataParser(training_features, label, outliers=outliers, sheets=sheet)
     
-    experiment = PycaretInterface(problem, seed, scaler=scaler, best_model=len(selected_models), optimize=optimize, 
+    experiment = PycaretInterface(problem, seed, scaler=scaler, best_model=best_model, optimize=optimize, 
                                   output_path=model_output)
     
     if problem == "classification":
