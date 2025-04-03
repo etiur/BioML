@@ -8,7 +8,7 @@ import numpy as np
 from pathlib import Path
 from ..utilities.utils import write_results, evaluate_all_models
 from ..utilities import split_methods as split
-from ..utilities.utils import read_outlier_file
+from ..utilities.utils import read_outlier_file, iterate_excel
 from .base import PycaretInterface, Trainer, DataParser
 
 
@@ -82,17 +82,22 @@ def arg_parse():
                         help="If to shuffle the data before splitting")
     parser.add_argument("-cv", "--cross_validation", required=False, action="store_false", 
                         help="If to use cross validation, default is True")
+    parser.add_argument("-ti", "--stratified", action="store_false", required=False, help="Use stratified for the " \
+                                                                                        "cluster spliting strategy, default is True")
+    parser.add_argument("-it", "--iterate_multiple_features", required=False, action="store_true", 
+                         help="If to iterate over multiple features, in case you want to test multiple features," \
+                         " if false, you will have to specify a single feature. Default is False")
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.budget_time, args.scaler, args.training_features, args.kfold_parameters, 
             args.outliers, args.precision_weight, args.recall_weight, args.report_weight, args.difference_weight, 
             args.best_model, args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected,
             args.sheet_name, args.num_iter, args.split_strategy, args.cluster, args.mutations, 
-            args.test_num_mutations, args.greater, args.shuffle, args.cross_validation]
+            args.test_num_mutations, args.greater, args.shuffle, args.cross_validation, args.stratified, args.iterate_multiple_features]
 
 
 class Classifier:
-    def __init__(self, ranking_params: dict[str, float] | None=None, drop: Iterable[str] = ("ada"), 
+    def __init__(self, ranking_params: dict[str, float] | None=None, drop: Iterable[str] = ("ada",), 
                  selected: Iterable[str] =(), add: Any | Iterable[Any]=(), optimize: str="MCC", 
                  plot: tuple[str, ...]=("learning", "confusion_matrix", "class_report")):
         """
@@ -158,7 +163,7 @@ class Classifier:
         """
         cv_train = dataframe.loc[("CV-Train", "Mean")]
         cv_val = dataframe.loc[("CV-Val", "Mean")]
-        penalize = -np.inf if (cv_train[self.optimize] == 1 or cv_train["Prec."] == 1) else 0
+        penalize = -1e6 if (cv_train[self.optimize] == 1 or cv_train["Prec."] == 1) else 0
 
         mcc = ((cv_train[self.optimize] * self.train_weight + cv_val[self.optimize]) # type: ignore
                 - self.difference_weight * abs(cv_val[self.optimize] - cv_train[self.optimize] )) # type: ignore
@@ -195,7 +200,7 @@ def main():
     label, training_output, budget_time, scaler, excel, kfold, outliers, \
     precision_weight, recall_weight, report_weight, difference_weight, best_model, \
     seed, drop, tune,  plot, optimize, selected, sheet, num_iter, split_strategy, cluster, mutations, \
-        test_num_mutations, greater, shuffle, cross_validation = arg_parse()
+        test_num_mutations, greater, shuffle, cross_validation, stratified, iterate_multiple_features = arg_parse()
     
     # creating the arguments for the classes
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
@@ -208,7 +213,7 @@ def main():
     # this is only used to read the data if you don't use it, the label and the features should be in the same dataframe
     feature = DataParser(excel, label, outliers=outliers, sheets=sheet)
     # These are the classes used for classification
-    experiment = PycaretInterface("classification", seed, scaler=scaler, budget_time=budget_time, # type: ignore
+    experiment = PycaretInterface("classification", seed, scaler=scaler, budget_time=budget_time,
                                   best_model=best_model, output_path=training_output, optimize=optimize)
     
     # this class has the arguments for the trainer to do classification
@@ -217,27 +222,37 @@ def main():
     # It uses the PycaretInterface' models to perform the training but you could use other models as long as it implements the same methods
     training = Trainer(experiment, classifier, num_split, test_size, num_iter, cross_validation) # this can be used for classification or regression -> so it is generic
     
-    spliting = {"cluster": split.ClusterSpliter(cluster, num_split, shuffle=shuffle, random_state=experiment.seed),
+    spliting = {"cluster": split.ClusterSpliter(cluster, num_split, shuffle=shuffle, random_state=experiment.seed, stratified=stratified),
                 "mutations": split.MutationSpliter(mutations, test_num_mutations, greater, shuffle=shuffle,
                                                    num_splits=num_split, random_state=experiment.seed)}
-    # split the data based on the strategy
-    if split_strategy in ["cluster", "mutations"]:
-        X_train, X_test = spliting[split_strategy].train_test_split(feature.features, test_size=test_size)
-
-        results, models_dict = training.generate_training_results(X_train, feature.label, tune, test_data=X_test, 
-                                                                  fold_strategy=spliting[split_strategy])
-    else:
-        results, models_dict = training.generate_training_results(feature.features, feature.label, tune, fold_strategy=split_strategy)
     
-    # generate the holdout test set predictions
-    test_set_predictions = training.generate_holdout_prediction(models_dict)
-    evaluate_all_models(experiment.evaluate_model, models_dict, training_output)
+    if iterate_multiple_features:
+        generator = iterate_excel(excel, parser=DataParser, label=label, outliers=outliers)
+        if split_strategy in ["cluster", "mutations"]:
+            training.iterate_multiple_features(generator, training_output=training_output, split_strategy=spliting[split_strategy])
+        else:
+            cluster = {num: x for num, x in enumerate(feature.features)}
+            split_strategy = split.ClusterSpliter(cluster, num_split, random_state=experiment.seed, shuffle=shuffle, stratified=stratified)
+            training.iterate_multiple_features(cluster, training_output=training_output, split_strategy=split_strategy)
+    else:
+        # split the data based on the strategy
+        if split_strategy in ["cluster", "mutations"]:
+            X_train, X_test = spliting[split_strategy].train_test_split(feature.features, test_size=test_size)
 
-    # finally write the results
-    for tune_status, result_dict in results.items():
-        for key, value in result_dict.items():
-            write_results(f"{training_output}/{tune_status}", *value, sheet_name=key)
-        write_results(f"{training_output}/{tune_status}", test_set_predictions[tune_status] , sheet_name="test_results")
+            results, models_dict = training.generate_training_results(X_train, feature.label, tune, test_data=X_test, 
+                                                                    fold_strategy=spliting[split_strategy])
+        else:
+            results, models_dict = training.generate_training_results(feature.features, feature.label, tune, fold_strategy=split_strategy)
+        
+        # generate the holdout test set predictions
+        test_set_predictions = training.generate_holdout_prediction(models_dict)
+        evaluate_all_models(experiment.evaluate_model, models_dict, training_output)
+
+        # finally write the results
+        for tune_status, result_dict in results.items():
+            for key, value in result_dict.items():
+                write_results(f"{training_output}/{tune_status}", *value, sheet_name=key)
+            write_results(f"{training_output}/{tune_status}", test_set_predictions[tune_status] , sheet_name="test_results")
 
 
 if __name__ == "__main__":

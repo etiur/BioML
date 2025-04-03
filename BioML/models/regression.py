@@ -10,7 +10,7 @@ import numpy as np
 from .base import PycaretInterface, Trainer, DataParser
 from ..utilities.utils import evaluate_all_models, write_results
 from ..utilities import split_methods as split
-from ..utilities.utils import read_outlier_file
+from ..utilities.utils import read_outlier_file, iterate_excel
 
 
 def arg_parse():
@@ -69,13 +69,16 @@ def arg_parse():
                         help="If to shuffle the data before splitting")
     parser.add_argument("-cv", "--cross_validation", required=False, action="store_false", 
                         help="If to use cross validation, default is True")
+    parser.add_argument("-it", "--iterate_multiple_features", required=False, action="store_true", 
+                         help="If to iterate over multiple features, in case you want to test multiple features," \
+                         " if false, you will have to specify a single feature. Default is False")
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.budget_time, args.scaler,
             args.training_features, args.kfold_parameters, args.outliers, args.difference_weight, 
             args.best_model, args.seed, args.drop, args.tune, args.plot, args.optimize, 
             args.selected, args.sheet_name, args.num_iter, args.split_strategy, args.cluster, 
-            args.mutations, args.test_num_mutations, args.greater, args.shuffle, args.cross_validation]
+            args.mutations, args.test_num_mutations, args.greater, args.shuffle, args.cross_validation, args.iterate_multiple_features]
 
 
 class Regressor:
@@ -149,10 +152,10 @@ class Regressor:
         cv_val = dataframe.loc[("CV-Val", "Mean")]
 
         operation = op.add
-        penalize = np.inf if cv_train[self.optimize] == 1 else 0
+        penalize = 1e6 if cv_train[self.optimize] == 1 else 0
         if self.greater_is_better:
             operation = op.sub
-            penalize = -np.inf if cv_train[self.optimize] == 1 else 0
+            penalize = -1e6 if cv_train[self.optimize] == 1 else 0
 
         metric = cv_train[self.optimize] * self.train_weight + cv_val[self.optimize] # type: ignore
         diff =  self.difference_weight * abs(cv_val[self.optimize] - cv_train[self.optimize]) # type: ignore
@@ -185,7 +188,7 @@ class Regressor:
 def main():
     label, training_output, trial_time, scaler, excel, kfold, outliers, difference_weight, \
     best_model, seed, drop, tune, plot, optimize, selected, sheet, num_iter, split_strategy, cluster, mutations, \
-        test_num_mutations, greater, shuffle, cross_validation = arg_parse()
+        test_num_mutations, greater, shuffle, cross_validation, iterate_multiple_features = arg_parse()
     
     # creating the arguments for the classes
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
@@ -209,25 +212,35 @@ def main():
                 "mutations": split.MutationSpliter(mutations, test_num_mutations, greater, 
                                                    num_splits=num_split, random_state=experiment.seed, shuffle=shuffle)}
     
-    # split the data based on the strategy
-    if split_strategy in ["cluster", "mutations"]:
-        X_train, X_test = spliting[split_strategy].train_test_split(feature.features, test_size=test_size)
+    if iterate_multiple_features:
+        generator = iterate_excel(excel, parser=DataParser, label=label, outliers=outliers)
+        if split_strategy in ["cluster", "mutations"]:
+            training.iterate_multiple_features(generator, training_output=training_output, split_strategy=spliting[split_strategy])
+        else:
+            cluster = {num: x for num, x in enumerate(feature.features)}
+            split_strategy = split.ClusterSpliter(cluster, num_split, random_state=experiment.seed, shuffle=shuffle)
+            training.iterate_multiple_features(cluster, training_output=training_output, split_strategy=split_strategy)
 
-        results, models_dict = training.generate_training_results(X_train, feature.label, tune, 
-                                                                  test_data=X_test, fold_strategy=spliting[split_strategy])
     else:
-        # train the models and retunr the prediction results
-        results, models_dict = training.generate_training_results(feature.features, feature.label, tune, fold_strategy=split_strategy)
-    
-    # sort the results based on the optimization metric
-    test_set_predictions = training.generate_holdout_prediction(models_dict)
-    evaluate_all_models(experiment.evaluate_model, models_dict, training_output)
+        # split the data based on the strategy
+        if split_strategy in ["cluster", "mutations"]:
+            X_train, X_test = spliting[split_strategy].train_test_split(feature.features, test_size=test_size)
 
-    # finally write the results
-    for tune_status, result_dict in results.items():
-        for key, value in result_dict.items():
-            write_results(f"{training_output}/{tune_status}", *value, sheet_name=key)
-        write_results(f"{training_output}/{tune_status}", test_set_predictions[tune_status] , sheet_name="test_results")
+            results, models_dict = training.generate_training_results(X_train, feature.label, tune, 
+                                                                    test_data=X_test, fold_strategy=spliting[split_strategy])
+        else:
+            # train the models and retunr the prediction results
+            results, models_dict = training.generate_training_results(feature.features, feature.label, tune, fold_strategy=split_strategy)
+        
+        # sort the results based on the optimization metric
+        test_set_predictions = training.generate_holdout_prediction(models_dict)
+        evaluate_all_models(experiment.evaluate_model, models_dict, training_output)
+
+        # finally write the results
+        for tune_status, result_dict in results.items():
+            for key, value in result_dict.items():
+                write_results(f"{training_output}/{tune_status}", *value, sheet_name=key)
+            write_results(f"{training_output}/{tune_status}", test_set_predictions[tune_status] , sheet_name="test_results")
 
 
 if __name__ == "__main__":

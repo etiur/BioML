@@ -18,7 +18,8 @@ def arg_parse():
     parser.add_argument("fasta_file", type=str, help="Path to the FASTA file")
     parser.add_argument("-m", "--model_name", type=str, default="facebook/esm2_t6_8M_UR50D", 
                         help="Name of the language model from huggingface")
-    parser.add_argument("-d", "--mode", default="append", help="Whether to write all the embeddings at once or one batch at the time")
+    parser.add_argument("-d", "--mode", default="append", choices=("append", "write"),
+                        help="Whether to write all the embeddings at once or one batch at the time")
     parser.add_argument("-b", "--batch_size", type=int, default=8, help="The batch size")
     parser.add_argument("-p", "--save_path", type=str, default="embeddings.csv", help="The path to save the emebeddings in csv format")
     parser.add_argument("-s","--seed", type=int, default=12891245318, help="Seed for reproducibility")
