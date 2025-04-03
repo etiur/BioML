@@ -21,7 +21,7 @@ from .utils import scale
 def arg_parse():
     parser = argparse.ArgumentParser(description="Detect outliers from the selected features")
 
-    parser.add_argument("-e", "--excel", required=False,
+    parser.add_argument("-i", "--input", required=False,
                         help="The file to where the selected features are saved in excel or csv format",
                         default="training_features/selected_features.xlsx")
     parser.add_argument("-o", "--output", required=False,
