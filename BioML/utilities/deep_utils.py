@@ -65,10 +65,30 @@ def set_seed(seed: int):
     
     
 def load_adapter(peft_model: str, llm_config: dataclass = LLMConfig(),
-                 use_adapter: str="initial", adapters: dict[str, str] | None=None):
+                 adapters: dict[str, str] | None=None, use_adapter: str="initial"):
+    """
+    Load a PEFT model with the specified adapter.
+
+    Parameters
+    ----------
+    peft_model : str
+        The path to the saved peft model (the lora weights for example).
+    llm_config : dataclass, optional
+        The configuration for the LLM, by default LLMConfig()
+    adapters : dict, optional
+        A dictionary of additional adapters to load, by default None
+    use_adapter : str, optional
+        The name of the adapter to use, by default "initial"
+
+    Returns
+    -------
+    PreTrainedModel
+        The loaded PEFT model with the specified adapter.
+    """
+    # Load the PEFT model with the specified adapter
     device = "auto" if llm_config.device == "cuda" else llm_config.device
     # it shows something like not initialized but that is fine
-    model = AutoPeftModel.from_pretrained(peft_model, adapter_name="initial", 
+    model = AutoPeftModel.from_pretrained(peft_model, adapter_name=use_adapter, 
                                           low_cpu_mem_usage=True, device_map=device,
                                           torch_dtype=llm_config.dtype)                                                                
     if adapters:
