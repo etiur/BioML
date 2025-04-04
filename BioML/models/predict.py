@@ -17,7 +17,7 @@ from .base import DataParser
 
 def arg_parse():
     parser = argparse.ArgumentParser(description="Predict using the models and average the votations")
-    parser.add_argument("-i", "--fasta_file", help="The fasta file path", required=True)
+    parser.add_argument("-i", "--fasta_file", help="The fasta file path", required=False, default=None)
     parser.add_argument("-tr", "--training_features", required=True,
                         help="The file to where the training features are saved in excel or csv format")
     parser.add_argument("-sc", "--scaler", default="zscore", choices=("robust", "zscore", "minmax"),
@@ -47,11 +47,13 @@ def arg_parse():
                         help="If to use the applicability domain to filter the predictions")
     parser.add_argument("-sh", "--sheet_name", required=False, default=None, 
                         help="The sheet name for the excel file if the training features is in excel format")
+    parser.add_argument("-ts", "--test_sheet_name", required=False, default=None,
+                        help="The sheet name for the excel file if the test features is in excel format")
     args = parser.parse_args()
 
     return [args.fasta_file, args.training_features, args.scaler, args.model_path, args.test_features,
              args.res_dir, args.number_similar_samples, args.outlier_train, args.outlier_test, args.problem, args.label,
-             args.applicability_domain, args.sheet_name]
+             args.applicability_domain, args.sheet_name, args.test_sheet_name]
 
 @dataclass
 class Predictor:
@@ -292,12 +294,15 @@ class FastaExtractor:
             The new filtered fasta file with negative sequences
         """
         # writing the positive and negative fasta sequences to different files
-        self.resdir.mkdir(exist_ok=True, parents=True)
-        with open(f"{self.resdir}/{positive_fasta}", "w") as pos:
+        positive_fasta = self.resdir / positive_fasta
+        negative_fasta = self.resdir / negative_fasta
+        positive_fasta.parent.mkdir(exist_ok=True, parents=True)
+        negative_fasta.parent.mkdir(exist_ok=True, parents=True)
+        with open(positive_fasta, "w") as pos:
             positive = sorted(positive_list, reverse=True, key=self._sorting_function)
             fasta_pos = FastaIO.FastaWriter(pos, wrap=None)
             fasta_pos.write_file(positive)
-        with open(f"{self.resdir}/{negative_fasta}", "w") as neg:
+        with open(negative_fasta, "w") as neg:
             negative = sorted(negative_list, reverse=True, key=self._sorting_function)
             fasta_neg = FastaIO.FastaWriter(neg, wrap=None)
             fasta_neg.write_file(negative)
@@ -407,7 +412,7 @@ def predict_filter_by_domain(training_features: pd.DataFrame | str | Path | np.n
                              test_features: pd.DataFrame | str | Path | np.ndarray, outlier_train: Iterable[str | int] | Path = (), 
                              outlier_test: Iterable[str | int] | Path = (), applicability_domain: bool = False,
                              sheet_name: str | None = None, scaler: str = "zscore", res_dir: str = "prediction_result/predictions.csv", 
-                             number_similar_samples: int =1, problem: str="classification"):
+                             number_similar_samples: int =1, problem: str="classification", test_sheet_name: str | None = None) -> pd.DataFrame:
     """
     Make predictions on new samples and filter them using the applicability domain.
 
@@ -444,7 +449,7 @@ def predict_filter_by_domain(training_features: pd.DataFrame | str | Path | np.n
         The filtered predictions.
     """
     feature = DataParser(training_features, label, outliers=outlier_train, sheets=sheet_name)
-    test_features = DataParser.remove_outliers(DataParser.read_features(test_features), outlier_test)
+    test_features = DataParser.remove_outliers(DataParser.read_features(test_features, sheets=test_sheet_name), outlier_test)
     predictions = predict(test_features, model_path, problem)
     col_name = ["prediction_score", "prediction_label", "AD_number"]
     if applicability_domain:
@@ -460,7 +465,7 @@ def predict_filter_by_domain(training_features: pd.DataFrame | str | Path | np.n
 
 def main():
     fasta, training_features, scaler, model_path, test_features, res_dir, number_similar_samples, \
-    outlier_train, outlier_test, problem, label, applicability_domain, sheet_name = arg_parse()
+    outlier_train, outlier_test, problem, label, applicability_domain, sheet_name, test_sheet_name = arg_parse()
 
     # read outliers
     outlier_test = read_outlier_file(outlier_test)
@@ -471,6 +476,8 @@ def main():
                                            applicability_domain, sheet_name, scaler, res_dir, number_similar_samples, problem)
 
     if problem == "classification":
+        if not fasta:
+            raise ValueError("The fasta file is required for classification problems")
         if not applicability_domain:
             test_index = [f"sample_{x}" for x, _ in enumerate(predictions.index)]
             predictions["Index"] = test_index
