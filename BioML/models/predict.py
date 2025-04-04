@@ -23,17 +23,17 @@ from ..deep.train_config import LLMConfig
 def arg_parse():
     parser = argparse.ArgumentParser(description="Predict using the models and average the votations")
     parser.add_argument("-i", "--fasta_file", help="The fasta file path", required=False, default=None)
-    parser.add_argument("-tr", "--training_features", required=True,
+    parser.add_argument("-tr", "--training_features", required=False,
                         help="The file to where the training features are saved in excel or csv format")
     parser.add_argument("-sc", "--scaler", default="zscore", choices=("robust", "zscore", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to zscore")
     parser.add_argument("-m", "--model_path", required=False, default=None,
                         help="The directory for the generated models")
-    parser.add_argument("-te", "--test_features", required=True,
+    parser.add_argument("-te", "--test_features", required=False,
                         help="The file to where the test features are saved in excel or csv format")
     parser.add_argument("-d", "--res_dir", required=False,
                         help="The folder to store the prediction results",
-                        default="prediction_results")
+                        default="prediction_result/predictions.csv")
     parser.add_argument("-nss", "--number_similar_samples", required=False, default=1, type=int,
                         help="The number of similar training samples to filter the predictions")
     parser.add_argument("-otr", "--outliers_train", nargs="+", required=False, default=(),
@@ -529,8 +529,8 @@ def main():
     llm_config, peft_pat = arg_parse()
 
     if not deep_model:
-        if not model_path:
-            raise ValueError("The model path is required")
+        if not model_path or not training_features or not test_features:
+            raise ValueError("The model path, training features and test features are required")
         # read outliers
         outlier_test = read_outlier_file(outlier_test)
         outlier_train = read_outlier_file(outlier_train)
@@ -545,12 +545,13 @@ def main():
             if not applicability_domain:
                 test_index = [f"sample_{x}" for x, _ in enumerate(predictions.index)]
                 predictions["Index"] = test_index
-            extractor = FastaExtractor(fasta, res_dir)
+            extractor = FastaExtractor(fasta, Path(res_dir).parent)
             positive, negative = extractor.separate_negative_positive(predictions)
             extractor.extract(positive, negative, positive_fasta="positive.fasta", negative_fasta="negative.fasta")   
     else:
-        if not peft_pat:
-            raise ValueError("You haven't specified the path to teh adapters")
+        if not peft_pat and not fasta:
+            raise ValueError("You haven't specified the path to the adapters and the fasta file")
+
         predictions = predict_deep(test_fasta=fasta, peft_model=peft_pat, llm_config=llm_config, problem=problem, res_dir=res_dir)
 
 
