@@ -11,8 +11,12 @@ from Bio.SeqIO import FastaIO
 import numpy as np
 import pandas as pd
 from pathlib import Path
+import torch
+from torch.utils.data import DataLoader
 from ..utilities.utils import scale, read_outlier_file
 from .base import DataParser
+from ..utilities.deep_utils import load_adapter
+from ..deep.train_config import LLMConfig
 
 
 def arg_parse():
@@ -98,6 +102,65 @@ class Predictor:
         if problem == "classification":
             return self.model.predict_model(self.loaded_model, self.test_features, verbose=False, raw_score=True)
         return self.model.predict_model(self.loaded_model, self.test_features, verbose=False)
+
+
+class DeepPredictor:
+    """
+    A class to perform predictions using a deep learning model from Huggingface
+    Initialize the class with the test features, the experiment and the model path
+    Parameters
+    ____________
+
+    peft_adapter: str | Path
+        The path to the model adapter
+    test_fastas: str | Path
+        The path to the test FASTA file
+    llm_config: dataclass
+        The configuration for the model
+
+    Returns:
+    ____________
+    pd.DataFrame
+        The predictions as a dataframe
+    """
+    peft_adapter: str | Path
+    test_fastas: str | Path
+    llm_config: dataclass = field(default_factory=LLMConfig)
+
+    @cached_property
+    def loaded_model(self):
+        """Load the model from the model path and return it"""
+        return load_adapter(self.peft_adapter, self.llm_config)
+    
+    def predict(self, tokenizer: callable, problem: str="classification", batch_size: int=2) -> pd.DataFrame:
+        """
+        Make predictions on new samples
+        Parameters
+        ___________
+        tokenizer: callable
+            The tokenizer to use for the model
+        problem: str
+            The problem type, either classification or regression
+        batch_size: int
+            The batch size to use for the model
+
+        Returns
+        -------
+        pd.DataFrame
+            The predictions as a dataframe
+        """
+        tok = tokenizer(self.test_fastas)
+        predictions = []
+        with torch.no_grad():
+            for num, batch in enumerate(DataLoader(tok, batch_size=batch_size)):
+                output = self.loaded_model(batch["input_ids"], batch["attention_mask"])
+                if problem == "classification":
+                    output = torch.softmax(output.logits, dim=-1)
+                else:
+                    output = output.logits.flatten()
+                predictions.append(output)
+        output = torch.cat(predictions, dim=0)
+        return pd.DataFrame(output)
 
 
 @dataclass(slots=True)

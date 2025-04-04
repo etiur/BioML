@@ -7,7 +7,6 @@ from typing import Iterable, Any
 from sklearn.model_selection import train_test_split
 from BioML.utilities import split_methods as split
 from lightning import LightningModule, LightningDataModule, Trainer, seed_everything
-import bitsandbytes as bnb
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import OneCycleLR
 from dataclasses import dataclass, asdict, field
@@ -221,6 +220,7 @@ class PreparePEFT:
         PreTrainedModel
         """
         if self.train_config.qlora:
+            import bitsandbytes as bnb
             bnb_config = BitsAndBytesConfig(
                         load_in_4bit=True,
                         bnb_4bit_use_double_quant=True,
@@ -596,7 +596,7 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
         # TODO: MLflow metrics should show epochs rather than steps on the x-axis
         
         mlf_logger = MLFlowLogger(experiment_name=mlflow.get_experiment(run.info.experiment_id).name, 
-                                  tracking_uri=mlflow.get_tracking_uri(), log_model=True, 
+                                  tracking_uri=mlflow.get_tracking_uri(), log_model=False, 
                                   save_dir=Path(train_config.root_dir) /train_config.log_save_dir)
         csv_logger = CSVLogger(save_dir=Path(train_config.root_dir) / train_config.log_save_dir, 
                                name=train_config.csv_experiment_name)
@@ -630,10 +630,10 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
             light_mod = TransformerModule.load_from_checkpoint(best_model_path, model=model)
             light_mod.model.save_pretrained(Path(train_config.root_dir) / train_config.adapter_output) # it only saves PEFT adapters
             
-    return light_mod, data_module, best_model_path, train_config.root_dir / train_config.adapter_output
+    return light_mod, data_module, best_model_path, Path(train_config.root_dir) / train_config.adapter_output
 
 
-def read_labels(self, label: str | pd.Series) -> str | pd.Series:
+def read_labels(label: str | pd.Series) -> str | pd.Series:
     """
     Reads the label data from a file or returns the input data.
 
