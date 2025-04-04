@@ -26,6 +26,7 @@ import mlflow
 from .embeddings import TokenizeFasta
 from .train_config import LLMConfig, SplitConfig, TrainConfig
 from ..utilities.utils import load_config
+import pandas as pd
 
 
 def parse_args():
@@ -575,8 +576,8 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
         
     Returns
     -------
-    tuple[TransformerModule, DataModule, str]
-        The trained model, the data module and the path to the best model
+    tuple[TransformerModule, DataModule, str, str]
+        The trained model, the data module and the path to the best model, the path to the PEFT adapter
     """
     seed_everything(split_config.random_seed, workers=True)
     splitter = PrepareSplit(split_config.cluster_file, split_config.shuffle, split_config.random_seed, 
@@ -629,7 +630,7 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
             light_mod = TransformerModule.load_from_checkpoint(best_model_path, model=model)
             light_mod.model.save_pretrained(Path(train_config.root_dir) / train_config.adapter_output) # it only saves PEFT adapters
             
-    return light_mod, data_module, best_model_path
+    return light_mod, data_module, best_model_path, train_config.root_dir / train_config.adapter_output
 
 
 def read_labels(self, label: str | pd.Series) -> str | pd.Series:
@@ -688,7 +689,7 @@ def main():
     split_config = SplitConfig(**load_config(args.split_config, extension=args.split_config.split(".")[-1]))
 
     # Placeholder for the training loop call
-    model, data_module, best_model_path = training_loop(args.fasta_file, label, args.lr,
+    model, data_module, best_model_path, peft_adapter = training_loop(args.fasta_file, label, args.lr,
                                                         train_config, llm_config, split_config,
                                                         tokenizer_args, lightning_trainer_args,
                                                         args.use_best_model, lora_init)
