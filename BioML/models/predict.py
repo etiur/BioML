@@ -371,54 +371,6 @@ class FastaExtractor:
             fasta_neg.write_file(negative)
 
 
-def predict(test_features: pd.DataFrame, model_path: str | Path, 
-            problem: str="classification") -> pd.DataFrame:
-    """
-    Make predictions on new samples.
-
-    Parameters
-    ----------
-    test_features : pandas DataFrame object
-        The test data.
-    model_path : str or Path
-        The path to the trained model.
-    problem : str, default="classification"
-        The type of problem. Must be one of "classification" or "regression".
-
-    Returns
-    -------
-    pd.DataFrame
-        The predicted values appended to the test features.
-
-    Notes
-    -----
-    This function makes predictions on new samples. 
-    It takes in a pandas DataFrame object `test_features` as the test data, a string `model_path` as the path to the trained model,
-    and a string `problem` as the type of problem. 
-    The function creates an instance of either the `ClassificationExperiment` or `RegressionExperiment` 
-    class based on the `problem` parameter. It then creates an instance of the `Predictor` class with the test data, experiment, 
-    and model path as parameters. The function calls the `predicting` method of the `Predictor` object to make predictions on the 
-    test data. The function returns the predicted values as a numpy array.
-
-    Examples
-    --------
-    >>> from predict import predict
-    >>> import pandas as pd
-    >>> import numpy as np
-    >>> test_features = pd.DataFrame(np.random.rand(10, 5))
-    >>> model_path = 'model.pkl'
-    >>> pred = predict(test_features, model_path, problem='classification')
-    """
-    if problem == "classification":
-        experiment = ClassificationExperiment()
-    elif problem == "regression":
-        experiment = RegressionExperiment()
-
-    predictor = Predictor(test_features, experiment, model_path)
-    pred = predictor.predict(problem)
-    return pred
-
-
 def domain_filter(predictions: pd.DataFrame, scaled_training_features: pd.DataFrame, scaled_test_features: pd.DataFrame,
                   min_num: int=1) -> pd.DataFrame:
     """
@@ -513,7 +465,14 @@ def predict_filter_by_domain(training_features: pd.DataFrame | str | Path | np.n
     """
     feature = DataParser(training_features, label, outliers=outlier_train, sheets=sheet_name)
     test_features = DataParser.remove_outliers(DataParser.read_features(test_features, sheets=test_sheet_name), outlier_test)
-    predictions = predict(test_features, model_path, problem)
+    if problem == "classification":
+        experiment = ClassificationExperiment()
+    elif problem == "regression":
+        experiment = RegressionExperiment()
+
+    predictor = Predictor(test_features, experiment, model_path)
+    predictions = predictor.predict(problem)
+
     col_name = ["prediction_score", "prediction_label", "AD_number"]
     if applicability_domain:
         transformed, _, test_x = scale(scaler, feature.drop(), test_features)
