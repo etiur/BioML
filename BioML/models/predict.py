@@ -13,7 +13,8 @@ import pandas as pd
 from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
-from ..utilities.utils import scale, read_outlier_file
+from ..deep.embeddings import TokenizeFasta
+from ..utilities.utils import scale, read_outlier_file, load_config
 from .base import DataParser
 from ..utilities.deep_utils import load_adapter
 from ..deep.train_config import LLMConfig
@@ -26,7 +27,7 @@ def arg_parse():
                         help="The file to where the training features are saved in excel or csv format")
     parser.add_argument("-sc", "--scaler", default="zscore", choices=("robust", "zscore", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to zscore")
-    parser.add_argument("-m", "--model_path", required=True,
+    parser.add_argument("-m", "--model_path", required=False, default=None,
                         help="The directory for the generated models")
     parser.add_argument("-te", "--test_features", required=True,
                         help="The file to where the test features are saved in excel or csv format")
@@ -53,11 +54,15 @@ def arg_parse():
                         help="The sheet name for the excel file if the training features is in excel format")
     parser.add_argument("-ts", "--test_sheet_name", required=False, default=None,
                         help="The sheet name for the excel file if the test features is in excel format")
+    parser.add_argument("-d", "--deep_model", required=False, action="store_true", help="If to use the deep model, default is False")
+    parser.add_argument("-peft", "--peft_path", required=False, help="The path to the model adapter", default=None)
+    parser.add_argument("-lc", "--llm_config", type=str, default="",
+                        help="Path to the language model configuration file (optional). json or yaml file.")
     args = parser.parse_args()
 
     return [args.fasta_file, args.training_features, args.scaler, args.model_path, args.test_features,
              args.res_dir, args.number_similar_samples, args.outlier_train, args.outlier_test, args.problem, args.label,
-             args.applicability_domain, args.sheet_name, args.test_sheet_name]
+             args.applicability_domain, args.sheet_name, args.test_sheet_name, args.deep_model, args.llm_config, args.peft_path]
 
 @dataclass
 class Predictor:
@@ -484,28 +489,69 @@ def predict_filter_by_domain(training_features: pd.DataFrame | str | Path | np.n
     predictions.to_csv(f"{res_dir}")
     return predictions
 
+def predict_deep(test_fasta: str | Path, peft_model: str | Path, llm_config: str, problem: str="classification", batch_size: int=2,
+                 res_dir: str="prediction_result/predictions.csv") -> pd.DataFrame:
+    """
+    Make predictions using a deep learning model from Huggingface
+
+    Parameters
+    ____________
+    test_fasta: str | Path
+        The path to the test FASTA file
+    peft_model: str | Path
+        The path to the model adapter
+    llm_config: the configuration path
+        The configuration for the model
+    problem: str
+        The problem type, either classification or regression
+    batch_size: int
+        The batch size to use for the model
+    res_dir: str | Path
+        The path to the directory where the extracted sequences will be saved. Default is "prediction_results".
+
+    Returns:
+    ____________
+    pd.DataFrame
+        The predictions as a dataframe
+    """
+    llm_conf = LLMConfig(**load_config(llm_config, extension=llm_config.split(".")[-1]))
+    tok = TokenizeFasta()
+    predictor = DeepPredictor(peft_adapter=peft_model, test_fastas=test_fasta, llm_config=llm_conf)
+    predictions = predictor.predict(tok.tokenizer, problem=problem, batch_size=batch_size)
+    Path(res_dir).parent.mkdir(exist_ok=True, parents=True)
+    predictions.to_csv(f"{res_dir}")
+    return predictions
+
 
 def main():
     fasta, training_features, scaler, model_path, test_features, res_dir, number_similar_samples, \
-    outlier_train, outlier_test, problem, label, applicability_domain, sheet_name, test_sheet_name = arg_parse()
+    outlier_train, outlier_test, problem, label, applicability_domain, sheet_name, test_sheet_name, deep_model, \
+    llm_config, peft_pat = arg_parse()
 
-    # read outliers
-    outlier_test = read_outlier_file(outlier_test)
-    outlier_train = read_outlier_file(outlier_train)
+    if not deep_model:
+        if not model_path:
+            raise ValueError("The model path is required")
+        # read outliers
+        outlier_test = read_outlier_file(outlier_test)
+        outlier_train = read_outlier_file(outlier_train)
 
-    # preparing the prediction
-    predictions = predict_filter_by_domain(training_features, label, model_path, test_features, outlier_train, outlier_test,
-                                           applicability_domain, sheet_name, scaler, res_dir, number_similar_samples, problem)
+        # preparing the prediction
+        predictions = predict_filter_by_domain(training_features, label, model_path, test_features, outlier_train, outlier_test,
+                                            applicability_domain, sheet_name, scaler, res_dir, number_similar_samples, problem, test_sheet_name)
 
-    if problem == "classification":
-        if not fasta:
-            raise ValueError("The fasta file is required for classification problems")
-        if not applicability_domain:
-            test_index = [f"sample_{x}" for x, _ in enumerate(predictions.index)]
-            predictions["Index"] = test_index
-        extractor = FastaExtractor(fasta, res_dir)
-        positive, negative = extractor.separate_negative_positive(predictions)
-        extractor.extract(positive, negative, positive_fasta="positive.fasta", negative_fasta="negative.fasta")   
+        if problem == "classification":
+            if not fasta:
+                raise ValueError("The fasta file is required for classification problems")
+            if not applicability_domain:
+                test_index = [f"sample_{x}" for x, _ in enumerate(predictions.index)]
+                predictions["Index"] = test_index
+            extractor = FastaExtractor(fasta, res_dir)
+            positive, negative = extractor.separate_negative_positive(predictions)
+            extractor.extract(positive, negative, positive_fasta="positive.fasta", negative_fasta="negative.fasta")   
+    else:
+        if not peft_pat:
+            raise ValueError("You haven't specified the path to teh adapters")
+        predictions = predict_deep(test_fasta=fasta, peft_model=peft_pat, llm_config=llm_config, problem=problem, res_dir=res_dir)
 
 
 if __name__ == "__main__":

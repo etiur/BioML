@@ -140,8 +140,8 @@ class TrainConfig:
             Device to use for the language model.
         """
         if self.num_classes == 1:
-            return "CSV Regression"
-        return "CSV Classification"
+            return "CSV_Regression"
+        return "CSV_Classification"
     
     @precision.setter
     def precision(self, value: str):
