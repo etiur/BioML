@@ -5,26 +5,26 @@ build-backend = "hatchling.build"
 [project]
 name = "BioML"
 version = "1.0.0"
-requires-python = ">3.9"
+requires-python = "<3.12"
 dependencies = [
-  "scikit-learn",
   "biopython",
-  "shap",
-  "matplotlib",
-  "pycaret[analysis,models]",
   "openpyxl",
   "pyod",
   "combo",
-  "mlflow",
   "optuna",
   "transformers",
-  "werkzeug",
   "optuna-integration",
   "lightning",
   "peft",
   "datasets",
-  "torch",
-  "pytest"]
+  "pytest",
+#  "mlflow <=2.16.0",
+   "pycaret[analysis,models]",
+   "mlflow",
+# you have to download POSUM_toolkit and iFeature from github, they are not packages
+]
+
+
 
 authors = [
   {name = "Ruite Xiang", email = "ruite.xiang@gmail.com"}

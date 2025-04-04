@@ -195,9 +195,14 @@ class PossumFeatures:
             list of the commands to run
         """
 
-        num = Path(fasta_file).stem.split("_")[1]
-        if not num.isdigit():
+        num = Path(fasta_file).stem.split("_")
+        if len(num) > 1:
+            num = num[1]
+            if not num.isdigit():
+                num = 0
+        else:
             num = 0
+
         command = []
         for prog in programs:
             if ":" in prog:
@@ -282,9 +287,14 @@ class IfeatureFeatures:
         list[str]
             list of the commands to run
         """
-        num = Path(fasta_file).stem.split("_")[1]
-        if not num.isdigit():
+        num = Path(fasta_file).stem.split("_")
+        if len(num) > 1:
+            num = num[1]
+            if not num.isdigit():
+                num = 0
+        else:
             num = 0
+
         command = [f"python3 {self.program} --file {fasta_file} --type {prog} --out {self.output}/{prog}_{num}.tsv" for
                    prog in programs]
 

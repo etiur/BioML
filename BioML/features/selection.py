@@ -241,7 +241,7 @@ class DataReader:
         """
         if self.variance_thres is not None:
             variance = VarianceThreshold(self.variance_thres)
-            fit = variance.fit_transform(self.features)
+            fit = variance.fit_transform(self.features.values)
             features = pd.DataFrame(fit, index=self.features.index, columns=variance.get_feature_names_out())
             
         if self.outliers:

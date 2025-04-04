@@ -87,13 +87,16 @@ def arg_parse():
     parser.add_argument("-it", "--iterate_multiple_features", required=False, action="store_true", 
                          help="If to iterate over multiple features, in case you want to test multiple features," \
                          " if false, you will have to specify a single feature. Default is False")
+    parser.add_argument("-log", "--log_experiments", required=False, action="store_true",
+                        help="If to log the experiments in MLFlow, default is False")
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.budget_time, args.scaler, args.training_features, args.kfold_parameters, 
             args.outliers, args.precision_weight, args.recall_weight, args.report_weight, args.difference_weight, 
             args.best_model, args.seed, args.drop, args.tune, args.plot, args.optimize, args.selected,
             args.sheet_name, args.num_iter, args.split_strategy, args.cluster, args.mutations, 
-            args.test_num_mutations, args.greater, args.shuffle, args.cross_validation, args.stratified, args.iterate_multiple_features]
+            args.test_num_mutations, args.greater, args.shuffle, args.cross_validation, args.stratified, args.iterate_multiple_features,
+            args.log_experiments]
 
 
 class Classifier:
@@ -200,7 +203,7 @@ def main():
     label, training_output, budget_time, scaler, excel, kfold, outliers, \
     precision_weight, recall_weight, report_weight, difference_weight, best_model, \
     seed, drop, tune,  plot, optimize, selected, sheet, num_iter, split_strategy, cluster, mutations, \
-        test_num_mutations, greater, shuffle, cross_validation, stratified, iterate_multiple_features = arg_parse()
+        test_num_mutations, greater, shuffle, cross_validation, stratified, iterate_multiple_features, log_experiments = arg_parse()
     
     # creating the arguments for the classes
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
@@ -214,7 +217,7 @@ def main():
     feature = DataParser(excel, label, outliers=outliers, sheets=sheet)
     # These are the classes used for classification
     experiment = PycaretInterface("classification", seed, scaler=scaler, budget_time=budget_time,
-                                  best_model=best_model, output_path=training_output, optimize=optimize)
+                                  best_model=best_model, output_path=training_output, optimize=optimize, log_experiment=log_experiments)
     
     # this class has the arguments for the trainer to do classification
     classifier = Classifier(ranking_dict, drop, selected=selected, optimize=optimize, plot=plot)
