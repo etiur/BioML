@@ -18,9 +18,8 @@ dependencies = [
   "peft",
   "datasets",
   "pytest",
-#  "mlflow <=2.16.0",
-   "pycaret[analysis,models]",
-   "mlflow",
+  "mlflow <=2.16.0",
+  "pycaret[analysis,models]",
 # you have to download POSUM_toolkit and iFeature from github, they are not packages
 ]
 

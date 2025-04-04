@@ -204,7 +204,7 @@ class PycaretInterface:
     best_model: int = 3
     output_path: Path | str | None= None
     experiment_name: str | None = None
-    log_experiment: bool = True
+    log_experiment: bool = False
     # No need to provide values
     _plots: Sequence[str] = field(init=False)
     _final_models: Sequence[str] = field(init=False)
