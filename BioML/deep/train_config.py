@@ -83,7 +83,7 @@ class TrainConfig:
     optimize: str = "Val_MCC"
     optimize_mode: str = "max"
     # logging params
-    log_save_dir: str = "LLM_run"
+    log_save_dir: str = "Loggers"
     mlflow_description: str = f"PEFT tune"
     mlflow_run_name: str = f"{uuid.uuid4().hex[:10]}"
     
@@ -140,8 +140,8 @@ class TrainConfig:
             Device to use for the language model.
         """
         if self.num_classes == 1:
-            return "CSV Regression"
-        return "CSV Classification"
+            return "CSV_Regression"
+        return "CSV_Classification"
     
     @precision.setter
     def precision(self, value: str):

@@ -7,7 +7,6 @@ from typing import Iterable, Any
 from sklearn.model_selection import train_test_split
 from BioML.utilities import split_methods as split
 from lightning import LightningModule, LightningDataModule, Trainer, seed_everything
-import bitsandbytes as bnb
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import OneCycleLR
 from dataclasses import dataclass, asdict, field
@@ -26,6 +25,7 @@ import mlflow
 from .embeddings import TokenizeFasta
 from .train_config import LLMConfig, SplitConfig, TrainConfig
 from ..utilities.utils import load_config
+import pandas as pd
 
 
 def parse_args():
@@ -220,6 +220,7 @@ class PreparePEFT:
         PreTrainedModel
         """
         if self.train_config.qlora:
+            import bitsandbytes as bnb
             bnb_config = BitsAndBytesConfig(
                         load_in_4bit=True,
                         bnb_4bit_use_double_quant=True,
@@ -575,8 +576,8 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
         
     Returns
     -------
-    tuple[TransformerModule, DataModule, str]
-        The trained model, the data module and the path to the best model
+    tuple[TransformerModule, DataModule, str, str]
+        The trained model, the data module and the path to the best model, the path to the PEFT adapter
     """
     seed_everything(split_config.random_seed, workers=True)
     splitter = PrepareSplit(split_config.cluster_file, split_config.shuffle, split_config.random_seed, 
@@ -595,7 +596,7 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
         # TODO: MLflow metrics should show epochs rather than steps on the x-axis
         
         mlf_logger = MLFlowLogger(experiment_name=mlflow.get_experiment(run.info.experiment_id).name, 
-                                  tracking_uri=mlflow.get_tracking_uri(), log_model=True, 
+                                  tracking_uri=mlflow.get_tracking_uri(), log_model=False, 
                                   save_dir=Path(train_config.root_dir) /train_config.log_save_dir)
         csv_logger = CSVLogger(save_dir=Path(train_config.root_dir) / train_config.log_save_dir, 
                                name=train_config.csv_experiment_name)
@@ -629,10 +630,10 @@ def training_loop(fasta_file: str | Path, label: np.array, lr: float=1e-3,
             light_mod = TransformerModule.load_from_checkpoint(best_model_path, model=model)
             light_mod.model.save_pretrained(Path(train_config.root_dir) / train_config.adapter_output) # it only saves PEFT adapters
             
-    return light_mod, data_module, best_model_path
+    return light_mod, data_module, best_model_path, Path(train_config.root_dir) / train_config.adapter_output
 
 
-def read_labels(self, label: str | pd.Series) -> str | pd.Series:
+def read_labels(label: str | pd.Series) -> str | pd.Series:
     """
     Reads the label data from a file or returns the input data.
 
@@ -688,7 +689,7 @@ def main():
     split_config = SplitConfig(**load_config(args.split_config, extension=args.split_config.split(".")[-1]))
 
     # Placeholder for the training loop call
-    model, data_module, best_model_path = training_loop(args.fasta_file, label, args.lr,
+    model, data_module, best_model_path, peft_adapter = training_loop(args.fasta_file, label, args.lr,
                                                         train_config, llm_config, split_config,
                                                         tokenizer_args, lightning_trainer_args,
                                                         args.use_best_model, lora_init)
