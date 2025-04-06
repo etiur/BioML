@@ -17,7 +17,7 @@ class LLMConfig:
         Whether to disable the GPU.
     """
     # model params
-    model_name: str = "facebook/esm2_t6_8M_UR50D"
+    model_name: str = "facebook/esm2_t33_650M_UR50D"
     disable_gpu: bool = False
     _device: str = "cuda" if torch.cuda.is_available() else "cpu"
     dtype: torch.dtype = torch.float32

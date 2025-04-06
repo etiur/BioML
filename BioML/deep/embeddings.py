@@ -16,7 +16,7 @@ from ..utilities.utils import convert_to_parquet, load_config
 def arg_parse():
     parser = argparse.ArgumentParser(description="Generate embeddings from the protein large language model in Huggingface")
     parser.add_argument("fasta_file", type=str, help="Path to the FASTA file")
-    parser.add_argument("-m", "--model_name", type=str, default="facebook/esm2_t6_8M_UR50D", 
+    parser.add_argument("-m", "--model_name", type=str, default="facebook/esm2_t33_650M_UR50D", 
                         help="Name of the language model from huggingface")
     parser.add_argument("-d", "--mode", default="append", choices=("append", "write"),
                         help="Whether to write all the embeddings at once or one batch at the time")

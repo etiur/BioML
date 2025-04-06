@@ -17,7 +17,7 @@ from ..utilities.utils import convert_to_parquet, load_config
 def arg_parse():
     parser = argparse.ArgumentParser(description="Generate embeddings from the protein large language model in Huggingface")
     parser.add_argument("fasta_file", type=str, help="Path to the FASTA file")
-    parser.add_argument("-m", "--model_name", type=str, default="facebook/esm2_t6_8M_UR50D", 
+    parser.add_argument("-m", "--model_name", type=str, default="facebook/esm2_t33_650M_UR50D", 
                         help="Name of the language model from huggingface")
     parser.add_argument("-p", "--save_path", type=str, default="suggestions.csv", 
                         help="The path to save the probabilities in csv format")
@@ -91,8 +91,7 @@ def wild_marginal(positions: Sequence[int], input_ids: torch.Tensor, tokenizer: 
     all_prob = {}
     with torch.no_grad():
 	    output = model(input_ids).logits
-     for x in positions:
-        # softmaxing the probabilities of the correct positions -> so it is shape 33 the probabilities
+    for x in positions:# softmaxing the probabilities of the correct positions -> so it is shape 33 the probabilities
         probabilities = torch.nn.functional.softmax(output[0, x+1], dim=0)
         all_prob[x] = torch.log(probabilities)
     return all_prob
