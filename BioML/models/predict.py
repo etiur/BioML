@@ -118,8 +118,8 @@ class DeepPredictor:
     Parameters
     ____________
 
-    peft_adapter: str | Path
-        The path to the model adapter
+    model: any
+        The model to use for the predictions
     test_fastas: str | Path
         The path to the test FASTA file
     llm_config: dataclass
@@ -130,14 +130,9 @@ class DeepPredictor:
     pd.DataFrame
         The predictions as a dataframe
     """
-    peft_adapter: str | Path
+    model: any
     test_fastas: str | Path
     llm_config: dataclass = field(default_factory=LLMConfig)
-
-    @cached_property
-    def loaded_model(self):
-        """Load the model from the model path and return it"""
-        return load_adapter(self.peft_adapter, self.llm_config)
     
     def predict(self, tokenizer: callable, problem: str="classification", batch_size: int=2) -> pd.DataFrame:
         """
@@ -160,7 +155,7 @@ class DeepPredictor:
         predictions = []
         with torch.no_grad():
             for num, batch in enumerate(DataLoader(tok, batch_size=batch_size)):
-                output = self.loaded_model(batch["input_ids"], batch["attention_mask"])
+                output = self.model(batch["input_ids"], batch["attention_mask"])
                 if problem == "classification":
                     output = torch.softmax(output.logits, dim=-1)
                 else:
@@ -494,9 +489,9 @@ def predict_filter_by_domain(model_path: str | Path, test_features: pd.DataFrame
     predictions.to_csv(f"{res_dir}")
     return predictions
 
-def predict_deep(test_fasta: str | Path, peft_model: str | Path, problem: str, llm_config: str | Path = "", 
+def predict_deep(test_fasta: str | Path, problem: str, peft_model_path: str | Path=None, llm_config: str | Path = "", 
                  tokenizer_args: str | Path = "", batch_size: int=2,
-                 res_dir: str="prediction_result/predictions.csv") -> pd.DataFrame:
+                 res_dir: str="prediction_result/predictions.csv", lightning_model = None) -> pd.DataFrame:
     """
     Make predictions using a deep learning model from Huggingface
 
@@ -504,10 +499,10 @@ def predict_deep(test_fasta: str | Path, peft_model: str | Path, problem: str, l
     ____________
     test_fasta: str | Path
         The path to the test FASTA file
-    peft_model: str | Path
-        The path to the model adapter
     problem: str
         The problem type, either classification or regression
+    peft_model_path: str | Path
+        The path to the model adapter
     llm_config: the llm configuration path
         The configuration for the model  
     tokenizer_args: str | Path
@@ -516,7 +511,9 @@ def predict_deep(test_fasta: str | Path, peft_model: str | Path, problem: str, l
         The batch size to use for the model
     res_dir: str | Path
         The path to the directory where the extracted sequences will be saved. Default is "prediction_results".
-
+    lightning_model: any
+        The model to use for the predictions from the lightning training
+        
     Returns:
     ____________
     pd.DataFrame
@@ -524,7 +521,13 @@ def predict_deep(test_fasta: str | Path, peft_model: str | Path, problem: str, l
     """
     llm_conf = LLMConfig(**load_config(llm_config, extension=llm_config.split(".")[-1]))
     tok = TokenizeFasta(llm_conf, tokenizer_args=load_config(tokenizer_args, extension=tokenizer_args.split(".")[-1]))
-    predictor = DeepPredictor(peft_adapter=peft_model, test_fastas=test_fasta, llm_config=llm_conf)
+    if peft_model_path:
+        model = load_adapter(peft_model_path, llm_conf)
+    elif lightning_model:
+        model = lightning_model
+    else:
+        raise ValueError("You haven't specified the path to the adapters or the model")
+    predictor = DeepPredictor(peft_adapter=model, test_fastas=test_fasta, llm_config=llm_conf)
     predictions = predictor.predict(tok.tokenizer, problem=problem, batch_size=batch_size)
     Path(res_dir).parent.mkdir(exist_ok=True, parents=True)
     predictions.to_csv(f"{res_dir}")
