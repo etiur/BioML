@@ -34,7 +34,7 @@ def arg_parse():
     parser.add_argument("-pt", "--pretrained_args", type=str, default="",
                         help="Path to the pretrained model configuration file (optional), used in the AutoModel.from_pretrained function. json or yaml file.")
     args = parser.parse_args()
-    return [args.fasta_file, args.model_name, args.disable_gpu, args.batch_size, args.save_path, args.seed, args.option,
+    return [args.fasta_file, args.model_name, args.batch_size, args.save_path, args.seed, args.option,
             args.format, args.mode, args.llm_config, args.pretrained_args, args.tokenizer_args]
 
     
@@ -57,7 +57,7 @@ class TokenizeFasta:
     def __post_init__(self):
         self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_name, low_cpu_mem_usage=True)
         if "esm" in self.config.model_name:
-            self.tokenizer_args["add_special_tokens"] = False
+            #self.tokenizer_args["add_special_tokens"] = False
             self.tokenizer_args["padding"] = True
             self.tokenizer_args["truncation"] = True
 
