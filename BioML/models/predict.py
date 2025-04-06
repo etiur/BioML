@@ -48,8 +48,8 @@ def arg_parse():
                         default="classification", choices=("classification", "regression"), help="The problem type")
     parser.add_argument("-l", "--label", required=False, default=None,
                         help="Use it if the labels is in the training features so it is removed, but not necessary otherwise")
-    parser.add_argument("-ad", "--applicability_domain", required=False, action="store_false", 
-                        help="If to use the applicability domain to filter the predictions")
+    parser.add_argument("-ad", "--applicability_domain", required=False, action="store_true", 
+                        help="If to use the applicability domain to filter the predictions, default is False")
     parser.add_argument("-sh", "--sheet_name", required=False, default=None, 
                         help="The sheet name for the excel file if the training features is in excel format")
     parser.add_argument("-ts", "--test_sheet_name", required=False, default=None,
@@ -58,11 +58,13 @@ def arg_parse():
     parser.add_argument("-peft", "--peft_path", required=False, help="The path to the model adapter", default=None)
     parser.add_argument("-lc", "--llm_config", type=str, default="",
                         help="Path to the language model configuration file (optional). json or yaml file.")
+    parser.add_argument("-tc", "--tokenizer_config", type=str, default="",
+                        help="Path to the tokenizer configuration file (optional). json or yaml file.")
     args = parser.parse_args()
 
     return [args.fasta_file, args.training_features, args.scaler, args.model_path, args.test_features,
              args.res_dir, args.number_similar_samples, args.outlier_train, args.outlier_test, args.problem, args.label,
-             args.applicability_domain, args.sheet_name, args.test_sheet_name, args.deep_model, args.llm_config, args.peft_path]
+             args.applicability_domain, args.sheet_name, args.test_sheet_name, args.deep_model, args.llm_config, args.peft_path, args.tokenizer_config]
 
 @dataclass
 class Predictor:
@@ -428,30 +430,33 @@ def domain_filter(predictions: pd.DataFrame, scaled_training_features: pd.DataFr
     return pred
 
 
-def predict_filter_by_domain(training_features: pd.DataFrame | str | Path | np.ndarray, label: Iterable[str | int] | str | Path, model_path: str | Path,
-                             test_features: pd.DataFrame | str | Path | np.ndarray, outlier_train: Iterable[str | int] | Path = (), 
+def predict_filter_by_domain(model_path: str | Path, test_features: pd.DataFrame | str | Path | np.ndarray, problem: str, 
+                             outlier_train: Iterable[str | int] | Path = (), 
                              outlier_test: Iterable[str | int] | Path = (), applicability_domain: bool = False,
+                             training_features: pd.DataFrame | str | Path | np.ndarray = None, label: Iterable[str | int] | str | Path = None,
                              sheet_name: str | None = None, scaler: str = "zscore", res_dir: str = "prediction_result/predictions.csv", 
-                             number_similar_samples: int =1, problem: str="classification", test_sheet_name: str | None = None) -> pd.DataFrame:
+                             number_similar_samples: int =1, test_sheet_name: str | None = None) -> pd.DataFrame:
     """
     Make predictions on new samples and filter them using the applicability domain.
 
     Parameters
     ----------
-    training_features : pd.DataFrame | str | Path | np.ndarray
-        The training features.
-    label : Iterable[str  |  int] | srtr | Path
-        The labels.
     model_path : str | Path
         The path to the trained model.
     test_features : pd.DataFrame | str | Path | np.ndarray
         The test features.
+    problem : str
+        The problem type, either "classification" or "regression".
     outlier_train : Iterable[str  |  int] | Path, optional
         outliers in the train set, by default ()
     outlier_test : Iterable[str  |  int] | Path, optional
         outliers in the test set, by default ()
     applicability_domain : bool, optional
         Whether to use the applicability domain to filter the predictions, by default False
+    training_features : pd.DataFrame | str | Path | np.ndarray
+        The training features. Necessary if applicability_domain is True.
+    label : Iterable[str  |  int] | srtr | Path
+        The labels. Necessary if applicability_domain is True and label is in the training features.
     sheet_name : str | None, optional
         The sheet name for the excel file if the training features is in excel format, by default None
     scaler : str, optional
@@ -460,15 +465,14 @@ def predict_filter_by_domain(training_features: pd.DataFrame | str | Path | np.n
         The directory where to save the predictions, by default "prediction_result"
     number_similar_samples : int, optional
         The number of similar samples to filter the predictions, by default 1
-    problem : str, optional
-        The problem type, by default "classification"
+
 
     Returns
     -------
     pd.DataFrame
         The filtered predictions.
     """
-    feature = DataParser(training_features, label, outliers=outlier_train, sheets=sheet_name)
+    
     test_features = DataParser.remove_outliers(DataParser.read_features(test_features, sheets=test_sheet_name), outlier_test)
     if problem == "classification":
         experiment = ClassificationExperiment()
@@ -480,6 +484,7 @@ def predict_filter_by_domain(training_features: pd.DataFrame | str | Path | np.n
 
     col_name = ["prediction_score", "prediction_label", "AD_number"]
     if applicability_domain:
+        feature = DataParser(training_features, label, outliers=outlier_train, sheets=sheet_name)
         transformed, _, test_x = scale(scaler, feature.drop(), test_features)
         predictions = domain_filter(predictions, transformed , test_x, number_similar_samples)
         col_name.append("Index")    
@@ -489,7 +494,8 @@ def predict_filter_by_domain(training_features: pd.DataFrame | str | Path | np.n
     predictions.to_csv(f"{res_dir}")
     return predictions
 
-def predict_deep(test_fasta: str | Path, peft_model: str | Path, llm_config: str, problem: str="classification", batch_size: int=2,
+def predict_deep(test_fasta: str | Path, peft_model: str | Path, problem: str, llm_config: str | Path = "", 
+                 tokenizer_args: str | Path = "", batch_size: int=2,
                  res_dir: str="prediction_result/predictions.csv") -> pd.DataFrame:
     """
     Make predictions using a deep learning model from Huggingface
@@ -500,10 +506,12 @@ def predict_deep(test_fasta: str | Path, peft_model: str | Path, llm_config: str
         The path to the test FASTA file
     peft_model: str | Path
         The path to the model adapter
-    llm_config: the configuration path
-        The configuration for the model
     problem: str
         The problem type, either classification or regression
+    llm_config: the llm configuration path
+        The configuration for the model  
+    tokenizer_args: str | Path
+        The configuration file for the tokenizer
     batch_size: int
         The batch size to use for the model
     res_dir: str | Path
@@ -515,7 +523,7 @@ def predict_deep(test_fasta: str | Path, peft_model: str | Path, llm_config: str
         The predictions as a dataframe
     """
     llm_conf = LLMConfig(**load_config(llm_config, extension=llm_config.split(".")[-1]))
-    tok = TokenizeFasta()
+    tok = TokenizeFasta(llm_conf, tokenizer_args=load_config(tokenizer_args, extension=tokenizer_args.split(".")[-1]))
     predictor = DeepPredictor(peft_adapter=peft_model, test_fastas=test_fasta, llm_config=llm_conf)
     predictions = predictor.predict(tok.tokenizer, problem=problem, batch_size=batch_size)
     Path(res_dir).parent.mkdir(exist_ok=True, parents=True)
@@ -526,7 +534,7 @@ def predict_deep(test_fasta: str | Path, peft_model: str | Path, llm_config: str
 def main():
     fasta, training_features, scaler, model_path, test_features, res_dir, number_similar_samples, \
     outlier_train, outlier_test, problem, label, applicability_domain, sheet_name, test_sheet_name, deep_model, \
-    llm_config, peft_pat = arg_parse()
+    llm_config, peft_pat, tokenizer_args = arg_parse()
 
     if not deep_model:
         if not model_path or not training_features or not test_features:
@@ -536,8 +544,9 @@ def main():
         outlier_train = read_outlier_file(outlier_train)
 
         # preparing the prediction
-        predictions = predict_filter_by_domain(training_features, label, model_path, test_features, outlier_train, outlier_test,
-                                            applicability_domain, sheet_name, scaler, res_dir, number_similar_samples, problem, test_sheet_name)
+        predictions = predict_filter_by_domain(model_path, test_features, problem, outlier_train, outlier_test,
+                                               applicability_domain, training_features, label, sheet_name, scaler, 
+                                               res_dir, number_similar_samples, test_sheet_name)
 
         if problem == "classification":
             if not fasta:
@@ -549,10 +558,10 @@ def main():
             positive, negative = extractor.separate_negative_positive(predictions)
             extractor.extract(positive, negative, positive_fasta="positive.fasta", negative_fasta="negative.fasta")   
     else:
-        if not peft_pat and not fasta:
-            raise ValueError("You haven't specified the path to the adapters and the fasta file")
+        if not peft_pat or not fasta:
+            raise ValueError("You haven't specified the path to the adapters or the fasta file")
 
-        predictions = predict_deep(test_fasta=fasta, peft_model=peft_pat, llm_config=llm_config, problem=problem, res_dir=res_dir)
+        predictions = predict_deep(test_fasta=fasta, peft_model=peft_pat, llm_config=llm_config, tokenizer_args=tokenizer_args, problem=problem, res_dir=res_dir)
 
 
 if __name__ == "__main__":
