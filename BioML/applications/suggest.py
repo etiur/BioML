@@ -11,7 +11,7 @@ from typing import Iterable, Sequence, Callable
 from transformers import AutoModel, AutoTokenizer
 from Bio import SeqIO
 import argparse
-from .train_config import LLMConfig
+from ..deep.train_config import LLMConfig
 from ..utilities.utils import convert_to_parquet, load_config
 
 def arg_parse():
