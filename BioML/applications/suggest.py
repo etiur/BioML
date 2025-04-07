@@ -1,7 +1,6 @@
 """
 Suggest mutations using a protein large language model from Huggingface.
 """
-from cProfile import label
 from transformers import AutoTokenizer
 import torch
 import pandas as pd
@@ -149,8 +148,6 @@ class SuggestMutations:
         # sequence_length = input_ids.shape[1] - 2 
         # List of amino acids
         amino_acids = "ACDEFGHIKLMNPQRSTVWY"
-        if not isinstance(amino_acids, str):
-            raise TypeError("amino_acids should be a string")
         aa_ids = {aa: self.tokenizer.convert_tokens_to_ids(aa) for aa in amino_acids}
         if not aa_ids:
             raise ValueError("Could not convert tokens to ids")
@@ -206,9 +203,6 @@ class SuggestMutations:
         plot_path : str | Path, optional
             The path to save the plot.
         """
-        import seaborn as sns
-        import matplotlib.pyplot as plt
-
         plt.figure(figsize=(20, 20))
         plt.tick_params(axis="x", labelsize=10, labelbottom=True, labeltop=True, bottom=True, top=True)
         sns.heatmap(suggestions, cmap="coolwarm", annot=True, fmt=".2f")
