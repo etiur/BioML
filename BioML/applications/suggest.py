@@ -1,14 +1,16 @@
 """
 Suggest mutations using a protein large language model from Huggingface.
 """
-
-from transformers import AutoTokenizer, EsmForMaskedLM, pipeline
+from cProfile import label
+from transformers import AutoTokenizer
 import torch
 import pandas as pd
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Sequence, Callable
+from typing import Sequence, Callable
 from transformers import AutoModel, AutoTokenizer
+import seaborn as sns
+import matplotlib.pyplot as plt
 from Bio import SeqIO
 import argparse
 from ..deep.train_config import LLMConfig
@@ -31,9 +33,12 @@ def arg_parse():
                         help="The strategy to use for the probabilities. masked_marginal or wild_marginal")
     parser.add_argument("-pos", "--positions", type=int, nargs="+", default=(),
                         help="The positions to get the probabilities for. If not provided, all positions will be used.")
+    parser.add_argument("-pl", "--plot", action="store_false",
+                        help="Whether to plot the probabilities or not. Default is True.")
     args = parser.parse_args()
     return [args.fasta_file, args.model_name, args.save_path,
-            args.llm_config, args.pretrained_args, args.tokenizer_args, args.strategy, args.positions]
+            args.llm_config, args.pretrained_args, args.tokenizer_args, args.strategy, 
+            args.positions, args.plot]
 
 
 def masked_marginal(positions: Sequence[int], input_ids: torch.Tensor, tokenizer: AutoTokenizer, 
@@ -189,11 +194,47 @@ class SuggestMutations:
 
         return {str(seq.id): str(seq.seq) for seq in seqs} # return a dictionary with the id and the sequence
 
+    @staticmethod
+    def plot_heatmap(suggestions: pd.DataFrame, plot_path: str | Path="suggestions.png"):
+        """
+        Plot the heatmap of the suggestions.
+        
+        Parameters
+        ----------
+        suggestions : pd.DataFrame
+            The suggestions to plot.
+        plot_path : str | Path, optional
+            The path to save the plot.
+        """
+        import seaborn as sns
+        import matplotlib.pyplot as plt
+
+        plt.figure(figsize=(20, 20))
+        plt.tick_params(axis="x", labelsize=10, labelbottom=True, labeltop=True, bottom=True, top=True)
+        sns.heatmap(suggestions, cmap="coolwarm", annot=True, fmt=".2f")
+        plt.title("Mutations Suggestions")
+        plt.savefig(plot_path, transparent=True, dpi=500)
+        plt.close()
+        
 
     def get_probabilities_from_fasta(self, fasta_file: str | Path, positions: Sequence[int]=(), 
-                                     strategy: Callable=masked_marginal, save_path: str | Path="suggestions.csv"):
+                                     strategy: Callable=masked_marginal, save_path: str | Path="suggestions.csv",
+                                     plot: bool=True) -> pd.DataFrame:
         """
         Get the probabilities of the amino acids in the protein sequence.
+        
+        Parameters
+        ----------
+        fasta_file : str | Path
+            The path to the FASTA file.
+        positions : Sequence[int], optional
+            The positions to get the probabilities for. If not provided, all positions will be used.
+        strategy : Callable, optional
+            The strategy to use for the probabilities. masked_marginal or wild_marginal
+        save_path : str | Path, optional
+            The path to save the probabilities in csv format.
+        plot : bool, optional
+            Whether to plot the probabilities or not.
         """ 
         # Read the FASTA file and get the sequences
         sequences = self.read_fasta(fasta_file)
@@ -205,14 +246,21 @@ class SuggestMutations:
         save_path = Path(save_path)
         save_path.parent.mkdir(parents=True, exist_ok=True)
         pd.concat(all_prob).to_csv(save_path)   
+        # Plot the probabilities
+        if plot:
+            # only plot those with grater than wild type
+            for seq_id, prob in all_prob.items():
+                plot_path = save_path.parent / "heatmap" / f"{seq_id}_suggestions.png"
+                plot_path.parent.mkdir(parents=True, exist_ok=True)
+                self.plot_heatmap(prob[prob>0], plot_path=plot_path)
         return pd.concat(all_prob)
 
 
 def main():
-    fasta_file, model_name, save_path, llm_config, pretrained_args, tokenizer_args, strategy, positions = arg_parse()
+    fasta_file, model_name, save_path, llm_config, pretrained_args, tokenizer_args, strategy, positions, plot = arg_parse()
     # Load the configuration file if provided
     tokenizer_args = load_config(tokenizer_args, extension=tokenizer_args.split(".")[-1])
-    llm_args = load_config(llm_args, extension=llm_args.split(".")[-1])
+    llm_args = load_config(llm_config, extension=llm_config.split(".")[-1])
     pretrained_args = load_config(pretrained_args, extension=pretrained_args.split(".")[-1])
     # Create the configuration object
     config = LLMConfig(model_name=model_name, **llm_args)
@@ -220,5 +268,6 @@ def main():
     stra = {"masked_marginal": masked_marginal, "wild_marginal": wild_marginal}
     suggest_mutations = SuggestMutations(config, pretrained_args=pretrained_args, tokenizer_args=tokenizer_args)
     suggest_mutations.get_probabilities_from_fasta(fasta_file, save_path=save_path, 
-                                                   strategy=stra[strategy], positions=positions)
+                                                   strategy=stra[strategy], positions=positions,
+                                                   plot=plot)
     print(f"Probabilities saved to {save_path}")
