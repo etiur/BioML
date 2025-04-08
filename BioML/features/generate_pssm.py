@@ -254,7 +254,7 @@ def generate_with_mmseqs(fasta: str | Path, dbinp: str | Path, evalue: float =0.
     """
     MmseqsClustering.easy_generate_pssm(fasta, dbinp , evalue, num_iterations, sensitivity, pssm_file, 
                                         generate_searchdb, threads=num_threads)
-    MmseqsClustering.split_pssm(pssm_file, pssm_dir)
+    MmseqsClustering.split_pssm(pssm_file, fasta, pssm_dir)
 
 
 def main():
