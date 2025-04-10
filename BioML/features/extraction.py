@@ -644,6 +644,7 @@ def main():
                 omega.extract_multiple_features()
 
     if "read" in purpose:
+        Path(extracted_out).mkdir(parents=True, exist_ok=True)
         if not omega_type:
             file = list(Path(fasta_file).parent.glob("group_*.fasta"))
             features = {}
