@@ -105,7 +105,7 @@ class ExtractFeatures:
         A class that separates the fasta files into smaller fasta files
 
         """
-        if self.fasta_file.with_name(f"{base}_1.fasta").exists():
+        if self.fasta_file.with_name(f"{base}_0.fasta").exists():
             return
         
         with open(self.fasta_file) as inp:
@@ -119,7 +119,7 @@ class ExtractFeatures:
                         fasta_out.write_file(batch)
                 del record
             else:
-                shutil.copyfile(self.fasta_file, self.fasta_file.with_name(f"{base}_1.fasta"))
+                shutil.copyfile(self.fasta_file, self.fasta_file.with_name(f"{base}_0.fasta"))
 
     def run_extraction_parallel(self, file: list[str|Path], num_thread: int, 
                                 *run: Callable[[str|Path], None]):
@@ -644,6 +644,7 @@ def main():
                 omega.extract_multiple_features()
 
     if "read" in purpose:
+        Path(extracted_out).mkdir(parents=True, exist_ok=True)
         if not omega_type:
             file = list(Path(fasta_file).parent.glob("group_*.fasta"))
             features = {}
