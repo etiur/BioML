@@ -243,7 +243,7 @@ def classification_filters(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Serie
 
 def random_forest(X_train: pd.DataFrame | np.ndarray, Y_train: pd.Series | np.ndarray,
                   feature_names: Iterable[str], treemodel: rfc | rfr=rfc, # type: ignore
-                  seed: int=123, num_threads: int=-1) -> pd.Series:
+                  seed: int=12243, num_threads: int=-1) -> pd.Series:
     """
     Perform feature selection using a random forest model.
 

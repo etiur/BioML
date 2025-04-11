@@ -22,7 +22,7 @@ def arg_parse():
                         help="Whether to write all the embeddings at once or one batch at the time")
     parser.add_argument("-b", "--batch_size", type=int, default=8, help="The batch size")
     parser.add_argument("-p", "--save_path", type=str, default="embeddings.csv", help="The path to save the emebeddings in csv format")
-    parser.add_argument("-s","--seed", type=int, default=12891245318, help="Seed for reproducibility")
+    parser.add_argument("-s","--seed", type=int, default=63462634, help="Seed for reproducibility")
     parser.add_argument("-op", "--option", type=str, default="mean", help="Option to concatenate the embeddings", 
                         choices=("mean", "sum", "max", "flatten"))
     parser.add_argument("-f", "--format", type=str, default="csv", choices=("csv", "parquet"), 

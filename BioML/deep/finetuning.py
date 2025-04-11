@@ -268,7 +268,7 @@ class PrepareSplit:
     """
     cluster_file: str | None = None
     shuffle: bool = True
-    random_seed: int = 21321412
+    random_seed: int = 63462634
     splitting_strategy: str = "random"
     num_split: int = 5
     stratify: bool | None = None

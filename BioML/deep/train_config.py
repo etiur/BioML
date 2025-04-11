@@ -158,7 +158,7 @@ class TrainConfig:
 
 @dataclass(slots=True)
 class SplitConfig:
-    random_seed: int = 42
+    random_seed: int = 63462634
     stratify: bool = False
     splitting_strategy: str = "random"
     num_split: int = 5

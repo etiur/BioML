@@ -45,7 +45,7 @@ def arg_parse():
                         help="Default to true, plot the feature importance using shap")
     parser.add_argument("-pk", "--plot_num_features", required=False, default=20, type=int,
                         help="How many features to include in the plot")
-    parser.add_argument("-se", "--seed", required=False, type=int, default=978236392,
+    parser.add_argument("-se", "--seed", required=False, type=int, default=978236,
                         help="The seed number used for reproducibility")
     parser.add_argument("-pr", "--problem", required=True, choices=("classification", "regression"), 
                         default="classification", help="Classification or Regression problem")
