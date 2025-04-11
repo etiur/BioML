@@ -43,7 +43,7 @@ def load_config(file_path: str | Path, extension: str="json") -> dict:
     {'key1': 'value1', 'key2': 'value2'}
     """
     file_path = Path(file_path)
-    if file_path.exists():
+    if file_path.exists() and file_path.is_file():
         with open(file_path) as file:
             if extension == "json":
                 return json.load(file)
