@@ -38,7 +38,7 @@ def arg_parse():
 
     args = parser.parse_args()
 
-    return [args.excel, args.output, args.scaler, args.contamination, args.num_thread, args.num_features]
+    return [args.input, args.output, args.scaler, args.contamination, args.num_thread, args.num_features]
 
 
 class OutlierDetection:
