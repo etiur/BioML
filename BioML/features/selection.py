@@ -595,19 +595,22 @@ class FeatureRegression:
 
 
 
-def get_range_features(features: pd.DataFrame, num_features_min: int | None=None, 
+def get_range_features(features_size: int, num_features_min: int | None=None, 
                         num_features_max: int | None=None, step_range: int | None=None) -> list[int]:
     """
-    Get a range of features dimensions to select.
+    Get a range of features dimensions to select. If you only specify num_features_min, 
+    it will return only the min_features. 
 
     Parameters
     ----------
+    features_size : int
+        The number of features in the dataset.
     num_features_min : int, optional
         The minimum number of features to select. If not provided, defaults to 1/10 of the total number of features.
     num_features_max : int, optional
-        The maximum number of features to select. If not provided, defaults to 1/2 of the total number of features + 1.
+        The maximum number of features to select. If not provided, defaults to 1/2 of the total number of features.
     step_range : int, optional
-        The step size for the range of numbers. If not provided, defaults to 1/4 of the difference between the minimum
+        The step size for the range of numbers. If not provided, defaults to 1/2 of the difference between the minimum
         and maximum number of features.
 
     Returns
@@ -616,18 +619,17 @@ def get_range_features(features: pd.DataFrame, num_features_min: int | None=None
         A list of integers representing the range of numbers for the number of features to select.
     """
     if not num_features_min:
+        num_features_min = max(2, features_size // 10)
         if not num_features_max:
-            num_features_min = max(2, len(features.columns) // 10)
-            num_features_max = max(4, int(len(features.columns) // 1.6) + 1)
-        else:
-            num_features_min = max(2, num_features_max // 5)
-            num_features_max = max(4, num_features_max)
+            num_features_max = max(4, features_size // 2)
         if not step_range:
-            step_range = max(1, (num_features_max - num_features_min) // 4)
-        feature_range = list(range(num_features_min, num_features_max, step_range))
+            step_range = max(1, (num_features_max - num_features_min) // 2)
+        feature_range = list(range(num_features_min, num_features_max+1, step_range))
         return sorted(list(set(feature_range + [num_features_max])))
-    elif num_features_min and step_range and num_features_max:
-        feature_range = list(range(num_features_min, num_features_max, step_range))
+    elif num_features_min and num_features_max:
+        if not step_range:
+            step_range = max(1, (num_features_max - num_features_min) // 2)
+        feature_range = list(range(num_features_min, num_features_max+1, step_range))
         return sorted(list(set(feature_range + [num_features_max])))
     else:
         feature_range = [num_features_min]
@@ -677,7 +679,7 @@ def main():
     outliers = read_outlier_file(outliers)
     # generate the dataset
     training_data = DataReader(label, features, variance_threshold, outliers, sheets)
-    feature_range = get_range_features(training_data.features, num_features_min, num_features_max, step)
+    feature_range = get_range_features(training_data.features.shape[1], num_features_min, num_features_max, step)
     
     # split the data
     if split_strategy == "cluster":
