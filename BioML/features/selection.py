@@ -452,16 +452,19 @@ class FeatureSelection:
         
         
         concatenated_features = pd.concat([univariate_features, supervised_features])
-        for num_features in feature_range:
+        for num, num_features in enumerate(feature_range, 2):
             print(f"generating a feature set of {num_features} dimensions")
             for filters in concatenated_features.index.unique(0):
                 feat = concatenated_features.loc[filters]
                 feature_dict[f"{filters}_{num_features}"]= features[feat.index[:num_features]]
             rfe_results = methods.rfe_linear(transformed, Y_train, num_features, self.seed, features.columns, rfe_step, 
                                              filter_args["RFE"])
-            n_components = num_features//2
-            pca_data = methods.unsupervised(n_components, transformed, test_x)
             feature_dict[f"rfe_{num_features}"] = features[rfe_results]
+            
+            if num > 8: continue
+            n_components = min(num_features, len(transformed))// num
+            print(f"generating PCA features of {n_components} components")
+            pca_data = methods.unsupervised(n_components, transformed, test_x)
             feature_dict[f"pca_{n_components}"] = pca_data.loc[features.index]
 
         return feature_dict
