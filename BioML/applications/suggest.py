@@ -151,13 +151,13 @@ class SuggestMutations:
             raise ValueError("Could not convert tokens to ids")
         prob_mt = {}
         # Get the probabilities	
-        all_prob = strategy(positions, input_ids, self.tokenizer, self.model)
-        if not all_prob:
-            raise ValueError("Could not get the probabilities")
         if not positions:
             positions = range(input_ids.shape[1]-2) # -2 to remove the CLS and EOS tokens
             # This will get he probabilities of all the positions in the sequence
-            
+        all_prob = strategy(positions, input_ids, self.tokenizer, self.model)
+        if not all_prob:
+            raise ValueError("Could not get the probabilities")
+
         for pos in positions:
             wt_residue_id = input_ids[0, pos+1].item()
             wt_token = self.tokenizer.convert_ids_to_tokens(wt_residue_id)
