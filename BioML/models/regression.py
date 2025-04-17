@@ -220,9 +220,8 @@ def main():
         if split_strategy in ["cluster", "mutations"]:
             training.iterate_multiple_features(generator, training_output=training_output, split_strategy=spliting[split_strategy])
         else:
-            cluster = {num: x for num, x in enumerate(feature.features)}
-            split_strategy = split.ClusterSpliter(cluster, num_split, random_state=experiment.seed, shuffle=shuffle)
-            training.iterate_multiple_features(cluster, training_output=training_output, split_strategy=split_strategy)
+            
+            training.iterate_multiple_features(generator, training_output=training_output, fold_strategy=split_strategy)
 
     else:
         # split the data based on the strategy
