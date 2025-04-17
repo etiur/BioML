@@ -7,7 +7,7 @@ import pandas as pd
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence, Callable
-from transformers import AutoModel, AutoTokenizer
+from transformers import EsmForMaskedLM, AutoModel, AutoTokenizer
 import seaborn as sns
 import matplotlib.pyplot as plt
 from Bio import SeqIO
@@ -125,11 +125,9 @@ class SuggestMutations:
     def __post_init__(self):
 
         device = "auto" if self.config.device == "cuda" else self.config.device
-        if "esm" in self.config.model_name:
-            self.pretrained_args["add_pooling_layer"] = False
-        self.model = AutoModel.from_pretrained(self.config.model_name, output_hidden_states=True, device_map=device, 
-                                                torch_dtype=self.config.dtype,
-                                                low_cpu_mem_usage=True, offload_folder="offload", **self.pretrained_args)
+        self.model = EsmForMaskedLM.from_pretrained(self.config.model_name, device_map=device, 
+                                                    torch_dtype=self.config.dtype,
+                                                    low_cpu_mem_usage=True, offload_folder="offload", **self.pretrained_args)
         
         if "esm" in self.config.model_name:
             self.tokenizer_args["padding"] = True
