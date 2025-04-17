@@ -17,7 +17,7 @@ def arg_parse():
 
     parser.add_argument("-i", "--training_features", required=True,
                         help="The file to where the features for the training are in excel or csv format")
-    parser.add_argument("-sc", "--scaler", default="zscore", choices=("robust", "zscore", "minmax"),
+    parser.add_argument("-s", "--scaler", default="zscore", choices=("robust", "zscore", "minmax"),
                         help="Choose one of the scaler available in scikit-learn, defaults to minmax")
     parser.add_argument("-l", "--label", required=True,
                         help="The path to the labels of the training set in a csv format or the column name if it is in training features")

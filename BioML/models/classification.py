@@ -59,7 +59,7 @@ def arg_parse():
                         help="The models to train")
 
     parser.add_argument("--tune", action="store_false", required=False,
-                        help="If to tune the best models")
+                        help="If to tune the best models, default is True")
     parser.add_argument("-p", "--plot", nargs="+", required=False, default=("learning", "confusion_matrix", "class_report"),
                         help="The plots to save", choices=("learning", "confusion_matrix", "class_report", "pr", "auc"))
     parser.add_argument("-op", "--optimize", required=False, default="MCC", choices=("MCC", "Prec.", "Recall", "F1", "AUC", "Accuracy", 
