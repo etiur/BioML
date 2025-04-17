@@ -94,7 +94,7 @@ def wild_marginal(positions: Sequence[int], input_ids: torch.Tensor, tokenizer: 
     """
     all_prob = {}
     with torch.no_grad():
-	    output = model(input_ids).logits
+        output = model(input_ids).logits
     for x in positions:# softmaxing the probabilities of the correct positions -> so it is shape 33 the probabilities
         probabilities = torch.nn.functional.softmax(output[0, x+1], dim=0)
         all_prob[x] = torch.log(probabilities)
@@ -207,7 +207,7 @@ class SuggestMutations:
         plt.tick_params(axis="x", labelsize=10, labelbottom=True, labeltop=True, bottom=True, top=True)
         sns.heatmap(suggestions, cmap="coolwarm", annot=True, fmt=".2f")
         plt.title("Mutations Suggestions")
-        plt.savefig(plot_path, transparent=True, dpi=500)
+        plt.savefig(plot_path, transparent=False, dpi=500)
         plt.close()
         
 
