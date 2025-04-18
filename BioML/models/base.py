@@ -1146,6 +1146,6 @@ class Trainer:
             for i in index:
                 score += self.arguments._calculate_score_dataframe(sorted_results.loc[i])
             performance_list.append((sheet, sorted_results.loc[index], score))
-        performance_list.sort(key=lambda x: x[2], reverse=True)
+        performance_list.sort(key=lambda x: x[2], reverse=True) # the greater the better
         for sheet, performance, score in performance_list:
             write_results(training_output, performance, sheet_name=sheet)

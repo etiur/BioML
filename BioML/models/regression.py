@@ -49,7 +49,7 @@ def arg_parse():
                                   'lightgbm','catboost','dummy'), help="The models to select, when None almost all models are selected")
     parser.add_argument("--tune", action="store_true", required=False, help="If to tune the best models")
     parser.add_argument("-op", "--optimize", required=False, default="RMSE", 
-                        choices=("RMSE", "R2", "MSE", "MAE", "RMSLE", "MAPE"), help="The metric to optimize")
+                        choices=("RMSE", "R2", "MSE", "MAE", "RMSLE", "MAPE", "NDCG", "Pearson"), help="The metric to optimize")
     parser.add_argument("-p", "--plot", nargs="+", required=False, default=("residuals", "error", "learning"),
                         help="The plots to show")
     parser.add_argument("-sh", "--sheet_name", required=False, default=None, 
@@ -113,7 +113,7 @@ class Regressor:
     def __init__(self, ranking_params: dict[str, float] | None=None, 
                  drop: Iterable[str]=("tr", "kr", "ransac"), selected: Iterable[str]=(), 
                  add: Iterable[Any|str]=(), optimize: str="RMSE", 
-                 plot: Iterable[str]=("residuals", "error", "learning"), greater_is_better: bool=False):
+                 plot: Iterable[str]=("residuals", "error", "learning")):
         
         ranking_dict = dict(difference_weight=1.2, train_weight=0.7) # give 0.3 weight to the train and 0.7 to the test
         if isinstance(ranking_params, dict):
@@ -126,6 +126,7 @@ class Regressor:
         self.train_weight = ranking_dict["train_weight"]
         self.selected = selected
         self.optimize = optimize
+        greater_is_better = True if optimize in ["R2", "NDCG", "Pearson"] else False
         self.greater_is_better = greater_is_better
         self.plot = plot if plot else ()
         self.add = [add] if add and not isinstance(add, list) else add
