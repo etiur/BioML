@@ -368,7 +368,7 @@ class PycaretInterface:
         self._final_models = self._check_value(value, self.original_models, "models")
 
     def setup_training(self, feature: pd.DataFrame, label_name: str, fold: int=5, 
-                       test_size:float=0.2, k: int=8, penalty: int=2, 
+                       test_size:float=0.2, k: int=8, penalty: int=2,
                        **kwargs: Any):
         """
         Call pycaret set_up for the training.
@@ -410,7 +410,7 @@ class PycaretInterface:
             config.to_csv(self.output_path / "config_setup_pycaret.csv") 
         return self
 
-    def train(self, cross_validation: bool=True):
+    def train(self, cross_validation: bool=True, fit_kwargs: dict[str, Any] = {}):
         """
         Train the machine learning models using all default hyperparameters so just one set of parameters
         
@@ -436,7 +436,8 @@ class PycaretInterface:
         count=0
         for m in self.final_models:
             model_time_start = time.time()
-            model = self.pycaret.create_model(m, return_train_score=True, verbose=False, cross_validation=cross_validation)
+            model = self.pycaret.create_model(m, return_train_score=True, verbose=False, cross_validation=cross_validation, 
+                                              fit_kwargs=fit_kwargs) # type: ignore
             model_results = self.pycaret.pull(pop=True)
             model_results = model_results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
             if not isinstance(m, str):
@@ -554,7 +555,7 @@ class PycaretInterface:
         return pd.concat(model_params) # type: ignore
     
     def retune_model(self, name: str, model: Any, num_iter: int=50, 
-                     fold: int=5, custom_grid=None) -> tuple[Any, pd.DataFrame, pd.Series]:
+                     fold: int=5, custom_grid=None, fit_kwargs: dict[str, Any]={}) -> tuple[Any, pd.DataFrame, pd.Series]:
         """
         Retune the specified model using Optuna.
 
@@ -568,7 +569,10 @@ class PycaretInterface:
             The number of iterations to use for tuning. Defaults to 30.
         fold : int, optional
             The number of cross-validation folds to use. Defaults to 5.
-
+        custom_grid : dict[str, list], optional
+            A custom grid of hyperparameters to use for tuning. Defaults to None.
+        fit_kwargs : dict[str, Any], optional
+            Additional parameters to pass to the fit method of the model. Defaults to an empty dictionary.
         Returns
         -------
         Tuple[Any, pd.DataFrame, pd.Series]
@@ -579,14 +583,14 @@ class PycaretInterface:
         self.log.info(f"fold: {fold}")
         tuned_model = self.pycaret.tune_model(model, optimize=self.optimize, search_library="optuna", search_algorithm="tpe", 
                                             early_stopping="asha", return_train_score=True, n_iter=num_iter, fold=fold,
-                                            verbose=False, choose_better=False, custom_grid=custom_grid)
+                                            verbose=False, choose_better=False, custom_grid=custom_grid, fit_kwargs=fit_kwargs)
         results = self.pycaret.pull(pop=True)
         tuned_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
         params = self.get_params(name, tuned_model)
         return tuned_model, tuned_results, params
     
     def stack_models(self, estimator_list: list[Any], fold: int=5, 
-                     meta_model: Any=None) -> tuple[Any, pd.DataFrame, pd.Series]:
+                     meta_model: Any=None, fit_kwargs: dict[str, Any]={}) -> tuple[Any, pd.DataFrame, pd.Series]:
         """
         Create a stacked ensemble model from a list of models.
 
@@ -598,6 +602,8 @@ class PycaretInterface:
             The number of cross-validation folds to use. Defaults to 5.
         meta_model : Any, optional
             The meta model to use for stacking. Defaults to None.
+        fit_kwargs : dict[str, Any], optional
+            Additional parameters to pass to the fit method of the model. Defaults to an empty dictionary.
 
         Returns
         -------
@@ -608,14 +614,14 @@ class PycaretInterface:
         stacked_models = self.pycaret.stack_models(estimator_list, optimize=self.optimize, 
                                                  return_train_score=True,  verbose=False, fold=fold, 
                                                  meta_model_fold=fold, 
-                                                 meta_model=meta_model)
+                                                 meta_model=meta_model, fit_kwargs=fit_kwargs)
         results = self.pycaret.pull(pop=True)
         stacked_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
         params = self.get_params_stacked(stacked_models)
         return stacked_models, stacked_results, params
     
     def create_majority(self, estimator_list: list[Any], fold: int=5, 
-                        weights: list[float] | None=None) -> tuple[Any, pd.DataFrame]:
+                        weights: list[float] | None=None, fit_kwargs: dict[str, Any] | None={}) -> tuple[Any, pd.DataFrame]:
         """
         Create a majority vote ensemble model from a list of models.
 
@@ -627,7 +633,9 @@ class PycaretInterface:
             The number of cross-validation folds to use. Defaults to 5.
         weights : list[float] or None, optional
             The weights to use for each model in the ensemble. Defaults to None.
-
+        fit_kwargs : dict[str, Any] or None, optional
+            Additional parameters to pass to the fit method of the model. Defaults to an empty dictionary.
+    
         Returns
         -------
         tuple[Any, pd.DataFrame]
@@ -638,13 +646,13 @@ class PycaretInterface:
         self.log.info(f"weights: {weights}")
         majority_model = self.pycaret.blend_models(estimator_list, optimize=self.optimize, 
                                                  verbose=False, return_train_score=True, fold=fold, 
-                                                 weights=weights)
+                                                 weights=weights, fit_kwargs=fit_kwargs)
         
         results = self.pycaret.pull(pop=True)
         majority_results = results.loc[[("CV-Train", "Mean"), ("CV-Train", "Std"), ("CV-Val", "Mean"), ("CV-Val", "Std")]]
         return majority_model, majority_results
     
-    def finalize_model(self, model: Any):
+    def finalize_model(self, model: Any, fit_kwargs: dict[str, Any] = {}):
         """
         Finalize the model by training it with all the data including test set
 
@@ -652,17 +660,18 @@ class PycaretInterface:
         ----------
         model : Any
             The model to finalize
-
+        fit_kwargs : dict[str, Any], optional
+            Additional parameters to pass to the fit method of the model. Defaults to an empty dictionary.
         Returns
         -------
         Any
             The finalized model
         """
         self.log.info("----------Finalizing the model by training it with all the data including test set--------------")
-        finalized = self.pycaret.finalize_model(model)
+        finalized = self.pycaret.finalize_model(model, fit_kwargs=fit_kwargs)
         return finalized
     
-    def evaluate_model(self, model: Any, save: bool | str =False) -> None:
+    def evaluate_model(self, model: Any, save: bool | str =False, fit_kwargs: dict[str, Any] = {}) -> None:
         """
         Evaluate the model by plotting the learning curve
 
@@ -672,10 +681,12 @@ class PycaretInterface:
             The model to evaluate.
         save : bool | str, optional
             Save the plots, by default False but you can also indicate the path for the plot
+        fit_kwargs : dict[str, Any], optional
+            Additional parameters to pass to the fit method of the model. Defaults to an empty dictionary.
         """
         if isinstance(save, str):
             Path(save).mkdir(parents=True, exist_ok=True)
-        self.pycaret.plot_model(model, "learning", save=save) # type: ignore
+        self.pycaret.plot_model(model, "learning", save=save, fit_kwargs=fit_kwargs) # type: ignore
 
     def predict(self, estimador: Any, target_data: pd.DataFrame|None=None) -> pd.DataFrame:
         """
@@ -827,7 +838,7 @@ class Trainer:
 
         return pd.concat(sorted_results), sorted_models
     
-    def train(self, features: pd.DataFrame, label_name:str,
+    def train(self, features: pd.DataFrame, label_name:str, fit_kwargs: dict[str, Any]={},
               **kwargs: Any) -> tuple[dict, dict]:
         """
         Train the models on the specified feature data and return the results and models.
@@ -855,11 +866,11 @@ class Trainer:
         if self.arguments.add:
             self.experiment.final_models += self.arguments.add
 
-        results, returned_models = self.experiment.train(self.cross_validation)
+        results, returned_models = self.experiment.train(self.cross_validation, fit_kwargs=fit_kwargs) # type: ignore
         
         return results, returned_models
     
-    def retune_best_models(self, sorted_models:dict[str, Any], custom_grid=None):
+    def retune_best_models(self, sorted_models:dict[str, Any], custom_grid=None, fit_kwargs: dict[str, Any]={})-> tuple[pd.DataFrame, dict, pd.DataFrame]:
         """
         Retune the best models using the specified optimization metric and number of iterations.
 
@@ -882,14 +893,15 @@ class Trainer:
             if key in ["nb", "svm", "par", "mlp"] or (key not in self.experiment.final_models and not custom_grid):
                 new_models[key] = model
             else:
-                tuned_model, results, params =  self.experiment.retune_model(key, model, self.num_iter, fold=self.num_splits, custom_grid=custom_grid)
+                tuned_model, results, params =  self.experiment.retune_model(key, model, self.num_iter, fold=self.num_splits, 
+                                                                             custom_grid=custom_grid, fit_kwargs=fit_kwargs)
                 new_models[key] = tuned_model
                 new_results[key] = results
                 new_params[key] = params
                 
         return pd.concat(new_results), new_models, pd.concat(new_params)
     
-    def stack_models(self, sorted_models: dict[str, Any], meta_model: Any=None):
+    def stack_models(self, sorted_models: dict[str, Any], meta_model: Any=None, fit_kwargs: dict[str, Any]={}) -> tuple[pd.DataFrame, Any, dict]:
         """
         Create a stacked ensemble model from a dict of models.
 
@@ -908,12 +920,12 @@ class Trainer:
         self.log.info("--------Stacking the best models--------")
   
         stacked_models, stacked_results, params = self.experiment.stack_models(list(sorted_models.values())[:self.experiment.best_model], 
-                                                                               fold=self.num_splits, meta_model=meta_model)
+                                                                               fold=self.num_splits, meta_model=meta_model, fit_kwargs=fit_kwargs)
         
         return stacked_results, stacked_models, params
     
     def create_majority_model(self, sorted_models: dict[str, Any], 
-                               weights: list[float] | None =None) -> tuple[pd.DataFrame, Any]:
+                               weights: list[float] | None =None, fit_kwargs: dict[str, Any]={}) -> tuple[pd.DataFrame, Any]:
         """
         Create a majority vote ensemble model from a dictionary of sorted models.
 
@@ -932,7 +944,7 @@ class Trainer:
         self.log.info("--------Creating an ensemble model--------")
         
         ensemble_model, ensemble_results = self.experiment.create_majority(list(sorted_models.values())[:self.experiment.best_model],
-                                                                           fold=self.num_splits, weights=weights)
+                                                                           fold=self.num_splits, weights=weights, fit_kwargs=fit_kwargs)
         
         return ensemble_results, ensemble_model
     
@@ -976,7 +988,7 @@ class Trainer:
                 result = result.set_index("Model")
                 return result
             
-    def run_training(self, feature: pd.DataFrame, label_name: str,
+    def run_training(self, feature: pd.DataFrame, label_name: str, fit_kwargs: dict[str, Any]={},
                       **kwargs: Any) -> tuple[pd.DataFrame, dict[str, Any], pd.Series]:
             """
             A function that splits the data into training and test sets and then trains the models
@@ -1000,13 +1012,13 @@ class Trainer:
             pd.DataFrame
             
             """
-            results, returned_models = self.train(feature, label_name, **kwargs) # type: ignore
+            results, returned_models = self.train(feature, label_name, fit_kwargs=fit_kwargs, **kwargs) # type: ignore
             sorted_results, sorted_models = self.rank_results(results, returned_models, self.arguments._calculate_score_dataframe)
             top_params = self.experiment.get_best_params_multiple(sorted_models)
 
             return sorted_results, sorted_models, top_params
     
-    def generate_training_results(self, feature: pd.DataFrame, label_name: str, tune: bool=False, 
+    def generate_training_results(self, feature: pd.DataFrame, label_name: str, tune: bool=False, fit_kwargs: dict[str, Any]={},
                               **kwargs: Any) -> tuple[dict[str, dict], dict[str, dict]]:
         """
         Generate training results for a given model, training object, and feature data.
@@ -1027,7 +1039,7 @@ class Trainer:
         tuple[dict, dict]
             A tuple of dictionary containing the training results and the models.
         """    
-        sorted_results, sorted_models, top_params = self.run_training(feature, label_name, **kwargs)
+        sorted_results, sorted_models, top_params = self.run_training(feature, label_name, fit_kwargs=fit_kwargs, **kwargs)
         if 'dummy' in sorted_results.index.unique(0)[:self.experiment.best_model]:
             warnings.warn(f"Dummy model is in the top {list(sorted_results.index.unique(0)).index('dummy')} models")
             tune = False
@@ -1040,7 +1052,7 @@ class Trainer:
 
         if tune and self.cross_validation:
             sorted_result_tune, sorted_models_tune, top_params_tune = self.retune_best_models(sorted_models)
-            results_tuned, models_dict_tuned = self.save_results_and_models(sorted_result_tune, sorted_models_tune, top_params_tune, "tuned")
+            results_tuned, models_dict_tuned = self.save_results_and_models(sorted_result_tune, sorted_models_tune, top_params_tune, "tuned", fit_kwargs=fit_kwargs)
             self.experiment.plot_best_models(sorted_models_tune, "tuned")
             results.update(results_tuned)
             models_dict.update(models_dict_tuned)
@@ -1048,7 +1060,7 @@ class Trainer:
         return results, models_dict
 
     def save_results_and_models(self, sorted_results: pd.DataFrame, sorted_models: dict[str, Any], 
-                                top_params: pd.DataFrame | pd.Series, key: str):
+                                top_params: pd.DataFrame | pd.Series, key: str, meta_model=None, weights=None, fit_kwargs: dict[str, Any]={}) -> tuple[dict, dict]:
         """
         Save the results and models in a dictionary.
 
@@ -1062,6 +1074,12 @@ class Trainer:
             The parameters of the models.
         key : str
             The key to use for the results and models (tuned and notuned)
+        meta_model : Any, optional
+            The meta model to use for the stacked models.
+        weights : list[float] | None, optional
+            The weights to use for the majority model.
+        fit_kwargs : dict[str, Any], optional
+            Additional parameters to pass to the fit method of the model. Defaults to an empty dictionary.
 
         Returns
         -------
@@ -1076,11 +1094,11 @@ class Trainer:
 
         if self.cross_validation:
             if self.stacked_model:
-                stacked_results, stacked_models, stacked_params = self.stack_models(sorted_models)
+                stacked_results, stacked_models, stacked_params = self.stack_models(sorted_models, meta_model, fit_kwargs=fit_kwargs)
                 results[key]["stacked"] = stacked_results, stacked_params
                 models_dict[key]["stacked"] = stacked_models
             if self.majority_model:
-                majority_results, majority_models = self.create_majority_model(sorted_models)
+                majority_results, majority_models = self.create_majority_model(sorted_models, weights=weights, fit_kwargs=fit_kwargs)
                 results[key]["majority"] = majority_results,   
                 models_dict[key]["majority"] = majority_models
 
@@ -1111,7 +1129,7 @@ class Trainer:
         return prediction_results
 
     def iterate_multiple_features(self, iterator: Iterator, training_output: Path, split_strategy: Any=None, split_index: int=0,
-                                  filter_sheet: str | None | list[str] = None, test_size: float = 0.2,
+                                  filter_sheet: str | None | list[str] = None, test_size: float = 0.2, fit_kwargs: dict[str, Any] = {},
                                   **kwargs: Any) -> None:
     
         """
@@ -1146,9 +1164,9 @@ class Trainer:
                                                                         test_size=test_size, 
                                                                         split_index=split_index)
                 sorted_results, sorted_models, top_params = self.run_training(X_train, label_name, test_data=X_test, 
-                                                            fold_strategy=split_strategy, **kwargs)
+                                                            fold_strategy=split_strategy, fit_kwargs=fit_kwargs, **kwargs)
             else:
-                sorted_results, sorted_models, top_params = self.run_training(input_feature, label_name,
+                sorted_results, sorted_models, top_params = self.run_training(input_feature, label_name, fit_kwargs=fit_kwargs,
                                                                               **kwargs)
             index = sorted_results.index.unique(0)[:self.experiment.best_model]
             score = np.nanmean([self.arguments._calculate_score_dataframe(sorted_results.loc[i]) for i in index])
