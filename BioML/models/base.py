@@ -742,7 +742,8 @@ class PycaretInterface:
 
 class Trainer:
     def __init__(self, caret_interface: PycaretInterface, training_arguments: ModelArguments, 
-                 num_splits: int=5, test_size: float = 0.2, num_iter: int=50, cross_validation: bool=True):
+                 num_splits: int=5, test_size: float = 0.2, num_iter: int=50, cross_validation: bool=True,
+                 stacked_model: bool=True, majority_model: bool=True):
         
         """
         Initialize a Trainer object with the given parameters.
@@ -761,6 +762,10 @@ class Trainer:
             The number of iterations to use for tuning. Defaults to 30.
         cross_validation : bool, optional
             If True, use cross-validation. Defaults to True.
+        stacked_model : bool, optional
+            If True, create a stacked model using the best models. Defaults to True.
+        majority_model : bool, optional
+            If True, create a majority vote model using the best models. Defaults to True.
         """
         self.log = Log("model_training")
         self.log.info("----------------Trainer inputs-------------------------")
@@ -774,6 +779,8 @@ class Trainer:
         self.arguments = training_arguments
         self.experiment.plots = self.arguments.plot
         self.cross_validation = cross_validation
+        self.stacked_model = stacked_model
+        self.majority_model = majority_model
 
     def rank_results(self, results: dict[str, pd.DataFrame], returned_models:dict[str, Any], 
                      scoring_function: Callable):
@@ -1068,12 +1075,14 @@ class Trainer:
         models_dict[key]["train"] = sorted_models
 
         if self.cross_validation:
-            stacked_results, stacked_models, stacked_params = self.stack_models(sorted_models)
-            results[key]["stacked"] = stacked_results, stacked_params
-            majority_results, majority_models = self.create_majority_model(sorted_models)
-            results[key]["majority"] = majority_results,  
-            models_dict[key]["stacked"] = stacked_models
-            models_dict[key]["majority"] = majority_models
+            if self.stacked_model:
+                stacked_results, stacked_models, stacked_params = self.stack_models(sorted_models)
+                results[key]["stacked"] = stacked_results, stacked_params
+                models_dict[key]["stacked"] = stacked_models
+            if self.majority_model:
+                majority_results, majority_models = self.create_majority_model(sorted_models)
+                results[key]["majority"] = majority_results,   
+                models_dict[key]["majority"] = majority_models
 
         return results, models_dict
     
@@ -1142,9 +1151,7 @@ class Trainer:
                 sorted_results, sorted_models, top_params = self.run_training(input_feature, label_name,
                                                                               **kwargs)
             index = sorted_results.index.unique(0)[:self.experiment.best_model]
-            score = 0
-            for i in index:
-                score += self.arguments._calculate_score_dataframe(sorted_results.loc[i])
+            score = np.nanmean([self.arguments._calculate_score_dataframe(sorted_results.loc[i]) for i in index])
             performance_list.append((sheet, sorted_results.loc[index], score))
         performance_list.sort(key=lambda x: x[2], reverse=True) # the greater the better
         for sheet, performance, score in performance_list:

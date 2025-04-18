@@ -74,6 +74,10 @@ def arg_parse():
                          " if false, you will have to specify a single feature. Default is False")
     parser.add_argument("-log", "--log_experiments", required=False, action="store_true",
                         help="If to log the experiments in MLFlow, default is False")
+    parser.add_argument("-stck", "--stack_models", required=False, action="store_false",
+                        help="If to stack the models, default is True")
+    parser.add_argument("-mj", "--majority_models", required=False, action="store_false",
+                        help="If to use the majority models, default is True")
     args = parser.parse_args()
 
     return [args.label, args.training_output, args.budget_time, args.scaler,
@@ -81,7 +85,7 @@ def arg_parse():
             args.best_model, args.seed, args.drop, args.tune, args.plot, args.optimize, 
             args.selected, args.sheet_name, args.num_iter, args.split_strategy, args.cluster, 
             args.mutations, args.test_num_mutations, args.greater, args.shuffle, args.cross_validation, args.iterate_multiple_features,
-            args.log_experiments]
+            args.log_experiments, args.stack_models, args.majority_models]
 
 
 class Regressor:
@@ -192,7 +196,8 @@ class Regressor:
 def main():
     label, training_output, trial_time, scaler, excel, kfold, outliers, difference_weight, \
     best_model, seed, drop, tune, plot, optimize, selected, sheet, num_iter, split_strategy, cluster, mutations, \
-        test_num_mutations, greater, shuffle, cross_validation, iterate_multiple_features, log_experiments = arg_parse()
+        test_num_mutations, greater, shuffle, cross_validation, iterate_multiple_features, log_experiments, \
+            stack_models, majority_models = arg_parse()
     
     # creating the arguments for the classes
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
@@ -210,7 +215,7 @@ def main():
     regressor = Regressor(ranking_dict, drop, selected=selected, optimize=optimize, plot=plot) 
 
     # It uses the PycaretInterface' models to perform the training but you could use other models as long as it implements the same methods
-    training = Trainer(experiment, regressor, num_split, test_size, num_iter, cross_validation) # this can be used for classification or regression -> so it is generic
+    training = Trainer(experiment, regressor, num_split, test_size, num_iter, cross_validation, stack_models, majority_models) # this can be used for classification or regression -> so it is generic
     
     spliting = {"cluster": split.ClusterSpliter(cluster, num_split, random_state=experiment.seed, shuffle=shuffle),
                 "mutations": split.MutationSpliter(mutations, test_num_mutations, greater, 
