@@ -26,8 +26,6 @@ def arg_parse():
                         help="Path to the language model configuration file (optional). json or yaml file.")
     parser.add_argument("-t", "--tokenizer_args", type=str, default="",
                         help="Path to the tokenizer configuration file (optional). json or yaml file.")
-    parser.add_argument("-pt", "--pretrained_args", type=str, default="",
-                        help="Path to the pretrained model configuration file (optional), used in the AutoModel.from_pretrained function. json or yaml file.")
     parser.add_argument("-s", "--strategy", type=str, default="masked_marginal", choices=["masked_marginal", "wild_marginal"],
                         help="The strategy to use for the probabilities. masked_marginal or wild_marginal")
     parser.add_argument("-pos", "--positions", type=int, nargs="+", default=(),
@@ -36,7 +34,7 @@ def arg_parse():
                         help="Whether to plot the probabilities or not. Default is True.")
     args = parser.parse_args()
     return [args.fasta_file, args.model_name, args.save_path,
-            args.llm_config, args.pretrained_args, args.tokenizer_args, args.strategy, 
+            args.llm_config, args.tokenizer_args, args.strategy, 
             args.positions, args.plot]
 
 
@@ -111,13 +109,10 @@ class SuggestMutations:
         Configuration for the language model.
     model : None
         Language model to use for the embeddings.
-    pretrained_args : dict
-        Arguments for the pretrained model.
     tokenizer_args : dict
         Arguments for the tokenizer.
     """
     config: LLMConfig = field(default_factory=LLMConfig)
-    pretrained_args: dict = field(default_factory=dict)
     tokenizer_args: dict = field(default_factory=dict)
     model: None = field(default=None, init=False)
     tokenizer: None = field(default=None, init=False)
@@ -127,7 +122,7 @@ class SuggestMutations:
         device = "auto" if self.config.device == "cuda" else self.config.device
         self.model = EsmForMaskedLM.from_pretrained(self.config.model_name, device_map=device, 
                                                     torch_dtype=self.config.dtype,
-                                                    low_cpu_mem_usage=True, offload_folder="offload", **self.pretrained_args)
+                                                    low_cpu_mem_usage=True, offload_folder="offload")
         
         if "esm" in self.config.model_name:
             self.tokenizer_args["padding"] = True
@@ -201,12 +196,13 @@ class SuggestMutations:
         plot_path : str | Path, optional
             The path to save the plot.
         """
-        plt.figure(figsize=(20, 20))
-        plt.tick_params(axis="x", labelsize=10, labelbottom=True, labeltop=True, bottom=True, top=True)
-        sns.heatmap(suggestions, cmap="coolwarm", annot=True, fmt=".2f")
-        plt.title("Mutations Suggestions")
-        plt.savefig(plot_path, transparent=False, dpi=500)
-        plt.close()
+        for x in range(0, suggestions.shape[0], 100):
+            plt.figure(figsize=(20, 20))
+            plt.tick_params(axis="x", labelsize=10, labelbottom=True, labeltop=True, bottom=True, top=True)
+            sns.heatmap(suggestions.iloc[x:x+100], cmap="coolwarm", annot=True, fmt=".2f")
+            plt.title("Mutations Suggestions")
+            plt.savefig(plot_path.parent/f"{plot_path.stem}_{x}.png", transparent=False, dpi=600)
+            plt.close()
         
 
     def get_probabilities_from_fasta(self, fasta_file: str | Path, positions: Sequence[int]=(), 
@@ -244,21 +240,20 @@ class SuggestMutations:
             for seq_id, prob in all_prob.items():
                 plot_path = save_path.parent / "heatmap" / f"{seq_id}_suggestions.png"
                 plot_path.parent.mkdir(parents=True, exist_ok=True)
-                self.plot_heatmap(prob[prob>0], plot_path=plot_path)
+                self.plot_heatmap(prob[prob>0.5], plot_path=plot_path)
         return pd.concat(all_prob)
 
 
 def main():
-    fasta_file, model_name, save_path, llm_config, pretrained_args, tokenizer_args, strategy, positions, plot = arg_parse()
+    fasta_file, model_name, save_path, llm_config, tokenizer_args, strategy, positions, plot = arg_parse()
     # Load the configuration file if provided
     tokenizer_args = load_config(tokenizer_args, extension=tokenizer_args.split(".")[-1])
     llm_args = load_config(llm_config, extension=llm_config.split(".")[-1])
-    pretrained_args = load_config(pretrained_args, extension=pretrained_args.split(".")[-1])
     # Create the configuration object
     config = LLMConfig(model_name=model_name, **llm_args)
     # Create the SuggestMutations object
     stra = {"masked_marginal": masked_marginal, "wild_marginal": wild_marginal}
-    suggest_mutations = SuggestMutations(config, pretrained_args=pretrained_args, tokenizer_args=tokenizer_args)
+    suggest_mutations = SuggestMutations(config, tokenizer_args=tokenizer_args)
     suggest_mutations.get_probabilities_from_fasta(fasta_file, save_path=save_path, 
                                                    strategy=stra[strategy], positions=positions,
                                                    plot=plot)
