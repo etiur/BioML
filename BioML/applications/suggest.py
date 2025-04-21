@@ -123,7 +123,7 @@ class SuggestMutations:
         self.model = EsmForMaskedLM.from_pretrained(self.config.model_name, device_map=device, 
                                                     torch_dtype=self.config.dtype,
                                                     low_cpu_mem_usage=True, offload_folder="offload")
-        
+        self.model.eval()
         if "esm" in self.config.model_name:
             self.tokenizer_args["padding"] = True
             self.tokenizer_args["truncation"] = True

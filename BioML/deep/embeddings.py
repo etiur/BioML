@@ -153,7 +153,7 @@ class ExtractEmbeddings:
         self.model = AutoModel.from_pretrained(self.config.model_name, output_hidden_states=True, device_map=device, 
                                                torch_dtype=self.config.dtype,
                                                low_cpu_mem_usage=True, offload_folder="offload", **self.pretrained_args)
-       
+        self.model.eval()
         
     @staticmethod
     def concatenate_options(embedings: torch.Tensor, option: str = "mean"):
