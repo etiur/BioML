@@ -258,3 +258,7 @@ def main():
                                                    strategy=stra[strategy], positions=positions,
                                                    plot=plot)
     print(f"Probabilities saved to {save_path}")
+
+if __name__ == "__main__":
+    # Run this if this file is executed from command line but not if is imported as API
+    main()
