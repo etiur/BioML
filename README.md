@@ -21,3 +21,21 @@ BioML can extract 3 types of features in the case of protein sequences (in FASTA
 The features for the other biomolecules are extracted using [iFeatureOmega](https://github.com/Superzchen/iFeatureOmega-CLI)
 
 In the [examples/test_end_to_end.ipynb](https://github.com/etiur/BioML/blob/main/examples/test_end_to_end.ipynb) I show all the steps necessary to run BioML from end to end look there for updates
+
+### Installation
+
+```
+create a conda environment and install python 3.10
+
+git clone https://github.com/BSC-CNS-EAPM/BIOML-plugin.git
+
+#Install BioML using
+
+cd BioML
+pip install -e .
+
+# install mmseq2 and perl-bio-featureio using conda
+
+conda -c conda-forge -c bioconda mmseqs2 perl-bio-featureio
+
+```

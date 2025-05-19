@@ -35,12 +35,15 @@ def arg_parse():
     parser.add_argument("-s", "--sensitivity", required=False, default=6.5, type=float, help="The sensitivity for the mmseqs")
     parser.add_argument("-gdb", "--generate_searchdb", action="store_true", 
                         help="Generate a search database from the database file in MMseqs")
-    
+    parser.add_argument("-cl", "--cluster_at_sequence_identity", required=False, default=0.3, type=float, help="The sequence identity threshold for the clustering")
+    parser.add_argument("-cf", "--cluster_file", required=False, default="cluster.tsv", type=str, help="The path to the output cluster file in tsv format")
+    parser.add_argument("-c", "--clusterize", action="store_true", help="Clusterize the sequences using mmseqs")
+
     args = parser.parse_args()
 
     return [args.fasta_dir, args.pssm_dir, args.dbinp, args.dbout, args.num_thread, args.number,
             args.fasta_file, args.iterations, args.possum_dir, args.use_mmseqs, args.evalue, args.sensitivity,
-            args.generate_searchdb]
+            args.generate_searchdb, args.cluster_at_sequence_identity, args.cluster_file, args.clusterize]
 
 
 class ExtractPssm:
@@ -257,14 +260,36 @@ def generate_with_mmseqs(fasta: str | Path, dbinp: str | Path, evalue: float =0.
     MmseqsClustering.split_pssm(pssm_file, fasta, pssm_dir)
 
 
+def clusterize(fasta: str | Path, cluster_at_sequence_identity: float =0.3, cluster_file: str | Path="cluster.tsv"):
+    """
+    A function that clusterize the sequences using mmseqs
+
+    Parameters
+    __________
+    fasta: str
+        The fsequences to be clustered in fasta format
+    cluster_at_sequence_identity: float, optional
+        The sequence identity threshold for the clustering
+    cluster_file: str, optional
+        The path to the output cluster file in tsv format
+    """
+
+    MmseqsClustering.easy_cluster(fasta, cluster_at_sequence_identity, cluster_file)
+
+
+
+
 def main():
     fasta_dir, pssm_dir, dbinp, dbout, num_thread, num, fasta_file, iterations, possum_dir, \
-    use_mmseqs, evalue, sensitivity, generate_searchdb = arg_parse()
+    use_mmseqs, evalue, sensitivity, generate_searchdb, cluster_at_sequence_identity, cluster_file, clusterize = arg_parse()
     
     if use_mmseqs:
         out_fasta = clean_fasta(possum_dir, fasta_file)
         generate_with_mmseqs(out_fasta, dbinp, evalue, iterations, sensitivity, num_thread,
                              pssm_dir=pssm_dir, generate_searchdb=generate_searchdb)
+    elif clusterize:
+        clusterize(out_fasta, cluster_at_sequence_identity, cluster_file)
+
     else:
         generate_pssm(num_thread, fasta_dir, pssm_dir, dbinp, dbout, num, fasta_file, iterations, possum_dir)
 
