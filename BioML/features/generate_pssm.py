@@ -274,7 +274,7 @@ def clusterize_with_mmseqs(fasta: str | Path, cluster_at_sequence_identity: floa
         The path to the output cluster file in tsv format
     """
 
-    MmseqsClustering.easy_cluster(fasta, cluster_at_sequence_identity, cluster_file)
+    MmseqsClustering.easy_cluster(fasta, cluster_file, cluster_at_sequence_identity)
 
 
 
