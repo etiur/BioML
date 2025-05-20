@@ -63,7 +63,7 @@ def arg_parse():
     args = parser.parse_args()
 
     return [args.fasta_file, args.training_features, args.scaler, args.model_path, args.test_features,
-             args.res_dir, args.number_similar_samples, args.outlier_train, args.outlier_test, args.problem, args.label,
+             args.res_dir, args.number_similar_samples, args.outliers_train, args.outliers_test, args.problem, args.label,
              args.applicability_domain, args.sheet_name, args.test_sheet_name, args.deep_model, args.llm_config, args.peft_path, args.tokenizer_config]
 
 @dataclass
