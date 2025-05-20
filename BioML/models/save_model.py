@@ -48,7 +48,7 @@ def arg_parse():
     parser.add_argument("-sh", "--sheet_name", required=False, default=None, 
                         help="The sheet name for the excel file if the training features is in excel format")
     parser.add_argument("--tune", action="store_false", required=False, help="If to tune the best models")
-    parser.add_argument("-j", "--setup_config", required=False, default=None,
+    parser.add_argument("-j", "--setup_config", required=False, default="",
                         help="A json or yaml file for the setup_configurations")
     parser.add_argument("-ni", "--num_iter", default=30, type=int, required=False, 
                         help="The number of iterations for the hyperparameter search")
