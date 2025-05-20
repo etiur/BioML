@@ -54,7 +54,7 @@ def arg_parse():
                         help="The sheet name for the excel file if the training features is in excel format")
     parser.add_argument("-ts", "--test_sheet_name", required=False, default=None,
                         help="The sheet name for the excel file if the test features is in excel format")
-    parser.add_argument("-d", "--deep_model", required=False, action="store_true", help="If to use the deep model, default is False")
+    parser.add_argument("-de", "--deep_model", required=False, action="store_true", help="If to use the deep model, default is False")
     parser.add_argument("-peft", "--peft_path", required=False, help="The path to the model adapter", default=None)
     parser.add_argument("-lc", "--llm_config", type=str, default="",
                         help="Path to the language model configuration file (optional). json or yaml file.")
