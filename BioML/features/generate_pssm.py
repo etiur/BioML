@@ -291,7 +291,7 @@ def main():
         generate_with_mmseqs(out_fasta, dbinp, evalue, iterations, sensitivity, num_thread,
                              pssm_dir=pssm_dir, generate_searchdb=generate_searchdb)
     
-    else:
+    if not use_mmseqs and not clusterize:
         generate_pssm(num_thread, fasta_dir, pssm_dir, dbinp, dbout, num, fasta_file, iterations, possum_dir)
 
 
