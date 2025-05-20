@@ -260,7 +260,7 @@ def generate_with_mmseqs(fasta: str | Path, dbinp: str | Path, evalue: float =0.
     MmseqsClustering.split_pssm(pssm_file, fasta, pssm_dir)
 
 
-def clusterize(fasta: str | Path, cluster_at_sequence_identity: float =0.3, cluster_file: str | Path="cluster.tsv"):
+def clusterize_with_mmseqs(fasta: str | Path, cluster_at_sequence_identity: float =0.3, cluster_file: str | Path="cluster.tsv"):
     """
     A function that clusterize the sequences using mmseqs
 
@@ -284,7 +284,7 @@ def main():
     use_mmseqs, evalue, sensitivity, generate_searchdb, cluster_at_sequence_identity, cluster_file, clusterize = arg_parse()
     
     if clusterize:
-        clusterize(fasta_file, cluster_at_sequence_identity, cluster_file)
+        clusterize_with_mmseqs(fasta_file, cluster_at_sequence_identity, cluster_file)
     
     if use_mmseqs and not clusterize:
         out_fasta = clean_fasta(possum_dir, fasta_file)
