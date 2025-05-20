@@ -185,9 +185,8 @@ def main():
     if outliers and Path(outliers[0]).exists():
         with open(outliers) as out:
             outliers = tuple(x.strip() for x in out.readlines())
-    if setup_config:
-        setup_config = load_config(setup_config, 
-                                   extension=setup_config.split(".")[-1])
+
+    setup_config = load_config(setup_config, extension=setup_config.split(".")[-1])
 
     num_split, test_size = int(kfold.split(":")[0]), float(kfold.split(":")[1])
 
