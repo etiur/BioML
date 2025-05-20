@@ -540,8 +540,10 @@ def main():
     llm_config, peft_pat, tokenizer_args = arg_parse()
 
     if not deep_model:
-        if not model_path or not training_features or not test_features:
-            raise ValueError("The model path, training features and test features are required")
+        if not model_path or not test_features:
+            raise ValueError("The model path and test features are required")
+        if applicability_domain and not training_features:
+            raise ValueError("The training features are required for the applicability domain")
         # read outliers
         outlier_test = read_outlier_file(outlier_test)
         outlier_train = read_outlier_file(outlier_train)
