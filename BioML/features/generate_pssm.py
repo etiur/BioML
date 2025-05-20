@@ -283,13 +283,14 @@ def main():
     fasta_dir, pssm_dir, dbinp, dbout, num_thread, num, fasta_file, iterations, possum_dir, \
     use_mmseqs, evalue, sensitivity, generate_searchdb, cluster_at_sequence_identity, cluster_file, clusterize = arg_parse()
     
-    if use_mmseqs:
+    if clusterize:
+        clusterize(out_fasta, cluster_at_sequence_identity, cluster_file)
+    
+    if use_mmseqs and not clusterize:
         out_fasta = clean_fasta(possum_dir, fasta_file)
         generate_with_mmseqs(out_fasta, dbinp, evalue, iterations, sensitivity, num_thread,
                              pssm_dir=pssm_dir, generate_searchdb=generate_searchdb)
-    elif clusterize:
-        clusterize(out_fasta, cluster_at_sequence_identity, cluster_file)
-
+    
     else:
         generate_pssm(num_thread, fasta_dir, pssm_dir, dbinp, dbout, num, fasta_file, iterations, possum_dir)
 
