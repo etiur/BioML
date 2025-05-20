@@ -22,8 +22,8 @@ def arg_parse():
     parser.add_argument("-l", "--label", required=True,
                         help="The path to the labels of the training set in a csv format or the column name if it is in training features")
     parser.add_argument("-o", "--model_output", required=False,
-                        help="The directory for the generated models",
-                        default="models")
+                        help="The filename for the model without the extension",
+                        default="models/trained_model")
     parser.add_argument("-ot", "--outliers", nargs="+", required=False, default=(),
                         help="A list of outliers if any, the name should be the same as in the excel file with the "
                              "filtered features, you can also specify the path to a file in plain text format, each "
@@ -194,7 +194,7 @@ def main():
     feature = DataParser(training_features, label, outliers=outliers, sheets=sheet)
     
     experiment = PycaretInterface(problem, seed, scaler=scaler, best_model=best_model, optimize=optimize, 
-                                  output_path=model_output)
+                                  output_path=Path(model_output).parent)
     
     if problem == "classification":
         model = Classifier(drop=(), selected=selected_models, optimize=optimize, plot=())
