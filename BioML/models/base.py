@@ -912,16 +912,20 @@ class Trainer:
         self.log.info("--------Retuning the best models--------")
         for key, model in list(sorted_models.items())[:self.experiment.best_model]:
             self.log.info(f"Retuning {key}")
-            if key in ["nb", "svm", "par", "mlp"] or (key not in self.experiment.final_models and not custom_grid):
+            if key not in self.experiment.final_models and not custom_grid:
                 new_models[key] = model
             else:
                 fit_kwarg = fit_kwargs.get(key, {})
                 custom_g = custom_grid.get(key, None) if custom_grid else None
-                tuned_model, results, params =  self.experiment.retune_model(key, model, self.num_iter, fold=self.num_splits, 
+                try:
+                    tuned_model, results, params =  self.experiment.retune_model(key, model, self.num_iter, fold=self.num_splits, 
                                                                              custom_grid=custom_g, fit_kwargs=fit_kwarg)
-                new_models[key] = tuned_model
-                new_results[key] = results
-                new_params[key] = params
+                    new_models[key] = tuned_model
+                    new_results[key] = results
+                    new_params[key] = params
+                except Exception as e:
+                    self.log.info(f"Error in retuning {key}: {e}")
+                    new_models[key] = model
                 
         return pd.concat(new_results), new_models, pd.concat(new_params)
     
