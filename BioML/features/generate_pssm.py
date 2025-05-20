@@ -284,7 +284,7 @@ def main():
     use_mmseqs, evalue, sensitivity, generate_searchdb, cluster_at_sequence_identity, cluster_file, clusterize = arg_parse()
     
     if clusterize:
-        clusterize(out_fasta, cluster_at_sequence_identity, cluster_file)
+        clusterize(fasta_file, cluster_at_sequence_identity, cluster_file)
     
     if use_mmseqs and not clusterize:
         out_fasta = clean_fasta(possum_dir, fasta_file)
