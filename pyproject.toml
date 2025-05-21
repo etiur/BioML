@@ -21,7 +21,7 @@ dependencies = [
   "mlflow <=2.16.0",
   "pycaret[analysis,models]",
   "torch"
-# you have to download POSUM_toolkit and iFeature from github, they are not packages
+# you have to download POSUM_toolkit and iFeature from github https://github.com/Superzchen/iFeature.git, they are not packages
 ]
 
 
@@ -47,7 +47,7 @@ classifiers=["Programming Language :: Python :: 3.10",
 
 [project.optional-dependencies]
 cluster = ["mmseqs2", 
-           "perl-bio-featureio", # Installed with conda in the bioconda channel it seems that perl-bio-feaureio may download a wrong version of scikit-learn which makes it incompatible with pycaret so install everything with conda then pycaret
+           "perl-bio-featureio", # Both installed with conda in the bioconda channel it seems that perl-bio-feaureio may download a wrong version of scikit-learn which makes it incompatible with pycaret so install everything with conda then pycaret
            
            ]
 features = ["iFeatureOmegaCLI"] # Need to pre-install some dependencies first https://github.com/Superzchen/iFeatureOmega-CLI, 
