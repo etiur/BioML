@@ -38,4 +38,6 @@ pip install -e .
 
 conda -c conda-forge -c bioconda mmseqs2 perl-bio-featureio
 
+#You need additional packages like Possum and iFeature that are downloaded from git, read the pyproject.toml
+
 ```

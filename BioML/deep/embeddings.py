@@ -156,7 +156,7 @@ class ExtractEmbeddings:
         self.model.eval()
         
     @staticmethod
-    def concatenate_options(embedings: torch.Tensor, option: str = "mean"):
+    def concatenate_options(embedings: torch.Tensor, option: str = "mean", size=None):
         """
         Concatenate the per residue tokens into a per sequence token
 
@@ -166,6 +166,8 @@ class ExtractEmbeddings:
             List of embeddings from the different layers.
         option : str
             Option to concatenate the embeddings.
+        size : int, optional
+            Size of the embeddings, by default None. Use in option=concat
 
         Returns
         -------
@@ -178,8 +180,11 @@ class ExtractEmbeddings:
             return torch.sum(embedings, dim=0)
         if option == "max":
             return torch.max(embedings, dim=0)[0]
-        if option == "flatten":
-            return torch.flatten(embedings)
+        if option == "concat":
+            if not size:
+                size = embedings.shape[1] *4
+                print(f"Size not specified and option='concat' so set size to {size}")
+            return torch.flatten(embedings)[:size]
         else:
             raise ValueError("Option not available yet. Choose between 'mean', 'sum', 'max' or 'flatten'")
     
